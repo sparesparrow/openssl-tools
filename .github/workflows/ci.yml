@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, "3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git
+    
+    - name: Install Conan
+      run: |
+        pip install conan
+    
+    - name: Install Python dependencies
+      run: |
+        pip install -e .[dev,statistics,github,gitlab]
+    
+    - name: Run integration tests
+      run: |
+        python test_integration.py
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/ -v
+    
+    - name: Conan test Conan package
+      run: |
+        conan create . --build=missing
+    
+    - name: Conan test command line tools
+      run: |
+        addrev --help
+        gitaddrev --help
+        ghmerge --help
+        stage-release --help
+        copyright-year --help
+        bn-rand-range --help
+
+  conan-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        conan-version: ["2.0", "2.1"]
+        python-version: [3.8, "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install Conan ${{ matrix.conan-version }}
+      run: |
+        pip install conan==${{ matrix.conan-version }}
+    
+    - name: Conan test Conan package creation
+      run: |
+        conan create . --build=missing
+    
+    - name: Conan test Conan package installation
+      run: |
+        conan install openssl-tools/1.0.0@ --build=missing
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install linting dependencies
+      run: |
+        pip install black flake8 mypy
+    
+    - name: Run black
+      run: |
+        black --check openssl_tools/
+    
+    - name: Run flake8
+      run: |
+        flake8 openssl_tools/
+    
+    - name: Run mypy
+      run: |
+        mypy openssl_tools/

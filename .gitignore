@@ -33,3 +33,7 @@ htmlcov/
 # Local scripts/tests not for package index (optional)
 simple_test.py
 venv/
+
+# Legacy/duplicate paths
+openssl_tools/
+setup.py
