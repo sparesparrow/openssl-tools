@@ -1,1 +1,1 @@
-# Test package for OpenSSL Tools
+# OpenSSL Tools Test Suite

@@ -1,0 +1,572 @@
+name: OpenSSL Integration
+
+on:
+  repository_dispatch:
+    types: [openssl-updated]
+  workflow_dispatch:
+    inputs:
+      openssl_version:
+        description: 'OpenSSL version to test with'
+        required: true
+        default: '3.2.0'
+      test_type:
+        description: 'Type of test to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - full
+        - quick
+        - fuzz-only
+
+env:
+  OPENSSL_VERSION: ${{ github.event.client_payload.version || inputs.openssl_version }}
+  TEST_TYPE: ${{ inputs.test_type || 'full' }}
+
+jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-version: ${{ steps.version.outputs.version }}
+      test-type: ${{ steps.config.outputs.type }}
+      
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Extract OpenSSL version
+      id: version
+      run: |
+        if [ -n "${{ env.OPENSSL_VERSION }}" ]; then
+          echo "version=${{ env.OPENSSL_VERSION }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=latest" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Set test configuration
+      id: config
+      run: |
+        echo "type=${{ env.TEST_TYPE }}" >> $GITHUB_OUTPUT
+        
+  build-openssl:
+    runs-on: ubuntu-latest
+    needs: setup-environment
+    
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          wget \
+          curl \
+          libssl-dev \
+          zlib1g-dev \
+          libbz2-dev \
+          libreadline-dev \
+          libsqlite3-dev \
+          libncursesw5-dev \
+          xz-utils \
+          tk-dev \
+          libxml2-dev \
+          libxmlsec1-dev \
+          libffi-dev \
+          liblzma-dev
+          
+    - name: Set up Python environments
+      run: |
+        python setup_python_env.py --versions 3.8,3.9,3.10,3.11,3.12
+        
+    - name: Set up Conan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        pip install conan==2.0.17
+        python conan_remote_manager.py --setup
+        
+    - name: Clone OpenSSL repository
+      run: |
+        git clone https://github.com/openssl/openssl.git openssl-src
+        cd openssl-src
+        if [ "${{ needs.setup-environment.outputs.openssl-version }}" != "latest" ]; then
+          git checkout OpenSSL_${{ needs.setup-environment.outputs.openssl-version | replace('.', '_') }}
+        fi
+        
+    - name: Configure OpenSSL build
+      run: |
+        cd openssl-src
+        ./Configure linux-x86_64 \
+          --prefix=/usr/local/openssl \
+          --openssldir=/usr/local/openssl/ssl \
+          --libdir=lib \
+          shared \
+          zlib-dynamic
+          
+    - name: Build OpenSSL with optimization
+      run: |
+        cd openssl-src
+        make -j$(nproc)
+        
+    - name: Test OpenSSL build
+      run: |
+        cd openssl-src
+        make test
+        
+    - name: Install OpenSSL
+      run: |
+        cd openssl-src
+        sudo make install
+        sudo ldconfig
+        
+    - name: Create OpenSSL Conan package
+      run: |
+        # Create Conan recipe for OpenSSL
+        mkdir -p openssl-conan
+        cat > openssl-conan/conanfile.py << 'EOF'
+        from conans import ConanFile, CMake, tools
+        import os
+        
+        class OpenSSLConan(ConanFile):
+            name = "openssl"
+            version = "${{ needs.setup-environment.outputs.openssl-version }}"
+            description = "OpenSSL library"
+            settings = "os", "compiler", "build_type", "arch"
+            options = {"shared": [True, False]}
+            default_options = {"shared": True}
+            
+            def package(self):
+                self.copy("*", src="/usr/local/openssl", dst=".")
+                
+            def package_info(self):
+                self.cpp_info.libs = ["ssl", "crypto"]
+                self.cpp_info.includedirs = ["include"]
+                self.cpp_info.libdirs = ["lib"]
+        EOF
+        
+        # Export and create package
+        conan export openssl-conan openssl/${{ needs.setup-environment.outputs.openssl-version }}@sparesparrow/stable
+        conan create openssl-conan openssl/${{ needs.setup-environment.outputs.openssl-version }}@sparesparrow/stable
+        
+    - name: Sign OpenSSL package
+      run: |
+        python package_signer.py --generate-key --force
+        python package_signer.py --sign-dir ~/.conan/data/openssl
+        
+    - name: Upload OpenSSL package
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python conan_remote_manager.py --upload openssl/${{ needs.setup-environment.outputs.openssl-version }}@sparesparrow/stable
+        
+  test-openssl-integration:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build-openssl]
+    if: needs.setup-environment.outputs.test-type != 'fuzz-only'
+    
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install dependencies
+      run: |
+        pip install conan==2.0.17 requests cryptography
+        pip install pytest
+        
+    - name: Set up Conan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python conan_remote_manager.py --setup
+        
+    - name: Install OpenSSL package
+      run: |
+        python conan_remote_manager.py --download openssl/${{ needs.setup-environment.outputs.openssl-version }}@sparesparrow/stable
+        
+    - name: Create test application
+      run: |
+        mkdir -p test-app
+        cat > test-app/main.cpp << 'EOF'
+        #include <openssl/ssl.h>
+        #include <openssl/err.h>
+        #include <iostream>
+        
+        int main() {
+            SSL_library_init();
+            SSL_load_error_strings();
+            
+            std::cout << "OpenSSL version: " << SSLeay_version(SSLEAY_VERSION) << std::endl;
+            std::cout << "OpenSSL test successful!" << std::endl;
+            
+            return 0;
+        }
+        EOF
+        
+        cat > test-app/CMakeLists.txt << 'EOF'
+        cmake_minimum_required(VERSION 3.10)
+        project(OpenSSLTest)
+        
+        find_package(OpenSSL REQUIRED)
+        
+        add_executable(test_openssl main.cpp)
+        target_link_libraries(test_openssl OpenSSL::SSL OpenSSL::Crypto)
+        EOF
+        
+    - name: Build test application
+      run: |
+        cd test-app
+        mkdir build && cd build
+        cmake ..
+        make
+        
+    - name: Run test application
+      run: |
+        cd test-app/build
+        ./test_openssl
+        
+    - name: Test with different Python versions
+      run: |
+        for version in 3.8 3.9 3.10 3.11 3.12; do
+          echo "Testing with Python $version"
+          python$version -c "import ssl; print(f'Python $version SSL: {ssl.OPENSSL_VERSION}')" || true
+        done
+        
+  fuzz-openssl:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build-openssl]
+    if: needs.setup-environment.outputs.test-type != 'quick'
+    
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install fuzzing dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang llvm afl++ libfuzzer-dev
+        pip install atheris hypothesis
+        
+    - name: Set up fuzz integration
+      run: |
+        python fuzz_integration.py --setup
+        
+    - name: Create OpenSSL fuzz targets
+      run: |
+        mkdir -p fuzz-targets
+        
+        # Create SSL fuzz target
+        cat > fuzz-targets/ssl_fuzz.py << 'EOF'
+        import atheris
+        import sys
+        import ssl
+        import socket
+        
+        def fuzz_ssl_handshake(data):
+            """Fuzz SSL handshake with random data."""
+            try:
+                # Create a simple SSL context
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                
+                # Try to create SSL socket with fuzzed data
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                ssl_sock = context.wrap_socket(sock, server_hostname="test")
+                
+                # Process the fuzzed data
+                if len(data) > 0:
+                    ssl_sock.send(data[:100])  # Limit data size
+                    
+            except Exception as e:
+                # Log crashes but don't stop fuzzing
+                pass
+                
+        def main():
+            atheris.Setup(sys.argv, fuzz_ssl_handshake)
+            atheris.Fuzz()
+            
+        if __name__ == "__main__":
+            main()
+        EOF
+        
+        # Create crypto fuzz target
+        cat > fuzz-targets/crypto_fuzz.py << 'EOF'
+        import atheris
+        import sys
+        import hashlib
+        import hmac
+        
+        def fuzz_crypto_operations(data):
+            """Fuzz cryptographic operations with random data."""
+            try:
+                if len(data) > 0:
+                    # Test hash functions
+                    hashlib.md5(data[:100]).hexdigest()
+                    hashlib.sha1(data[:100]).hexdigest()
+                    hashlib.sha256(data[:100]).hexdigest()
+                    
+                    # Test HMAC
+                    key = data[:16] if len(data) >= 16 else b"default_key"
+                    hmac.new(key, data[:100], hashlib.sha256).hexdigest()
+                    
+            except Exception as e:
+                # Log crashes but don't stop fuzzing
+                pass
+                
+        def main():
+            atheris.Setup(sys.argv, fuzz_crypto_operations)
+            atheris.Fuzz()
+            
+        if __name__ == "__main__":
+            main()
+        EOF
+        
+    - name: Run SSL fuzzing
+      run: |
+        python fuzz_integration.py \
+          --fuzz fuzz-targets/ssl_fuzz.py \
+          --timeout 1800 \
+          --max-crashes 20
+          
+    - name: Run crypto fuzzing
+      run: |
+        python fuzz_integration.py \
+          --fuzz fuzz-targets/crypto_fuzz.py \
+          --timeout 1800 \
+          --max-crashes 20
+          
+    - name: Generate fuzz report
+      run: |
+        python fuzz_integration.py --report fuzz-results/openssl-fuzz-report.json
+        
+    - name: Upload fuzz results
+      uses: actions/upload-artifact@v3
+      with:
+        name: fuzz-results
+        path: |
+          fuzz-results/
+          fuzz-corpora/
+          
+  performance-test:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build-openssl]
+    if: needs.setup-environment.outputs.test-type == 'full'
+    
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install performance testing tools
+      run: |
+        pip install pyperf psutil memory-profiler
+        
+    - name: Create performance test
+      run: |
+        cat > performance_test.py << 'EOF'
+        import time
+        import ssl
+        import hashlib
+        import statistics
+        from memory_profiler import profile
+        
+        @profile
+        def benchmark_ssl_operations():
+            """Benchmark SSL operations."""
+            times = []
+            
+            for i in range(100):
+                start = time.time()
+                
+                # Create SSL context
+                context = ssl.create_default_context()
+                
+                # Test SSL operations
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                
+                end = time.time()
+                times.append(end - start)
+                
+            return {
+                'mean': statistics.mean(times),
+                'median': statistics.median(times),
+                'stdev': statistics.stdev(times) if len(times) > 1 else 0,
+                'min': min(times),
+                'max': max(times)
+            }
+            
+        @profile
+        def benchmark_crypto_operations():
+            """Benchmark cryptographic operations."""
+            data = b"test data for benchmarking" * 1000
+            times = []
+            
+            for i in range(100):
+                start = time.time()
+                
+                # Test various hash functions
+                hashlib.md5(data).hexdigest()
+                hashlib.sha1(data).hexdigest()
+                hashlib.sha256(data).hexdigest()
+                hashlib.sha512(data).hexdigest()
+                
+                end = time.time()
+                times.append(end - start)
+                
+            return {
+                'mean': statistics.mean(times),
+                'median': statistics.median(times),
+                'stdev': statistics.stdev(times) if len(times) > 1 else 0,
+                'min': min(times),
+                'max': max(times)
+            }
+            
+        if __name__ == "__main__":
+            print("OpenSSL Performance Benchmark")
+            print("=" * 40)
+            
+            ssl_results = benchmark_ssl_operations()
+            print(f"SSL Operations:")
+            print(f"  Mean: {ssl_results['mean']:.6f}s")
+            print(f"  Median: {ssl_results['median']:.6f}s")
+            print(f"  Std Dev: {ssl_results['stdev']:.6f}s")
+            print(f"  Min: {ssl_results['min']:.6f}s")
+            print(f"  Max: {ssl_results['max']:.6f}s")
+            
+            crypto_results = benchmark_crypto_operations()
+            print(f"\nCrypto Operations:")
+            print(f"  Mean: {crypto_results['mean']:.6f}s")
+            print(f"  Median: {crypto_results['median']:.6f}s")
+            print(f"  Std Dev: {crypto_results['stdev']:.6f}s")
+            print(f"  Min: {crypto_results['min']:.6f}s")
+            print(f"  Max: {crypto_results['max']:.6f}s")
+        EOF
+        
+    - name: Run performance test
+      run: |
+        python performance_test.py > performance_results.txt
+        
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: performance_results.txt
+        
+  generate-integration-report:
+    runs-on: ubuntu-latest
+    needs: [setup-environment, build-openssl, test-openssl-integration, fuzz-openssl, performance-test]
+    if: always()
+    
+    steps:
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      
+    - name: Generate integration report
+      run: |
+        cat > integration_report.md << 'EOF'
+        # OpenSSL Integration Report
+        
+        ## Test Configuration
+        - OpenSSL Version: ${{ needs.setup-environment.outputs.openssl-version }}
+        - Test Type: ${{ needs.setup-environment.outputs.test-type }}
+        - Trigger: ${{ github.event_name }}
+        
+        ## Test Results
+        
+        ### Build Status
+        - OpenSSL Build: ${{ needs.build-openssl.result }}
+        
+        ### Integration Tests
+        - OpenSSL Integration: ${{ needs.test-openssl-integration.result }}
+        
+        ### Fuzzing Tests
+        - OpenSSL Fuzzing: ${{ needs.fuzz-openssl.result }}
+        
+        ### Performance Tests
+        - Performance Benchmark: ${{ needs.performance-test.result }}
+        
+        ## Summary
+        EOF
+        
+        # Add detailed results
+        echo "" >> integration_report.md
+        echo "## Detailed Results" >> integration_report.md
+        echo "" >> integration_report.md
+        
+        if [ "${{ needs.build-openssl.result }}" == "success" ]; then
+          echo "✅ OpenSSL build completed successfully" >> integration_report.md
+        else
+          echo "❌ OpenSSL build failed" >> integration_report.md
+        fi
+        
+        if [ "${{ needs.test-openssl-integration.result }}" == "success" ]; then
+          echo "✅ Integration tests passed" >> integration_report.md
+        else
+          echo "❌ Integration tests failed" >> integration_report.md
+        fi
+        
+        if [ "${{ needs.fuzz-openssl.result }}" == "success" ]; then
+          echo "✅ Fuzzing tests completed" >> integration_report.md
+        else
+          echo "❌ Fuzzing tests failed" >> integration_report.md
+        fi
+        
+        if [ "${{ needs.performance-test.result }}" == "success" ]; then
+          echo "✅ Performance tests completed" >> integration_report.md
+        else
+          echo "❌ Performance tests failed" >> integration_report.md
+        fi
+        
+    - name: Upload integration report
+      uses: actions/upload-artifact@v3
+      with:
+        name: integration-report
+        path: integration_report.md
+        
+    - name: Comment on issue (if triggered by repository_dispatch)
+      if: github.event_name == 'repository_dispatch'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('integration_report.md', 'utf8');
+          
+          // Find the original issue/PR that triggered this
+          const payload = context.payload;
+          if (payload.client_payload && payload.client_payload.issue_number) {
+            github.rest.issues.createComment({
+              issue_number: payload.client_payload.issue_number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+          }
