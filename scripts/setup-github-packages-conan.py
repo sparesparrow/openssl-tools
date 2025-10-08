@@ -127,20 +127,28 @@ path = {self.conan_dir / "cache"}
         
         # Add remote
         try:
-            subprocess.run([
-                str(conan_exe), "remote", "add", remote_name, remote_url
-            ], check=True, cwd=self.project_root)
+            # Try to add remote, ignore if it already exists
+            try:
+                subprocess.run([
+                    str(conan_exe), "remote", "add", remote_name, remote_url
+                ], check=True, cwd=self.project_root)
+                logger.info(f"✅ Added GitHub Packages remote: {remote_name}")
+            except subprocess.CalledProcessError as e:
+                if "already exists" in str(e):
+                    logger.info(f"ℹ️ Remote {remote_name} already exists, continuing...")
+                else:
+                    raise
             
-            # Authenticate with GitHub Packages
+            # Authenticate with GitHub Packages (Conan 2.x syntax)
             subprocess.run([
                 str(conan_exe), "remote", "login", remote_name, 
-                "--username", self.github_owner, "--password", github_token
+                f"--username={self.github_owner}", f"--password={github_token}"
             ], check=True, cwd=self.project_root)
             
-            logger.info(f"✅ Added GitHub Packages remote: {remote_name}")
+            logger.info(f"✅ Authenticated with GitHub Packages remote: {remote_name}")
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"❌ Failed to add GitHub Packages remote: {e}")
+            logger.error(f"❌ Failed to setup GitHub Packages remote: {e}")
             raise
     
     def _get_conan_executable(self) -> Path:
@@ -211,7 +219,7 @@ jobs:
     - name: Add GitHub Packages Remote
       run: |
         conan remote add github-packages https://maven.pkg.github.com/{self.github_owner}/{self.github_repo}
-        conan remote login github-packages --username ${{{{ github.actor }}}} --password ${{{{ secrets.GITHUB_TOKEN }}}}
+        conan remote login github-packages --username=${{{{ github.actor }}}} --password=${{{{ secrets.GITHUB_TOKEN }}}}
 
     - name: Create Conan Profile
       run: |
@@ -349,7 +357,7 @@ def main():
     print("🔐 Authenticating with GitHub Packages...")
     subprocess.run([
         "conan", "remote", "login", "github-packages",
-        "--username", "{self.github_owner}", "--password", github_token
+        f"--username={self.github_owner}", f"--password={github_token}"
     ], check=True)
     
     # Install package

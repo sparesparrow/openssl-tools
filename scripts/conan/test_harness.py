@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Advanced Test Harness for OpenSSL Conan Package
-Based on ngapy-dev test_harness.py with enhanced verification methods
+Based on openssl-tools test_harness.py with enhanced verification methods
 """
 
 import os
@@ -59,7 +59,7 @@ class TestSuite:
     error_tests: int = 0
 
 class ThLogger:
-    """Test harness logger - pattern from ngapy-dev"""
+    """Test harness logger - pattern from openssl-tools"""
     
     def __init__(self, results_dir: Path):
         self.results_dir = results_dir
@@ -118,7 +118,7 @@ class ThLogger:
         self.junit_xml_log = open(filename, 'w')
 
 class NgapyTestHarness:
-    """Advanced test harness - pattern from ngapy-dev test_harness.py"""
+    """Advanced test harness - pattern from openssl-tools test_harness.py"""
     
     def __init__(self, results_dir: Path):
         self.results_dir = results_dir
@@ -182,7 +182,7 @@ class NgapyTestHarness:
     
     def verify(self, actual: Any, expected: Any, msg: str = "", 
                test_num: int = 0, on_fail: Optional[Callable] = None) -> bool:
-        """Verify actual equals expected - pattern from ngapy-dev"""
+        """Verify actual equals expected - pattern from openssl-tools"""
         return self._run_verification("verify", actual, expected, msg, test_num, on_fail)
     
     def verify_ne(self, actual: Any, expected: Any, msg: str = "", 
@@ -429,7 +429,7 @@ class NgapyTestHarness:
 
 def run_test(function_to_run: Callable, results_dir_path: Path, 
              header_message: str = "") -> bool:
-    """Run test function with comprehensive reporting - pattern from ngapy-dev"""
+    """Run test function with comprehensive reporting - pattern from openssl-tools"""
     logger.info(f"🚀 Running test: {function_to_run.__name__}")
     
     if header_message:

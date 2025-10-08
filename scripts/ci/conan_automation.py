@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenSSL Conan Automation Script
-Based on ngapy-dev patterns for robust Conan package management
+Based on openssl-tools patterns for robust Conan package management
 """
 
 import argparse
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 
 class ConanAutomation:
-    """Conan automation class based on ngapy-dev patterns"""
+    """Conan automation class based on openssl-tools patterns"""
     
     def __init__(self, config_path: Optional[Path] = None):
         self.config_path = config_path or Path("scripts/ci/ci_config.yaml")

@@ -2,7 +2,7 @@
 """
 OpenSSL Tools Conan Package Recipe
 Python tools for OpenSSL development with Conan 2.x integration
-Based on ngapy-dev patterns for proper Python dev/testing environment
+Based on openssl-tools patterns for proper Python dev/testing environment
 """
 
 from conan import ConanFile
@@ -19,6 +19,7 @@ import logging
 import sys
 import json
 import uuid
+import hashlib
 from pathlib import Path
 
 
@@ -55,31 +56,9 @@ class OpenSSLToolsConan(ConanFile):
     
     # Python package - no build requirements for Python tools
     def build_requirements(self):
-        # Install Python dependencies via pip
-        import subprocess
-        
-        # Core dependencies
-        core_deps = ["requests>=2.31.0", "click>=8.1.0", "pyyaml>=6.0.0", "jinja2>=3.1.0"]
-        
-        # Install optional dependencies based on options
-        if self.options.enable_statistics:
-            core_deps.extend(["numpy>=1.20.0", "scipy>=1.7.0"])
-            
-        if self.options.enable_github_integration:
-            core_deps.append("pygithub>=1.59.0")
-            
-        if self.options.enable_gitlab_integration:
-            core_deps.append("python-gitlab>=4.0.0")
-            
-        if self.options.enable_api_integration:
-            core_deps.append("httpx>=0.25.0")
-        
-        # Install dependencies
-        for dep in core_deps:
-            try:
-                subprocess.run([sys.executable, "-m", "pip", "install", dep], check=True)
-            except subprocess.CalledProcessError as e:
-                self.output.warning(f"Failed to install {dep}: {e}")
+        # For Python tools, we don't install dependencies during build
+        # Dependencies should be handled by the consumer
+        self.output.info("Python tools package - dependencies handled by consumer")
     
     # Python dependencies - handled by pip in build_requirements
     def requirements(self):
@@ -209,7 +188,7 @@ class OpenSSLToolsConan(ConanFile):
             self._integrate_statistics_tools()
     
     def _setup_build_optimization(self):
-        """Set up build optimization and caching following ngapy patterns"""
+        """Set up build optimization and caching following openssl-tools patterns"""
         try:
             from openssl_tools.utils.build_optimizer import BuildOptimizer
             
@@ -221,7 +200,8 @@ class OpenSSLToolsConan(ConanFile):
                 'enable_ccache': True,
                 'enable_sccache': False,
                 'optimize_build': True,
-                'reproducible_builds': True
+                'reproducible_builds': True,
+                'cache_dir': os.path.join(self.build_folder, 'cache')
             }
             
             self.build_optimizer = BuildOptimizer(config)
@@ -280,9 +260,20 @@ from .utils import *
             copy(self, "*", src=stats_src, dst=stats_dst)
     
     def package(self):
-        """Package the tools following ngapy patterns"""
+        """Package the tools following ngapy patterns with Conan-managed Python environment"""
         # Copy Python package
-        copy(self, "openssl_tools", src=self.build_folder, dst=self.package_folder)
+        self.output.info(f"Copying openssl_tools from {self.source_folder} to {self.package_folder}")
+        import shutil
+        src_path = os.path.join(self.source_folder, "openssl_tools")
+        dst_path = os.path.join(self.package_folder, "openssl_tools")
+        if os.path.exists(src_path):
+            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+            self.output.info(f"Copied openssl_tools directory successfully")
+        else:
+            self.output.warning(f"openssl_tools directory not found at {src_path}")
+        
+        # Create Conan-managed Python environment structure
+        self._create_conan_python_environment()
         
         # Copy configuration
         copy(self, "tools_config.json", src=self.build_folder, dst=self.package_folder)
@@ -300,10 +291,217 @@ from .utils import *
         
         # Generate SBOM
         self._generate_sbom()
+    
+    def _create_conan_python_environment(self):
+        """Create Conan-managed Python environment structure"""
+        self.output.info("Creating Conan-managed Python environment...")
         
+        # Create Python environment directories
+        python_env_dir = os.path.join(self.package_folder, "python")
+        python_bin_dir = os.path.join(python_env_dir, "bin")
+        python_lib_dir = os.path.join(python_env_dir, "lib")
+        python_cache_dir = os.path.join(self.package_folder, "conan_cache", "python")
+        
+        os.makedirs(python_bin_dir, exist_ok=True)
+        os.makedirs(python_lib_dir, exist_ok=True)
+        os.makedirs(python_cache_dir, exist_ok=True)
+        
+        # Create Python wrapper script that uses Conan-managed environment
+        python_wrapper_content = f'''#!/usr/bin/env python3
+"""
+Conan-managed Python environment wrapper
+Ensures correct Python path resolution from Conan cache/remote
+"""
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+# Get Conan package root
+CONAN_PACKAGE_ROOT = Path(__file__).parent.parent
+CONAN_PYTHON_ENV = CONAN_PACKAGE_ROOT / "python"
+CONAN_PYTHON_CACHE = CONAN_PACKAGE_ROOT / "conan_cache" / "python"
+
+def setup_conan_python_environment():
+    """Setup Conan-managed Python environment"""
+    # Set Python paths from Conan environment
+    python_paths = [
+        str(CONAN_PACKAGE_ROOT / "openssl_tools"),
+        str(CONAN_PYTHON_CACHE),
+        str(CONAN_PYTHON_ENV / "lib"),
+    ]
+    
+    # Update PYTHONPATH
+    current_pythonpath = os.environ.get('PYTHONPATH', '')
+    new_pythonpath = os.pathsep.join(python_paths + [current_pythonpath])
+    os.environ['PYTHONPATH'] = new_pythonpath
+    
+    # Set Conan environment variables
+    os.environ['CONAN_PYTHON_ENV'] = 'managed'
+    os.environ['CONAN_PYTHON_SOURCE'] = 'cache_remote'
+    os.environ['CONAN_PYTHON_CACHE'] = str(CONAN_PYTHON_CACHE)
+    os.environ['OPENSSL_TOOLS_ROOT'] = str(CONAN_PACKAGE_ROOT)
+    
+    # Add to sys.path for current session
+    for path in python_paths:
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+if __name__ == "__main__":
+    # Setup environment and run with system Python
+    setup_conan_python_environment()
+    
+    # Use system Python with Conan-managed paths
+    python_cmd = [sys.executable] + sys.argv[1:]
+    sys.exit(subprocess.run(python_cmd).returncode)
+'''
+        
+        python_wrapper_path = os.path.join(python_bin_dir, "python")
+        save(self, python_wrapper_path, python_wrapper_content)
+        
+        # Make wrapper executable on Unix systems
+        if os.name != 'nt':
+            os.chmod(python_wrapper_path, 0o755)
+        
+        # Create environment activation script
+        activate_script_content = f'''#!/bin/bash
+# Conan-managed Python environment activation
+export CONAN_PYTHON_ENV="managed"
+export CONAN_PYTHON_SOURCE="cache_remote"
+export CONAN_PYTHON_CACHE="{python_cache_dir}"
+export OPENSSL_TOOLS_ROOT="{self.package_folder}"
+export PYTHONPATH="{os.path.join(self.package_folder, 'openssl_tools')}:{python_cache_dir}:$PYTHONPATH"
+export PATH="{python_bin_dir}:$PATH"
+
+echo "Conan-managed Python environment activated"
+echo "Python source: cache/remote"
+echo "Python cache: {python_cache_dir}"
+echo "OpenSSL Tools root: {self.package_folder}"
+'''
+        
+        activate_script_path = os.path.join(python_bin_dir, "activate")
+        save(self, activate_script_path, activate_script_content)
+        
+        # Make activation script executable
+        if os.name != 'nt':
+            os.chmod(activate_script_path, 0o755)
+        
+        # Create environment info file
+        env_info = {
+            "conan_python_env": "managed",
+            "conan_python_source": "cache_remote",
+            "python_executable": python_wrapper_path,
+            "python_home": python_env_dir,
+            "python_cache": python_cache_dir,
+            "openssl_tools_root": self.package_folder,
+            "python_paths": [
+                os.path.join(self.package_folder, "openssl_tools"),
+                python_cache_dir,
+                os.path.join(python_env_dir, "lib")
+            ]
+        }
+        
+        env_info_path = os.path.join(self.package_folder, "python_env_info.json")
+        save(self, env_info_path, json.dumps(env_info, indent=2))
+        
+        self.output.info(f"Created Conan-managed Python environment at {python_env_dir}")
+        
+    def _calculate_file_hash(self, filepath, algorithm='sha256'):
+        """Calculate cryptographic hash of a file"""
+        hash_func = getattr(hashlib, algorithm)()
+        try:
+            with open(filepath, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_func.update(chunk)
+            return hash_func.hexdigest()
+        except Exception as e:
+            self.output.warning(f"Failed to calculate hash for {filepath}: {e}")
+            return None
+
     def _generate_sbom(self):
-        """Generate Software Bill of Materials following ngapy patterns"""
-        self.output.info("Generating Software Bill of Materials (SBOM)...")
+        """Generate Software Bill of Materials with security features following openssl-tools patterns"""
+        self.output.info("Generating Software Bill of Materials (SBOM) with security features...")
+        
+        try:
+            from openssl_tools.utils.sbom_generator import SBOMGenerator
+            
+            # Package information for SBOM
+            package_info = {
+                'name': self.name,
+                'version': str(self.version),
+                'description': self.description,
+                'homepage': self.homepage,
+                'url': self.url,
+                'license': self.license,
+                'package_folder': self.package_folder,
+                'os': str(self.settings.os),
+                'arch': str(self.settings.arch),
+                'build_type': str(self.settings.build_type),
+                'options': {k: str(v) for k, v in self.options.items()},
+                'settings': {k: str(v) for k, v in self.settings.items()},
+                'dependencies': self._get_package_dependencies()
+            }
+            
+            # SBOM generator configuration
+            sbom_config = {
+                'enable_vulnerability_scanning': True,
+                'enable_package_signing': os.getenv('CONAN_SIGN_PACKAGES', 'false').lower() == 'true',
+                'enable_dependency_analysis': True,
+                'enable_license_analysis': True,
+                'trivy_path': 'trivy',
+                'syft_path': 'syft',
+                'cosign_path': 'cosign'
+            }
+            
+            # Generate SBOM
+            sbom_generator = SBOMGenerator(sbom_config)
+            sbom_data = sbom_generator.generate_sbom(package_info)
+            
+            # Save SBOM
+            sbom_path = os.path.join(self.package_folder, "sbom.json")
+            save(self, sbom_path, json.dumps(sbom_data, indent=2))
+            
+            # Also save as YAML for readability
+            sbom_yaml_path = os.path.join(self.package_folder, "sbom.yaml")
+            import yaml
+            save(self, sbom_yaml_path, yaml.dump(sbom_data, default_flow_style=False, sort_keys=False))
+            
+            self.output.info(f"SBOM generated with {len(sbom_data.get('components', []))} components")
+            if sbom_data.get('vulnerabilities'):
+                self.output.warning(f"Found {len(sbom_data['vulnerabilities'])} vulnerabilities")
+            
+        except ImportError:
+            self.output.warning("Enhanced SBOM generation not available, using basic SBOM")
+            self._generate_basic_sbom()
+        except Exception as e:
+            self.output.warning(f"Enhanced SBOM generation failed: {e}, using basic SBOM")
+            self._generate_basic_sbom()
+    
+    def _generate_basic_sbom(self):
+        """Generate basic SBOM as fallback"""
+        # Calculate hashes for main files
+        file_hashes = {}
+        for root, dirs, files in os.walk(self.package_folder):
+            for file in files:
+                if file.endswith(('.py', '.json', '.yaml', '.yml')):
+                    file_path = os.path.join(root, file)
+                    sha256 = self._calculate_file_hash(file_path, 'sha256')
+                    if sha256:
+                        rel_path = os.path.relpath(file_path, self.package_folder)
+                        file_hashes[rel_path] = {
+                            "sha256": sha256,
+                            "algorithm": "SHA-256"
+                        }
+        
+        # Enhanced metadata collection - pattern from openssl-tools
+        build_metadata = {
+            "build_timestamp": os.environ.get("SOURCE_DATE_EPOCH", ""),
+            "build_platform": f"{self.settings.os}-{self.settings.arch}",
+            "compiler": "python",  # Python tools don't use C++ compiler
+            "build_type": "Release",  # Default for Python tools
+            "conan_version": "2.0",  # Would get from actual Conan version
+            "build_options": {k: str(v) for k, v in self.options.items()}
+        }
         
         sbom_data = {
             "bomFormat": "CycloneDX",
@@ -319,6 +517,8 @@ from .utils import *
                     "version": str(self.version),
                     "description": self.description,
                     "licenses": [{"license": {"id": "Apache-2.0"}}],
+                    "hashes": [{"alg": "SHA-256", "content": h["sha256"]} 
+                              for h in file_hashes.values()],
                     "externalReferences": [
                         {
                             "type": "website",
@@ -330,9 +530,10 @@ from .utils import *
                         }
                     ],
                     "properties": [
-                        {"name": "package_type", "value": "python-tools"},
+                        {"name": "build_metadata", "value": json.dumps(build_metadata)},
                         {"name": "conan_options", "value": json.dumps({k: str(v) for k, v in self.options.items()})},
-                        {"name": "build_platform", "value": f"{self.settings.os}-{self.settings.arch}"}
+                        {"name": "build_platform", "value": f"{self.settings.os}-{self.settings.arch}"},
+                        {"name": "package_type", "value": "python-tools"}
                     ]
                 },
                 "tools": [
@@ -368,21 +569,103 @@ from .utils import *
         # Save SBOM
         sbom_path = os.path.join(self.package_folder, "sbom.json")
         save(self, sbom_path, json.dumps(sbom_data, indent=2))
+        self.output.success(f"SBOM generated: {sbom_path}")
+    
+    def _get_package_dependencies(self):
+        """Get package dependencies for SBOM"""
+        dependencies = {}
+        
+        # Get Conan dependencies
+        deps = getattr(self, "deps_cpp_info", None)
+        if deps and hasattr(deps, "deps"):
+            for dep in deps.deps:
+                try:
+                    dep_version = str(deps[dep].version) if hasattr(deps[dep], "version") else "unknown"
+                    dependencies[dep] = {
+                        'version': dep_version,
+                        'type': 'library',
+                        'scope': 'required',
+                        'optional': False
+                    }
+                except Exception as e:
+                    self.output.warning(f"Failed to get dependency info for {dep}: {e}")
+        
+        return dependencies
+        
+        # Generate vulnerability report placeholder
+        self._generate_vulnerability_report()
+
+    def _sign_package(self, sbom_path):
+        """Sign package for supply chain security (placeholder for actual signing)"""
+        signing_enabled = os.getenv("CONAN_SIGN_PACKAGES", "false").lower() == "true"
+        
+        if not signing_enabled:
+            self.output.info("Package signing disabled (set CONAN_SIGN_PACKAGES=true to enable)")
+            return
+        
+        self.output.info("Package signing placeholder - integrate with cosign/gpg in production")
+        
+        signature_metadata = {
+            "signed": True,
+            "timestamp": str(os.environ.get("SOURCE_DATE_EPOCH", "")),
+            "algorithm": "placeholder",
+            "keyid": "placeholder"
+        }
+        
+        sig_path = os.path.join(self.package_folder, "package-signature.json")
+        save(self, sig_path, json.dumps(signature_metadata, indent=2))
+
+    def _generate_vulnerability_report(self):
+        """Generate vulnerability scan report (integration point)"""
+        vuln_report = {
+            "scanTool": "placeholder",
+            "scanDate": str(os.environ.get("SOURCE_DATE_EPOCH", "")),
+            "component": f"{self.name}@{self.version}",
+            "vulnerabilities": [],
+            "note": "Integrate with Trivy/Snyk for actual vulnerability scanning"
+        }
+        
+        vuln_path = os.path.join(self.package_folder, "vulnerability-report.json")
+        save(self, vuln_path, json.dumps(vuln_report, indent=2))
+        self.output.info(f"Vulnerability report placeholder generated: {vuln_path}")
         
     def package_info(self):
-        """Package info following ngapy patterns"""
+        """Package info following ngapy patterns with Conan-managed Python environment"""
         # Python package info
         self.cpp_info.libs = []
         
-        # Set Python paths following ngapy patterns
-        self.env_info.PYTHONPATH.append(os.path.join(self.package_folder, "openssl_tools"))
+        # Set Python paths following ngapy patterns - managed by Conan cache/remote
+        python_package_path = os.path.join(self.package_folder, "openssl_tools")
+        self.env_info.PYTHONPATH.append(python_package_path)
         
-        # Set environment variables
+        # Set Conan-managed Python environment variables
         self.env_info.OPENSSL_TOOLS_CONFIG = os.path.join(self.package_folder, "tools_config.json")
         self.env_info.OPENSSL_TOOLS_ROOT = self.package_folder
         
+        # Set Python interpreter path from Conan environment
+        conan_python_path = os.path.join(self.package_folder, "python")
+        if os.path.exists(conan_python_path):
+            self.env_info.PYTHON_EXECUTABLE = os.path.join(conan_python_path, "bin", "python")
+            self.env_info.PYTHON_HOME = conan_python_path
+        else:
+            # Fallback to system Python with Conan-managed paths
+            self.env_info.PYTHON_EXECUTABLE = sys.executable
+            self.env_info.PYTHON_HOME = os.path.dirname(os.path.dirname(sys.executable))
+        
+        # Set Conan cache paths for Python environment
+        conan_cache_python = os.path.join(self.package_folder, "conan_cache", "python")
+        if os.path.exists(conan_cache_python):
+            self.env_info.CONAN_PYTHON_CACHE = conan_cache_python
+            self.env_info.PYTHONPATH.append(conan_cache_python)
+        
         # Add to PATH for command-line tools
-        self.env_info.PATH.append(os.path.join(self.package_folder, "bin"))
+        bin_path = os.path.join(self.package_folder, "bin")
+        if os.path.exists(bin_path):
+            self.env_info.PATH.append(bin_path)
+        
+        # Set Conan remote Python environment variables
+        self.env_info.CONAN_PYTHON_ENV = "managed"
+        self.env_info.CONAN_PYTHON_SOURCE = "cache_remote"
         
     def package_id(self):
         """Optimize package ID for better caching"""

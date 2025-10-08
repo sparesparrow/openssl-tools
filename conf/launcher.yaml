@@ -1,0 +1,9 @@
+launcher:
+  build_optimization: true
+  cache_cleanup: true
+  conan_home: ''
+  git_repository: ''
+  parallel_downloads: true
+  python_interpreter: ''
+  remote_setup: ''
+  version: '2.0'

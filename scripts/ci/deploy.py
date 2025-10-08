@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenSSL Deployment Automation Script
-Based on ngapy-dev patterns for robust deployment automation
+Based on openssl-tools patterns for robust deployment automation
 """
 
 import argparse

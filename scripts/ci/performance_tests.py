@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenSSL Performance Testing Script
-Based on ngapy-dev patterns for comprehensive performance validation
+Based on openssl-tools patterns for comprehensive performance validation
 """
 
 import argparse

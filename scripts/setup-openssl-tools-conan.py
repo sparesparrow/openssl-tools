@@ -2,7 +2,7 @@
 """
 OpenSSL Tools Conan Environment Setup
 Sets up a complete Python-based Conan development environment for openssl-tools
-Based on ngapy-dev patterns for proper Python dev/testing environment
+Based on openssl-tools patterns for proper Python dev/testing environment
 """
 
 import os
