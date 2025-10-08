@@ -1,18 +1,31 @@
-# Core dependencies
+# Core dependencies - following ngapy patterns with Conan 2.x
 requests>=2.31.0
 click>=8.1.0
 pyyaml>=6.0.0
 jinja2>=3.1.0
+conan>=2.0.0  # Use Conan 2.x with GitHub Packages
 
-# Optional dependencies (install with extras)
-# numpy>=1.20.0; extra == "statistics"
-# scipy>=1.7.0; extra == "statistics"
-# pygithub>=1.59.0; extra == "github"
-# python-gitlab>=4.0.0; extra == "gitlab"
+# Optional dependencies for statistics
+numpy>=1.20.0
+scipy>=1.7.0
 
-# Development dependencies (install with extras)
-# pytest>=7.0.0; extra == "dev"
-# pytest-cov>=4.0.0; extra == "dev"
-# black>=22.0.0; extra == "dev"
-# flake8>=5.0.0; extra == "dev"
-# mypy>=1.0.0; extra == "dev"
+# Optional dependencies for GitHub integration
+pygithub>=1.59.0
+
+# Optional dependencies for GitLab integration
+python-gitlab>=4.0.0
+
+# Optional dependencies for API integration
+httpx>=0.25.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+
+# Additional utilities following ngapy patterns
+GitPython>=3.1.0
+pathlib>=1.0.1
+psutil>=5.8.0

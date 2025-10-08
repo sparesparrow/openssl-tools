@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """
 OpenSSL Tools Conan Package Recipe
-Python tools for OpenSSL development with Conan integration
+Python tools for OpenSSL development with Conan 2.x integration
+Based on ngapy-dev patterns for proper Python dev/testing environment
 """
 
 from conan import ConanFile
 from conan.tools.files import copy, save, load
 from conan.tools.scm import Git
+from conan.tools.env import VirtualBuildEnv
+from conan.tools.gnu import PkgConfigDeps
+from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
 from conan.errors import ConanInvalidConfiguration
+from datetime import datetime, timezone
 import os
+import glob
+import logging
+import sys
 import json
 import uuid
 from pathlib import Path
@@ -26,7 +34,7 @@ class OpenSSLToolsConan(ConanFile):
     topics = ("openssl", "tools", "development", "review", "release")
     
     # Package configuration
-    settings = "os", "arch"
+    settings = "os", "arch", "compiler", "build_type"
     options = {
         "enable_review_tools": [True, False],
         "enable_release_tools": [True, False],
@@ -45,13 +53,12 @@ class OpenSSLToolsConan(ConanFile):
         "enable_api_integration": True,
     }
     
-    # No build requirements for Python tools
+    # Python package - no build requirements for Python tools
     def build_requirements(self):
         # Install Python dependencies via pip
         import subprocess
-        import sys
         
-        # Install core dependencies
+        # Core dependencies
         core_deps = ["requests>=2.31.0", "click>=8.1.0", "pyyaml>=6.0.0", "jinja2>=3.1.0"]
         
         # Install optional dependencies based on options
@@ -78,29 +85,46 @@ class OpenSSLToolsConan(ConanFile):
     def requirements(self):
         # No C++ dependencies for Python tools
         pass
-    
+
+    def set_version(self):
+        """Set version from git or default - following ngapy patterns"""
+        try:
+            git = Git(self)
+            # Get version from git describe or use default
+            version = git.run("describe --tags --always --dirty")
+            if version:
+                # Clean up version string
+                version = version.strip().replace("v", "")
+                self.version = version
+            else:
+                self.version = "1.0.0"
+        except:
+            self.version = "1.0.0"
+
     def system_requirements(self):
-        # Python 3.8+ is required
+        """System requirements - Python 3.8+ required"""
         import sys
         if sys.version_info < (3, 8):
             raise ConanInvalidConfiguration("Python 3.8 or higher is required")
-    
+
     def configure(self):
         """Configure package options"""
         pass
-    
+
     def validate(self):
         """Validate configuration"""
         # Validate Python version
         import sys
         if sys.version_info < (3, 8):
             raise ConanInvalidConfiguration("Python 3.8 or higher is required")
-    
+
     def export_sources(self):
+        """Export source files"""
         # Export all source files
         copy(self, "*", src=self.recipe_folder, dst=self.export_sources_folder)
         
     def layout(self):
+        """Layout for Python package"""
         # Use basic layout for Python package
         pass
         
@@ -110,7 +134,7 @@ class OpenSSLToolsConan(ConanFile):
         self._generate_tools_config()
         
     def _generate_tools_config(self):
-        """Generate tools configuration file"""
+        """Generate tools configuration file following ngapy patterns"""
         config = {
             "tools": {
                 "review_tools": {
@@ -166,7 +190,7 @@ class OpenSSLToolsConan(ConanFile):
         save(self, config_path, json.dumps(config, indent=2))
         
     def build(self):
-        """Build Python tools package with optimization"""
+        """Build Python tools package with optimization following ngapy patterns"""
         # Set up build optimization
         self._setup_build_optimization()
         
@@ -185,7 +209,7 @@ class OpenSSLToolsConan(ConanFile):
             self._integrate_statistics_tools()
     
     def _setup_build_optimization(self):
-        """Set up build optimization and caching"""
+        """Set up build optimization and caching following ngapy patterns"""
         try:
             from openssl_tools.utils.build_optimizer import BuildOptimizer
             
@@ -208,7 +232,7 @@ class OpenSSLToolsConan(ConanFile):
             self.build_optimizer = None
     
     def _create_package_structure(self):
-        """Create Python package structure"""
+        """Create Python package structure following ngapy patterns"""
         package_dir = os.path.join(self.build_folder, "openssl_tools")
         os.makedirs(package_dir, exist_ok=True)
         
@@ -256,7 +280,7 @@ from .utils import *
             copy(self, "*", src=stats_src, dst=stats_dst)
     
     def package(self):
-        """Package the tools"""
+        """Package the tools following ngapy patterns"""
         # Copy Python package
         copy(self, "openssl_tools", src=self.build_folder, dst=self.package_folder)
         
@@ -278,7 +302,7 @@ from .utils import *
         self._generate_sbom()
         
     def _generate_sbom(self):
-        """Generate Software Bill of Materials"""
+        """Generate Software Bill of Materials following ngapy patterns"""
         self.output.info("Generating Software Bill of Materials (SBOM)...")
         
         sbom_data = {
@@ -340,10 +364,17 @@ from .utils import *
                     sbom_data["components"].append(component)
                 except Exception as e:
                     self.output.warning(f"Failed to add dependency {dep} to SBOM: {e}")
+        
+        # Save SBOM
+        sbom_path = os.path.join(self.package_folder, "sbom.json")
+        save(self, sbom_path, json.dumps(sbom_data, indent=2))
+        
+    def package_info(self):
+        """Package info following ngapy patterns"""
         # Python package info
         self.cpp_info.libs = []
         
-        # Set Python paths
+        # Set Python paths following ngapy patterns
         self.env_info.PYTHONPATH.append(os.path.join(self.package_folder, "openssl_tools"))
         
         # Set environment variables
