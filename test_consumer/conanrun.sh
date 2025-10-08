@@ -1,0 +1,1 @@
+. "/home/sparrow/projects/openssl-tools/test_consumer/conanrunenv.sh"

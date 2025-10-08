@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Performance Benchmarking Script for OpenSSL Conan Package
-Based on ngapy-dev patterns with comprehensive performance analysis
+Based on openssl-tools patterns with comprehensive performance analysis
 """
 
 import os

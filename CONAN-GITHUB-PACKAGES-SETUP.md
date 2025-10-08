@@ -1,6 +1,6 @@
 # OpenSSL Tools Conan 2.x + GitHub Packages Setup
 
-This document describes how to set up a proper Python dev/testing environment with Conan 2.x and GitHub Packages for the openssl-tools project, following patterns from ngapy-dev.
+This document describes how to set up a proper Python dev/testing environment with Conan 2.x and GitHub Packages for the openssl-tools project, following patterns from openssl-tools.
 
 ## 🚀 Quick Start
 
@@ -346,7 +346,7 @@ python scripts/test-openssl-tools-conan.py --test-type=conan --profile=macos-cla
 
 - [Conan 2.x Documentation](https://docs.conan.io/2/)
 - [GitHub Packages Documentation](https://docs.github.com/en/packages)
-- [ngapy-dev Patterns](https://bitbucket.honeywell.com/projects/NGAIMS/repos/ngapy-dev)
+- [openssl-tools Patterns](https://bitbucket.honeywell.com/projects/NGAIMS/repos/openssl-tools)
 - [OpenSSL Tools Repository](https://github.com/sparesparrow/openssl-tools)
 
 ## 🆘 Support
@@ -360,4 +360,4 @@ For issues and questions:
 
 ---
 
-This setup provides a robust, scalable, and maintainable Python development environment with Conan 2.x and GitHub Packages, following proven patterns from ngapy-dev while leveraging modern tooling and GitHub's ecosystem.
+This setup provides a robust, scalable, and maintainable Python development environment with Conan 2.x and GitHub Packages, following proven patterns from openssl-tools while leveraging modern tooling and GitHub's ecosystem.

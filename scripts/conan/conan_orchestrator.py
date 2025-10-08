@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Conan Orchestrator - Advanced CI/CD automation for OpenSSL
-Based on ngapy-dev patterns with enhanced error handling and monitoring
+Based on openssl-tools patterns with enhanced error handling and monitoring
 """
 
 import os
@@ -62,7 +62,7 @@ class BuildResult:
     metrics: Dict[str, Any] = None
 
 class ConanOrchestrator:
-    """Advanced Conan orchestrator with CI/CD automation - pattern from ngapy-dev"""
+    """Advanced Conan orchestrator with CI/CD automation - pattern from openssl-tools"""
     
     def __init__(self, project_root: Path):
         self.project_root = project_root
@@ -242,7 +242,7 @@ tools.cmake.cmaketoolchain:jobs={self.config['build']['jobs']}
             return False, e.stdout if capture_output else "", e.stderr if capture_output else str(e)
     
     def setup_conan_remote(self) -> bool:
-        """Set up Conan remote - pattern from ngapy-dev artifactory_functions.py"""
+        """Set up Conan remote - pattern from openssl-tools artifactory_functions.py"""
         logger.info("🔗 Setting up Conan remote...")
         
         # Clean existing remotes
