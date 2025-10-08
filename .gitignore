@@ -1,43 +1,35 @@
-# From reports/*
-bugs.csv
-bugs.full
-cve.txt
-cve.xsl
-issues.csv
-issues/*.js
-pulls.csv
-pulls/*.js
-releases.txt
-team
-team.counts
-team.full
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dll
 
-# From license
-adpass.txt
-ropass.txt
-rwpass.txt
-ghpass.txt
+# Builds
+build/
+dist/
+*.egg-info/
+src/*.egg-info/
+.eggs/
 
-# QueryApp
-/QueryApp/Makefile
-/QueryApp/Makefile.old
-/QueryApp/META.yml
-/QueryApp/MYMETA.*
-/QueryApp/blib
-/QueryApp/inc
-/QueryApp/pm_to_blib
+# Virtualenvs
+.venv/
+venv/
+ENV/
 
-# OpenSSL-Query
-/OpenSSL-Query/Makefile
-/OpenSSL-Query/Makefile.old
-/OpenSSL-Query/META.yml
-/OpenSSL-Query/MYMETA.*
-/OpenSSL-Query/blib
-/OpenSSL-Query/inc
-/OpenSSL-Query/pm_to_blib
+# Tools
+.pytest_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
 
-# in case someone forgets and commits their token
-github-approve-label-workflow/token.txt
+# IDE
+.vscode/
+.idea/
+*.iml
+.DS_Store
 
-# Generic
-*~
+# Local scripts/tests not for package index (optional)
+simple_test.py
+venv/
