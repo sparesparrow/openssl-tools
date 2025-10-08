@@ -126,19 +126,24 @@ class OpenSSLToolsTestConan(ConanFile):
         # Get Conan executable
         conan_exe = self._get_conan_executable()
         
-        # Get profile path
+        # Get profile path - check both local and global profiles
         profile_path = self.conan_dir / "profiles" / f"{profile}.profile"
         if not profile_path.exists():
-            logger.error(f"Profile not found: {profile_path}")
-            return False
+            # Try global Conan profiles directory (without .profile extension)
+            import os
+            global_profile_path = Path.home() / ".conan2" / "profiles" / profile
+            if global_profile_path.exists():
+                profile_path = global_profile_path
+            else:
+                logger.error(f"Profile not found: {profile_path} or {global_profile_path}")
+                return False
         
         # Run conan create with test (Conan 2.x syntax)
         cmd = [
             str(conan_exe),
             "create",
             ".",
-            "--profile", str(profile_path),
-            "--test-folder", "test_package"
+            "--profile", str(profile_path)
         ]
         
         if verbose:
