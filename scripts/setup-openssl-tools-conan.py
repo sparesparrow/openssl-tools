@@ -39,7 +39,7 @@ class OpenSSLToolsConanSetup:
             self._create_directory_structure()
             
             # Set up Python virtual environment
-            self._setup_python_venv()
+            self._setup_python_venv(force)
             
             # Install dependencies
             self._install_dependencies()
@@ -76,13 +76,24 @@ class OpenSSLToolsConanSetup:
             directory.mkdir(parents=True, exist_ok=True)
             logger.info(f"📁 Created directory: {directory}")
     
-    def _setup_python_venv(self):
+    def _setup_python_venv(self, force: bool = False):
         """Set up Python virtual environment"""
         logger.info("🐍 Setting up Python virtual environment...")
         
         if self.venv_dir.exists() and not force:
-            logger.info("Virtual environment already exists, skipping...")
-            return
+            # Check if it's actually a valid virtual environment
+            if self.platform == "windows":
+                pip_exe = self.venv_dir / "Scripts" / "pip.exe"
+            else:
+                pip_exe = self.venv_dir / "bin" / "pip"
+            
+            if pip_exe.exists():
+                logger.info("Virtual environment already exists, skipping...")
+                return
+            else:
+                logger.info("Virtual environment directory exists but is invalid, recreating...")
+                import shutil
+                shutil.rmtree(self.venv_dir)
         
         # Create virtual environment
         subprocess.run([sys.executable, "-m", "venv", str(self.venv_dir)], check=True)
