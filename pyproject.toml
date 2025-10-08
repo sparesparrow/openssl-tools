@@ -14,7 +14,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = ["PyYAML>=6.0", "requests>=2.31"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
