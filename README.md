@@ -7,7 +7,7 @@ A comprehensive toolkit for OpenSSL development, build optimization, and securit
 ### Core Components
 
 - **Python Environment Manager**: Automated setup of isolated Python environments for versions 3.8-3.12
-- **Conan Remote Manager**: GitHub Packages integration for package management
+- **Conan Remote Manager**: GitHub Packages integration via Maven registry for package management
 - **Build Cache Manager**: Intelligent caching system with >70% hit rate optimization
 - **Package Signer**: Supply chain security with cosign integration
 - **Fuzz Integration**: Automated fuzzing with fuzz-corpora dependency
@@ -58,8 +58,11 @@ python setup_python_env.py --list
 #### 2. Configure Conan with GitHub Packages
 
 ```bash
-# Set up GitHub Packages remote
-export GITHUB_TOKEN="your_github_token"
+# Set up SSH authentication (recommended)
+python conan_remote_manager.py --setup-ssh
+
+# Or use token-based authentication
+export GITHUB_TOKEN="your_github_token"  # Must have packages:write permissions
 python conan_remote_manager.py --setup
 
 # List configured remotes
@@ -150,8 +153,12 @@ graph TB
 
 ```bash
 # GitHub integration
-export GITHUB_TOKEN="your_github_token"
+export GITHUB_TOKEN="your_github_token"  # Must have packages:write permissions
 export GITHUB_USERNAME="sparesparrow"
+
+# SSH authentication (recommended)
+# Ensure SSH key is set up: ssh-keygen -t rsa -b 4096
+# Add public key to GitHub: https://github.com/settings/keys
 
 # Conan configuration
 export CONAN_USER_HOME="$HOME/.conan"
@@ -175,7 +182,7 @@ export FUZZ_RESULTS_DIR="./fuzz-results"
 path = ~/.conan/data
 
 [remotes]
-github-packages = https://nuget.pkg.github.com/sparesparrow/index.json
+github-packages = https://maven.pkg.github.com/sparesparrow/openssl
 
 [log]
 level = info

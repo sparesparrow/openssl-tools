@@ -81,6 +81,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_USERNAME: sparesparrow
       run: |
+        python conan_remote_manager.py --setup-ssh
         python conan_remote_manager.py --test
         python conan_remote_manager.py --list
         

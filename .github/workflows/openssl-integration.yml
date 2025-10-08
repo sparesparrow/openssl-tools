@@ -97,6 +97,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         pip install conan==2.0.17
+        python conan_remote_manager.py --setup-ssh
         python conan_remote_manager.py --setup
         
     - name: Clone OpenSSL repository

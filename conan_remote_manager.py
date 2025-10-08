@@ -25,7 +25,7 @@ class ConanRemoteManager:
     """Manages Conan remotes and package operations."""
     
     def __init__(self, github_token: Optional[str] = None, username: Optional[str] = None):
-        self.github_packages_url = "https://nuget.pkg.github.com/sparesparrow/index.json"
+        self.github_packages_url = "https://maven.pkg.github.com/sparesparrow/openssl"
         self.github_token = github_token or os.getenv("GITHUB_TOKEN")
         self.username = username or os.getenv("GITHUB_USERNAME", "sparesparrow")
         self.remote_name = "github-packages"
@@ -65,8 +65,14 @@ class ConanRemoteManager:
                 self.github_packages_url, "--force"
             ], check=True)
             
-            # Login to GitHub Packages
-            logger.info("Logging in to GitHub Packages")
+            # Login to GitHub Packages using SSH
+            logger.info("Logging in to GitHub Packages using SSH")
+            # For Maven registry, we use the username and a personal access token
+            # The token should have packages:write permissions
+            if not self.github_token:
+                logger.error("GitHub token required for Maven registry authentication")
+                return False
+                
             subprocess.run([
                 "conan", "remote", "login", self.remote_name, 
                 self.username, self.github_token
@@ -332,12 +338,47 @@ class ConanRemoteManager:
             logger.error(f"Failed to get package info: {e}")
             return None
             
+    def setup_ssh_authentication(self) -> bool:
+        """Set up SSH-based authentication for GitHub Packages."""
+        logger.info("Setting up SSH authentication for GitHub Packages...")
+        
+        try:
+            # Check if SSH key exists
+            ssh_key_path = Path.home() / ".ssh" / "id_rsa"
+            if not ssh_key_path.exists():
+                logger.warning("SSH key not found. Please generate one with: ssh-keygen -t rsa -b 4096")
+                return False
+                
+            # Test SSH connection to GitHub
+            result = subprocess.run([
+                "ssh", "-T", "git@github.com"
+            ], capture_output=True, text=True, timeout=10)
+            
+            if "successfully authenticated" in result.stderr.lower():
+                logger.info("SSH authentication to GitHub successful")
+                return True
+            else:
+                logger.error(f"SSH authentication failed: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            logger.error("SSH connection timeout")
+            return False
+        except Exception as e:
+            logger.error(f"SSH setup failed: {e}")
+            return False
+            
     def test_connection(self) -> bool:
         """Test the connection to GitHub Packages."""
         logger.info("Testing connection to GitHub Packages...")
         
+        # First try SSH authentication
+        if self.setup_ssh_authentication():
+            return True
+            
+        # Fallback to token-based authentication
         if not self.github_token:
-            logger.error("GitHub token not configured")
+            logger.error("Neither SSH nor GitHub token configured")
             return False
             
         # Test GitHub API access
@@ -379,6 +420,7 @@ def main():
     parser.add_argument("--download", nargs="+", help="Download packages (patterns)")
     parser.add_argument("--search", help="Search for packages")
     parser.add_argument("--test", action="store_true", help="Test connection")
+    parser.add_argument("--setup-ssh", action="store_true", help="Set up SSH authentication")
     parser.add_argument("--remote", default="github-packages", help="Remote name")
     
     args = parser.parse_args()
@@ -420,6 +462,11 @@ def main():
                 print(f"  {pkg['name']}/{pkg['version']}")
         else:
             print("No packages found")
+            
+    if args.setup_ssh:
+        success = manager.setup_ssh_authentication()
+        if not success:
+            sys.exit(1)
             
     if args.test:
         success = manager.test_connection()
