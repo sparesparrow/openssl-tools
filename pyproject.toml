@@ -24,3 +24,5 @@ where = ["src"]
 
 [project.scripts]
 openssl-tools = "openssl_tools.cli:main"
+openssl-tools-orchestrate = "openssl_tools.commands.run_conan_orchestrator:main"
+openssl-tools-setup-python = "openssl_tools.commands.run_setup_conan_python_env:main"
