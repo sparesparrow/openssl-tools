@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenSSL Test Harness
-Based on openssl-tools test harness patterns for comprehensive testing
+Based on ngapy-dev test harness patterns for comprehensive testing
 """
 
 import json
@@ -19,7 +19,7 @@ import yaml
 
 
 class TestLogger:
-    """Test logging class based on openssl-tools patterns"""
+    """Test logging class based on ngapy-dev patterns"""
     
     def __init__(self, results_dir: Path):
         self.results_dir = results_dir
@@ -123,7 +123,7 @@ class TestLogger:
 
 
 class OpenSSLTestHarness:
-    """OpenSSL Test Harness based on openssl-tools patterns"""
+    """OpenSSL Test Harness based on ngapy-dev patterns"""
     
     def __init__(self, results_dir: Optional[Path] = None):
         self.results_dir = results_dir or Path("test_results")
@@ -331,7 +331,7 @@ def run_test(function_to_run: Callable, results_dir_path: Path,
              header_message: str) -> str:
     """
     Run a test procedure function
-    Based on openssl-tools run_test pattern
+    Based on ngapy-dev run_test pattern
     
     Args:
         function_to_run: Function to be executed, should contain verifications

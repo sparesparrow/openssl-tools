@@ -7,12 +7,10 @@ compiler.libcxx=libstdc++11
 build_type=Release
 
 [options]
-openssl-tools:enable_review_tools=True
-openssl-tools:enable_release_tools=True
-openssl-tools:enable_statistics=True
-openssl-tools:enable_github_integration=True
-openssl-tools:enable_gitlab_integration=False
-openssl-tools:enable_api_integration=True
+openssl-tools/*:enable_review_tools=True
+openssl-tools/*:enable_release_tools=True
+openssl-tools/*:enable_statistics_tools=True
+openssl-tools/*:enable_utils=True
 
 [conf]
 # Build optimization

@@ -43,7 +43,7 @@ class DependencyManager:
                     "schedule": "weekly",  # daily, weekly, monthly
                     "exclude_packages": [
                         "openssl",  # Don't auto-update OpenSSL itself
-                        "openssl-python-environment"  # Critical system packages
+                        "titan-python-environment"  # Critical system packages
                     ],
                     "update_strategy": "patch",  # patch, minor, major
                     "test_after_update": True,

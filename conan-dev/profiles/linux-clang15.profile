@@ -1,19 +1,18 @@
 [settings]
 os=Linux
+arch=x86_64
 compiler=clang
 compiler.version=15
 compiler.libcxx=libstdc++11
 build_type=Release
-arch=x86_64
 
-[options]
-openssl-tools:enable_review_tools=True
-openssl-tools:enable_release_tools=True
-openssl-tools:enable_statistics=True
-openssl-tools:enable_github_integration=True
-openssl-tools:enable_gitlab_integration=False
-openssl-tools:enable_api_integration=True
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.system.package_manager:mode=install
+tools.system.package_manager:sudo=True
 
-[env]
-CC=clang-15
-CXX=clang++-15
+[buildenv]
+CC=clang
+CXX=clang++
+CFLAGS=-O2 -g
+CXXFLAGS=-O2 -g

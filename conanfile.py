@@ -1,410 +1,574 @@
 #!/usr/bin/env python3
 """
-OpenSSL Tools Conan Package Recipe
-Python tools for OpenSSL development with Conan 2.x integration
-Based on openssl-tools patterns for proper Python dev/testing environment
+OpenSSL Conan Package Recipe
+Production-ready Conan 2.x recipe with comprehensive OpenSSL build support
 """
 
 from conan import ConanFile
-from conan.tools.files import copy, save, load
+from conan.tools.gnu import AutotoolsToolchain, AutotoolsDeps, Autotools
+from conan.tools.files import copy, save, load, chdir
 from conan.tools.scm import Git
-from conan.tools.env import VirtualBuildEnv
-from conan.tools.gnu import PkgConfigDeps
-from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
+from conan.tools.system import package_manager
 from conan.errors import ConanInvalidConfiguration
-from datetime import datetime, timezone
 import os
-import glob
-import logging
-import sys
+import re
+import hashlib
 import json
 import uuid
-import hashlib
-from pathlib import Path
 
 
-class OpenSSLToolsConan(ConanFile):
-    name = "openssl-tools"
-    version = "1.0.0"
+class OpenSSLConan(ConanFile):
+    name = "openssl"
+    version = None  # Dynamically determined from VERSION.dat
     
     # Package metadata
-    description = "Python tools for OpenSSL development, review, and release management"
-    homepage = "https://github.com/sparesparrow/openssl-tools"
-    url = "https://github.com/sparesparrow/openssl-tools"
+    description = "OpenSSL is a robust, commercial-grade, full-featured toolkit for TLS and SSL protocols"
+    homepage = "https://www.openssl.org"
+    url = "https://github.com/openssl/openssl"
     license = "Apache-2.0"
-    topics = ("openssl", "tools", "development", "review", "release")
+    topics = ("ssl", "tls", "cryptography", "security")
     
     # Package configuration
-    settings = "os", "arch", "compiler", "build_type"
+    settings = "os", "compiler", "build_type", "arch"
     options = {
-        "enable_review_tools": [True, False],
-        "enable_release_tools": [True, False],
-        "enable_statistics": [True, False],
-        "enable_github_integration": [True, False],
-        "enable_gitlab_integration": [True, False],
-        "enable_api_integration": [True, False],
+        # Core build options
+        "shared": [True, False],
+        "fPIC": [True, False],
+        
+        # Security & Compliance
+        "fips": [True, False],
+        "no_deprecated": [True, False],
+        
+        # Features
+        "enable_demos": [True, False],
+        "enable_h3demo": [True, False],
+        "enable_sslkeylog": [True, False],
+        "enable_quic": [True, False],
+        
+        # Protocol support
+        "enable_ssl3": [True, False],
+        "enable_ssl3_method": [True, False],
+        "no_dtls": [True, False],
+        "no_tls1": [True, False],
+        "no_tls1_1": [True, False],
+        
+        # Cryptographic algorithms
+        "enable_md2": [True, False],
+        "enable_md4": [True, False],
+        "enable_weak_ssl_ciphers": [True, False],
+        "enable_ec_nistp_64_gcc_128": [True, False],
+        
+        # Performance & Optimization
+        "no_asm": [True, False],
+        "no_threads": [True, False],
+        "no_bulk": [True, False],
+        
+        # Debugging & Testing
+        "enable_crypto_mdebug": [True, False],
+        "enable_trace": [True, False],
+        "enable_asan": [True, False],
+        "enable_ubsan": [True, False],
+        "enable_msan": [True, False],
+        "enable_tsan": [True, False],
+        "enable_unit_test": [True, False],
+        "enable_external_tests": [True, False],
+        "enable_fuzzer_afl": [True, False],
+        "enable_fuzzer_libfuzzer": [True, False],
+        "enable_buildtest_c++": [True, False],
+        
+        # System integration
+        "enable_ktls": [True, False],
+        "enable_sctp": [True, False],
+        
+        # Compression
+        "enable_zlib": [True, False],
+        "enable_zlib_dynamic": [True, False],
+        "enable_zstd": [True, False],
+        "enable_brotli": [True, False],
+        
+        # Legacy & Compatibility
+        "no_legacy": [True, False],
+        "no_afalgeng": [True, False],
+        
+        # Miscellaneous
+        "enable_egd": [True, False],
+        "no_cached_fetch": [True, False],
+        
+        # Legacy options (for backward compatibility)
+        "no_zlib": [True, False],
+        "386": [True, False],
+        "no_sse2": [True, False],
+        "no_bf": [True, False],
+        "no_cast": [True, False],
+        "no_des": [True, False],
+        "no_dh": [True, False],
+        "no_dsa": [True, False],
+        "no_hmac": [True, False],
+        "no_md2": [True, False],
+        "no_md4": [True, False],
+        "no_md5": [True, False],
+        "no_mdc2": [True, False],
+        "no_rc2": [True, False],
+        "no_rc4": [True, False],
+        "no_rc5": [True, False],
+        "no_rsa": [True, False],
+        "no_sha": [True, False],
+        "openssldir": ["ANY"],
+        "cafile": ["ANY"], 
+        "capath": ["ANY"],
+        "no_pinshared": [True, False],
+        "no_stdio": [True, False],
+        "enable_lms": [True, False],
+        "enable_crypto_mdebug_backtrace": [True, False],
     }
     
     default_options = {
-        "enable_review_tools": True,
-        "enable_release_tools": True,
-        "enable_statistics": True,
-        "enable_github_integration": True,
-        "enable_gitlab_integration": False,
-        "enable_api_integration": True,
+        # Core build options
+        "shared": True,
+        "fPIC": True,
+        
+        # Security & Compliance
+        "fips": False,
+        "no_deprecated": False,
+        
+        # Features
+        "enable_demos": False,
+        "enable_h3demo": False,
+        "enable_sslkeylog": False,
+        "enable_quic": True,
+        
+        # Protocol support
+        "enable_ssl3": False,
+        "enable_ssl3_method": False,
+        "no_dtls": False,
+        "no_tls1": False,
+        "no_tls1_1": False,
+        
+        # Cryptographic algorithms
+        "enable_md2": False,
+        "enable_md4": False,
+        "enable_weak_ssl_ciphers": False,
+        "enable_ec_nistp_64_gcc_128": False,
+        
+        # Performance & Optimization
+        "no_asm": False,
+        "no_threads": False,
+        "no_bulk": False,
+        
+        # Debugging & Testing
+        "enable_crypto_mdebug": False,
+        "enable_trace": False,
+        "enable_asan": False,
+        "enable_ubsan": False,
+        "enable_msan": False,
+        "enable_tsan": False,
+        "enable_unit_test": False,
+        "enable_external_tests": False,
+        "enable_fuzzer_afl": False,
+        "enable_fuzzer_libfuzzer": False,
+        "enable_buildtest_c++": False,
+        
+        # System integration
+        "enable_ktls": False,
+        "enable_sctp": False,
+        
+        # Compression
+        "enable_zlib": False,
+        "enable_zlib_dynamic": False,
+        "enable_zstd": False,
+        "enable_brotli": False,
+        
+        # Legacy & Compatibility
+        "no_legacy": False,
+        "no_afalgeng": False,
+        
+        # Miscellaneous
+        "enable_egd": False,
+        "no_cached_fetch": False,
+        
+        # Legacy options (for backward compatibility)
+        "no_zlib": False,
+        "386": False,
+        "no_sse2": False,
+        "no_bf": False,
+        "no_cast": False,
+        "no_des": False,
+        "no_dh": False,
+        "no_dsa": False,
+        "no_hmac": False,
+        "no_md2": True,
+        "no_md4": False,
+        "no_md5": False,
+        "no_mdc2": False,
+        "no_rc2": False,
+        "no_rc4": False,
+        "no_rc5": True,
+        "no_rsa": False,
+        "no_sha": False,
+        "openssldir": "/usr/local/ssl",
+        "cafile": "",
+        "capath": "",
+        "no_pinshared": False,
+        "no_stdio": False,
+        "enable_lms": False,
+        "enable_crypto_mdebug_backtrace": False,
     }
     
-    # Python package - no build requirements for Python tools
+    # Build requirements
     def build_requirements(self):
-        # For Python tools, we don't install dependencies during build
-        # Dependencies should be handled by the consumer
-        self.output.info("Python tools package - dependencies handled by consumer")
-    
-    # Python dependencies - handled by pip in build_requirements
+        if self.settings.os == "Windows":
+            self.tool_requires("nasm/2.15.05")
+            self.tool_requires("strawberryperl/5.32.0.1")
+        # Use system perl for Unix-like systems
+        # self.tool_requires("perl/5.38.0")
+        
+    # Runtime requirements  
     def requirements(self):
-        # No C++ dependencies for Python tools
-        pass
-
-    def set_version(self):
-        """Set version from git or default - following ngapy patterns"""
-        try:
-            git = Git(self)
-            # Get version from git describe or use default
-            version = git.run("describe --tags --always --dirty")
-            if version:
-                # Clean up version string
-                version = version.strip().replace("v", "")
-                self.version = version
-            else:
-                self.version = "1.0.0"
-        except:
-            self.version = "1.0.0"
-
+        if not self.options.no_zlib:
+            self.requires("zlib/1.3.1")
+        
+        if self.options.enable_zstd:
+            self.requires("zstd/1.5.5")
+            
+        if self.options.enable_brotli:
+            self.requires("brotli/1.1.0")
+        
+        # Add fuzz corpora if fuzzing is enabled
+        if (self.options.enable_fuzzer_afl or self.options.enable_fuzzer_libfuzzer or 
+            os.getenv("OSSL_RUN_CI_TESTS")):
+            self.requires("openssl-fuzz-corpora/1.0.0")
+            
     def system_requirements(self):
-        """System requirements - Python 3.8+ required"""
-        import sys
-        if sys.version_info < (3, 8):
-            raise ConanInvalidConfiguration("Python 3.8 or higher is required")
-
+        # System package requirements for different platforms
+        package_manager.Apt(self).install(["build-essential", "perl"])
+        package_manager.Yum(self).install(["gcc", "gcc-c++", "make", "perl"])
+        package_manager.PacMan(self).install(["base-devel", "perl"])
+        package_manager.Zypper(self).install(["gcc", "gcc-c++", "make", "perl"])
+        
+    def set_version(self):
+        """Dynamically determine version from VERSION.dat"""
+        version_file = os.path.join(self.recipe_folder, "VERSION.dat")
+        if not os.path.exists(version_file):
+            # Fallback for testing or if VERSION.dat is missing
+            self.output.warning("VERSION.dat not found, using default version 4.0.0")
+            self.version = "4.0.0"
+            return
+            
+        try:
+            content = load(self, version_file)
+            version_match = re.search(r'MAJOR=(\d+)', content)
+            minor_match = re.search(r'MINOR=(\d+)', content)  
+            patch_match = re.search(r'PATCH=(\d+)', content)
+            
+            if version_match and minor_match and patch_match:
+                major = version_match.group(1)
+                minor = minor_match.group(1)
+                patch = patch_match.group(1)
+                self.version = f"{major}.{minor}.{patch}"
+                self.output.info(f"Detected OpenSSL version: {self.version}")
+            else:
+                raise ConanInvalidConfiguration("VERSION.dat exists but couldn't parse version numbers")
+        except Exception as e:
+            self.output.error(f"Failed to read VERSION.dat: {e}")
+            raise
+                
     def configure(self):
-        """Configure package options"""
-        pass
-
+        """Configure and validate build options"""
+        # Static builds don't need fPIC
+        if not self.options.shared:
+            del self.options.fPIC
+            
+        # Configure build options based on settings
+        if self.settings.build_type == "Debug":
+            self.options.enable_crypto_mdebug = True
+            
+        # Security-focused builds
+        if self.options.fips:
+            self.options.enable_unit_test = True
+            
+        # Performance builds  
+        if self.settings.build_type == "Release" and self.settings.arch in ["x86_64", "armv8"]:
+            self.options.no_asm = False
+            
+        # Sanitizers require debug build
+        if self.settings.build_type != "Debug":
+            if self.options.enable_asan or self.options.enable_ubsan or \
+               self.options.enable_msan or self.options.enable_tsan:
+                self.output.warn("Sanitizers require Debug build, disabling")
+                self.options.enable_asan = False
+                self.options.enable_ubsan = False
+                self.options.enable_msan = False
+                self.options.enable_tsan = False
+    
     def validate(self):
-        """Validate configuration"""
-        # Validate Python version
-        import sys
-        if sys.version_info < (3, 8):
-            raise ConanInvalidConfiguration("Python 3.8 or higher is required")
+        """Validate configuration options for conflicts"""
+        # Check for conflicting options
+        if self.options.fips and self.options.no_asm:
+            raise ConanInvalidConfiguration(
+                "FIPS mode requires assembly optimizations. "
+                "Cannot use fips=True with no_asm=True. "
+                "Set no_asm=False or disable FIPS."
+            )
+        
+        if self.options.fips and self.settings.build_type == "Debug":
+            self.output.warning(
+                "FIPS validation may behave differently in Debug builds. "
+                "Consider using Release build_type for production FIPS deployments."
+            )
+        
+        # Sanitizers are mutually exclusive
+        sanitizers = [
+            bool(self.options.enable_asan),
+            bool(self.options.enable_msan),
+            bool(self.options.enable_tsan)
+        ]
+        if sum(sanitizers) > 1:
+            raise ConanInvalidConfiguration(
+                "Only one sanitizer can be enabled at a time. "
+                "Choose either ASAN, MSAN, or TSAN, not multiple."
+            )
+        
+        # Sanitizers don't work well with optimization
+        if any(sanitizers) and self.settings.build_type == "Release":
+            # Be stricter off Linux, where Release+sanitizers tends to be flaky
+            if self.settings.os != "Linux":
+                raise ConanInvalidConfiguration(
+                    "Sanitizers with Release build_type are not supported on this platform. "
+                    "Use build_type=Debug or disable sanitizers."
+                )
+            else:
+                self.output.warning(
+                    "Sanitizers work best with Debug builds. "
+                    "Consider using build_type=Debug for sanitizer testing."
+                )
+        
+        # Check for no_threads with QUIC (QUIC needs threading)
+        if self.options.no_threads and self.options.enable_quic:
+            raise ConanInvalidConfiguration(
+                "QUIC protocol requires threading support. "
+                "Cannot use no_threads=True with enable_quic=True."
+            )
+        
+        # ASAN doesn't work well with Release optimization on Windows
+        if (self.options.enable_asan and 
+            self.settings.build_type == "Release" and 
+            self.settings.os == "Windows"):
+            raise ConanInvalidConfiguration(
+                "ASAN doesn't work well with Release optimization on Windows. "
+                "Use Debug build_type or disable ASAN for Windows Release builds."
+            )
 
+        # Cross-platform option sanity
+        if getattr(self.options, "no_sse2", False) and str(self.settings.arch) not in ["x86", "x86_64"]:
+            raise ConanInvalidConfiguration(
+                "Option no_sse2 is only meaningful on x86/x86_64 architectures."
+            )
+
+        if getattr(self.options, "386", False) and str(self.settings.arch) != "x86":
+            raise ConanInvalidConfiguration(
+                "Option 386 can only be used when arch=x86."
+            )
+
+        if self.options.enable_msan and (str(self.settings.os) != "Linux" or "clang" not in str(self.settings.compiler)):
+            raise ConanInvalidConfiguration(
+                "MSAN builds are only supported with clang on Linux."
+            )
+            
     def export_sources(self):
-        """Export source files"""
-        # Export all source files
+        """Export full source tree for reproducible builds"""
+        # Export all source files - critical for reproducible builds
         copy(self, "*", src=self.recipe_folder, dst=self.export_sources_folder)
         
     def layout(self):
-        """Layout for Python package"""
-        # Use basic layout for Python package
+        """Use basic layout for OpenSSL's in-tree build system"""
+        # OpenSSL builds in-tree, so we don't separate source and build
         pass
         
     def generate(self):
-        """Generate configuration files"""
-        # Generate tools configuration
-        self._generate_tools_config()
+        """Generate Autotools toolchain and dependencies"""
+        # Generate dependencies
+        deps = AutotoolsDeps(self)
+        deps.generate()
         
-    def _generate_tools_config(self):
-        """Generate tools configuration file following ngapy patterns"""
-        config = {
-            "tools": {
-                "review_tools": {
-                    "enabled": self.options.enable_review_tools,
-                    "min_reviewers": 2,
-                    "min_otc": 0,
-                    "min_omc": 0,
-                    "api_endpoint": "https://api.openssl.org"
-                },
-                "release_tools": {
-                    "enabled": self.options.enable_release_tools,
-                    "templates_dir": "templates",
-                    "output_dir": "releases"
-                },
-                "statistics": {
-                    "enabled": self.options.enable_statistics,
-                    "alpha_chi2": 0.95,
-                    "alpha_binomial": 0.9999
-                },
-                "github": {
-                    "enabled": self.options.enable_github_integration,
-                    "api_endpoint": "https://api.github.com"
-                },
-                "gitlab": {
-                    "enabled": self.options.enable_gitlab_integration,
-                    "api_endpoint": "https://gitlab.com/api/v4"
-                }
-            },
-            "conan": {
-                "package_name": self.name,
-                "version": self.version,
-                "build_type": "Release"  # Default for Python tools
-            }
-        }
+        # Generate Autotools toolchain
+        tc = AutotoolsToolchain(self)
         
-        config_path = os.path.join(self.build_folder, "tools_config.json")
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
-        # Convert all options to strings for JSON serialization
-        config["conan"]["build_options"] = {k: str(v) for k, v in self.options.items()}
+        # Configure OpenSSL-specific environment
+        self._configure_openssl_environment(tc)
         
-        # Ensure all values are JSON serializable
-        def make_json_serializable(obj):
-            if hasattr(obj, '__dict__'):
-                return {k: make_json_serializable(v) for k, v in obj.__dict__.items()}
-            elif isinstance(obj, dict):
-                return {k: make_json_serializable(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [make_json_serializable(item) for item in obj]
-            else:
-                return str(obj)
+        tc.generate()
         
-        config = make_json_serializable(config)
-        save(self, config_path, json.dumps(config, indent=2))
+    def _configure_openssl_environment(self, tc):
+        """Configure OpenSSL-specific environment variables and flags"""
+        # Set OpenSSL configuration environment
+        if self.options.openssldir:
+            tc.environment.define("OPENSSL_CONF", str(self.options.openssldir))
+        
+        # Configure compiler flags for OpenSSL
+        if self.settings.build_type == "Debug":
+            tc.environment.define("CFLAGS", "-g -O0")
+            tc.environment.define("CXXFLAGS", "-g -O0")
+        elif self.settings.build_type == "Release":
+            tc.environment.define("CFLAGS", "-O2 -DNDEBUG")
+            tc.environment.define("CXXFLAGS", "-O2 -DNDEBUG")
+        
+        # Add strict warnings for CI builds
+        if os.getenv("OSSL_RUN_CI_TESTS"):
+            tc.environment.append("CFLAGS", "-Wall -Wextra -Werror")
+            tc.environment.append("CXXFLAGS", "-Wall -Wextra -Werror")
+        
+        # Configure threading
+        if not self.options.no_threads:
+            if self.settings.os == "Linux":
+                tc.environment.define("THREADS", "pthread")
+            elif self.settings.os == "Windows":
+                tc.environment.define("THREADS", "win32")
+        
+        # Configure assembly optimizations
+        if not self.options.no_asm:
+            if self.settings.arch == "x86_64":
+                tc.environment.define("ASM", "x86_64")
+            elif self.settings.arch == "armv8":
+                tc.environment.define("ASM", "aarch64")
+        
+        # Configure FIPS
+        if self.options.fips:
+            tc.environment.define("FIPS", "1")
+            tc.environment.define("FIPS_MODULE", "1")
+        
+    def _get_configure_command(self):
+        """Generate OpenSSL configure command based on options"""
+        args = ["./config", "--banner=Configured"]
+        
+        # Validate that config script exists
+        if not os.path.exists("./config"):
+            raise ConanInvalidConfiguration("OpenSSL config script not found in source directory")
+        
+        # Basic options
+        if not self.options.shared:
+            args.append("no-shared")
+            
+        if self.options.fips:
+            args.append("enable-fips")
+            self.output.info("FIPS mode enabled - ensure compliance requirements are met")
+            
+        if self.options.no_asm:
+            args.append("no-asm")
+            
+        if self.options.no_threads:
+            args.append("no-threads")
+            
+        # Crypto options
+        crypto_options = [
+            "bf", "cast", "des", "dh", "dsa", "hmac", "md2", "md4", "md5", 
+            "mdc2", "rc2", "rc4", "rc5", "rsa", "sha"
+        ]
+        
+        for option in crypto_options:
+            try:
+                if getattr(self.options, f"no_{option}", False):
+                    args.append(f"no-{option}")
+            except AttributeError:
+                self.output.warning(f"Option 'no_{option}' not found, skipping")
+                
+        # Enable options
+        enable_options = [
+            "weak_ssl_ciphers", "ssl3", "ssl3_method", "trace", "unit_test",
+            "ubsan", "asan", "msan", "tsan", "fuzzer_afl", "fuzzer_libfuzzer",
+            "external_tests", "buildtest_c++", "crypto_mdebug", 
+            "crypto_mdebug_backtrace", "lms", "quic", "h3demo", "demos",
+            "sslkeylog", "md2", "md4", "ec_nistp_64_gcc_128",
+            "ktls", "sctp", "zlib", "zlib_dynamic", "zstd", "brotli", "egd"
+        ]
+        
+        # No- options
+        no_options = [
+            "deprecated", "dtls", "tls1", "tls1_1", "legacy", "afalgeng",
+            "cached_fetch", "bulk", "rc5"
+        ]
+        
+        for option in enable_options:
+            try:
+                if getattr(self.options, f"enable_{option}", False):
+                    # Special handling for fuzzer options
+                    if option in ["fuzzer_afl", "fuzzer_libfuzzer"]:
+                        args.append(f"fuzz-{option.replace('fuzzer_', '')}")
+                    else:
+                        args.append(f"enable-{option.replace('_', '-')}")
+            except AttributeError:
+                self.output.warning(f"Option 'enable_{option}' not found, skipping")
+                
+        for option in no_options:
+            try:
+                if getattr(self.options, f"no_{option}", False):
+                    args.append(f"no-{option.replace('_', '-')}")
+            except AttributeError:
+                self.output.warning(f"Option 'no_{option}' not found, skipping")
+                
+        # Directories
+        if self.options.openssldir:
+            openssldir = str(self.options.openssldir)
+            if not os.path.isabs(openssldir):
+                self.output.warning(f"openssldir '{openssldir}' is relative, consider using absolute path")
+            args.append(f"--openssldir={openssldir}")
+        else:
+            args.append(f"--openssldir={os.path.join(self.package_folder, 'ssl')}")
+            
+        args.append(f"--prefix={self.package_folder}")
+        
+        # Compiler flags
+        if self.settings.build_type == "Debug":
+            args.append("--debug")
+        elif self.settings.build_type == "Release":
+            args.append("--release")
+        else:
+            self.output.warning(f"Unknown build_type '{self.settings.build_type}', using default")
+            
+        # Add strict warnings for CI builds
+        if os.getenv("OSSL_RUN_CI_TESTS"):
+            args.append("--strict-warnings")
+            
+        self.output.info(f"Configure command: {' '.join(args)}")
+        return args
         
     def build(self):
-        """Build Python tools package with optimization following ngapy patterns"""
-        # Set up build optimization
-        self._setup_build_optimization()
+        """Build OpenSSL using Autotools"""
+        # Configure OpenSSL
+        configure_args = self._get_configure_command()
+        self.run(" ".join(configure_args))
         
-        # Create Python package structure
-        self._create_package_structure()
+        # Build
+        jobs = os.getenv("CONAN_CPU_COUNT", "1")
+        self.run(f"make -j{jobs}")
         
-        # Convert Perl tools to Python
-        if self.options.enable_review_tools:
-            self._convert_review_tools()
+        # Download fuzz corpora if fuzzing is enabled
+        if (self.options.enable_fuzzer_afl or self.options.enable_fuzzer_libfuzzer or 
+            os.getenv("OSSL_RUN_CI_TESTS")):
+            self._setup_fuzz_corpora()
+        
+        # Run tests if enabled and not skipped
+        if (self.options.enable_unit_test or os.getenv("OSSL_RUN_CI_TESTS")) and not self._should_skip_tests():
+            self.run("make test")
             
-        if self.options.enable_release_tools:
-            self._convert_release_tools()
-            
-        # Integrate existing Python tools
-        if self.options.enable_statistics:
-            self._integrate_statistics_tools()
-    
-    def _setup_build_optimization(self):
-        """Set up build optimization and caching following openssl-tools patterns"""
+    def _should_skip_tests(self):
+        """Check if tests should be skipped based on tools.build:skip_test"""
+        # Check for tools.build:skip_test in conanfile.txt or profile
         try:
-            from openssl_tools.utils.build_optimizer import BuildOptimizer
+            # This would be set by the profile or conanfile.txt
+            return os.getenv("CONAN_SKIP_TESTS", "false").lower() == "true"
+        except:
+            return False
             
-            # Build configuration
-            config = {
-                'source_dir': self.source_folder,
-                'build_dir': self.build_folder,
-                'max_jobs': int(os.environ.get('CONAN_CPU_COUNT', '4')),
-                'enable_ccache': True,
-                'enable_sccache': False,
-                'optimize_build': True,
-                'reproducible_builds': True,
-                'cache_dir': os.path.join(self.build_folder, 'cache')
-            }
-            
-            self.build_optimizer = BuildOptimizer(config)
-            self.output.info("Build optimization enabled")
-            
-        except ImportError:
-            self.output.warning("Build optimization not available")
-            self.build_optimizer = None
-    
-    def _create_package_structure(self):
-        """Create Python package structure following ngapy patterns"""
-        package_dir = os.path.join(self.build_folder, "openssl_tools")
-        os.makedirs(package_dir, exist_ok=True)
-        
-        # Create __init__.py
-        init_content = '''"""
-OpenSSL Tools Package
-Python tools for OpenSSL development, review, and release management
-"""
-
-__version__ = "1.0.0"
-__author__ = "OpenSSL Tools Team"
-__license__ = "Apache-2.0"
-
-# Import main modules
-from .review_tools import *
-from .release_tools import *
-from .statistics import *
-from .utils import *
-'''
-        save(self, os.path.join(package_dir, "__init__.py"), init_content)
-        
-        # Create subdirectories
-        subdirs = ["review_tools", "release_tools", "statistics", "utils", "templates"]
-        for subdir in subdirs:
-            os.makedirs(os.path.join(package_dir, subdir), exist_ok=True)
-            save(self, os.path.join(package_dir, subdir, "__init__.py"), "")
-    
-    def _convert_review_tools(self):
-        """Convert Perl review tools to Python"""
-        # This will be implemented in the next step
-        pass
-        
-    def _convert_release_tools(self):
-        """Convert release tools to Python"""
-        # This will be implemented in the next step
-        pass
-        
-    def _integrate_statistics_tools(self):
-        """Integrate existing Python statistics tools"""
-        # Copy existing Python tools
-        stats_src = os.path.join(self.source_folder, "statistics")
-        stats_dst = os.path.join(self.build_folder, "openssl_tools", "statistics")
-        
-        if os.path.exists(stats_src):
-            copy(self, "*", src=stats_src, dst=stats_dst)
-    
     def package(self):
-        """Package the tools following ngapy patterns with Conan-managed Python environment"""
-        # Copy Python package
-        self.output.info(f"Copying openssl_tools from {self.source_folder} to {self.package_folder}")
-        import shutil
-        src_path = os.path.join(self.source_folder, "openssl_tools")
-        dst_path = os.path.join(self.package_folder, "openssl_tools")
-        if os.path.exists(src_path):
-            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-            self.output.info(f"Copied openssl_tools directory successfully")
-        else:
-            self.output.warning(f"openssl_tools directory not found at {src_path}")
+        """Package OpenSSL"""
+        # Install OpenSSL
+        self.run("make install_sw install_ssldirs")
         
-        # Create Conan-managed Python environment structure
-        self._create_conan_python_environment()
+        # Copy license
+        copy(self, "LICENSE.txt", src=".", dst=os.path.join(self.package_folder, "licenses"))
         
-        # Copy configuration
-        copy(self, "tools_config.json", src=self.build_folder, dst=self.package_folder)
-        
-        # Copy templates
-        if self.options.enable_release_tools:
-            templates_src = os.path.join(self.source_folder, "release-tools", "release-aux")
-            templates_dst = os.path.join(self.package_folder, "templates")
-            if os.path.exists(templates_src):
-                copy(self, "*", src=templates_src, dst=templates_dst)
-        
-        # Copy documentation
-        copy(self, "README*", src=self.source_folder, dst=self.package_folder)
-        copy(self, "HOWTO-*.md", src=self.source_folder, dst=self.package_folder)
-        
-        # Generate SBOM
+        # Generate SBOM (Software Bill of Materials)
         self._generate_sbom()
-    
-    def _create_conan_python_environment(self):
-        """Create Conan-managed Python environment structure"""
-        self.output.info("Creating Conan-managed Python environment...")
-        
-        # Create Python environment directories
-        python_env_dir = os.path.join(self.package_folder, "python")
-        python_bin_dir = os.path.join(python_env_dir, "bin")
-        python_lib_dir = os.path.join(python_env_dir, "lib")
-        python_cache_dir = os.path.join(self.package_folder, "conan_cache", "python")
-        
-        os.makedirs(python_bin_dir, exist_ok=True)
-        os.makedirs(python_lib_dir, exist_ok=True)
-        os.makedirs(python_cache_dir, exist_ok=True)
-        
-        # Create Python wrapper script that uses Conan-managed environment
-        python_wrapper_content = f'''#!/usr/bin/env python3
-"""
-Conan-managed Python environment wrapper
-Ensures correct Python path resolution from Conan cache/remote
-"""
-import os
-import sys
-import subprocess
-from pathlib import Path
-
-# Get Conan package root
-CONAN_PACKAGE_ROOT = Path(__file__).parent.parent
-CONAN_PYTHON_ENV = CONAN_PACKAGE_ROOT / "python"
-CONAN_PYTHON_CACHE = CONAN_PACKAGE_ROOT / "conan_cache" / "python"
-
-def setup_conan_python_environment():
-    """Setup Conan-managed Python environment"""
-    # Set Python paths from Conan environment
-    python_paths = [
-        str(CONAN_PACKAGE_ROOT / "openssl_tools"),
-        str(CONAN_PYTHON_CACHE),
-        str(CONAN_PYTHON_ENV / "lib"),
-    ]
-    
-    # Update PYTHONPATH
-    current_pythonpath = os.environ.get('PYTHONPATH', '')
-    new_pythonpath = os.pathsep.join(python_paths + [current_pythonpath])
-    os.environ['PYTHONPATH'] = new_pythonpath
-    
-    # Set Conan environment variables
-    os.environ['CONAN_PYTHON_ENV'] = 'managed'
-    os.environ['CONAN_PYTHON_SOURCE'] = 'cache_remote'
-    os.environ['CONAN_PYTHON_CACHE'] = str(CONAN_PYTHON_CACHE)
-    os.environ['OPENSSL_TOOLS_ROOT'] = str(CONAN_PACKAGE_ROOT)
-    
-    # Add to sys.path for current session
-    for path in python_paths:
-        if path not in sys.path:
-            sys.path.insert(0, path)
-
-if __name__ == "__main__":
-    # Setup environment and run with system Python
-    setup_conan_python_environment()
-    
-    # Use system Python with Conan-managed paths
-    python_cmd = [sys.executable] + sys.argv[1:]
-    sys.exit(subprocess.run(python_cmd).returncode)
-'''
-        
-        python_wrapper_path = os.path.join(python_bin_dir, "python")
-        save(self, python_wrapper_path, python_wrapper_content)
-        
-        # Make wrapper executable on Unix systems
-        if os.name != 'nt':
-            os.chmod(python_wrapper_path, 0o755)
-        
-        # Create environment activation script
-        activate_script_content = f'''#!/bin/bash
-# Conan-managed Python environment activation
-export CONAN_PYTHON_ENV="managed"
-export CONAN_PYTHON_SOURCE="cache_remote"
-export CONAN_PYTHON_CACHE="{python_cache_dir}"
-export OPENSSL_TOOLS_ROOT="{self.package_folder}"
-export PYTHONPATH="{os.path.join(self.package_folder, 'openssl_tools')}:{python_cache_dir}:$PYTHONPATH"
-export PATH="{python_bin_dir}:$PATH"
-
-echo "Conan-managed Python environment activated"
-echo "Python source: cache/remote"
-echo "Python cache: {python_cache_dir}"
-echo "OpenSSL Tools root: {self.package_folder}"
-'''
-        
-        activate_script_path = os.path.join(python_bin_dir, "activate")
-        save(self, activate_script_path, activate_script_content)
-        
-        # Make activation script executable
-        if os.name != 'nt':
-            os.chmod(activate_script_path, 0o755)
-        
-        # Create environment info file
-        env_info = {
-            "conan_python_env": "managed",
-            "conan_python_source": "cache_remote",
-            "python_executable": python_wrapper_path,
-            "python_home": python_env_dir,
-            "python_cache": python_cache_dir,
-            "openssl_tools_root": self.package_folder,
-            "python_paths": [
-                os.path.join(self.package_folder, "openssl_tools"),
-                python_cache_dir,
-                os.path.join(python_env_dir, "lib")
-            ]
-        }
-        
-        env_info_path = os.path.join(self.package_folder, "python_env_info.json")
-        save(self, env_info_path, json.dumps(env_info, indent=2))
-        
-        self.output.info(f"Created Conan-managed Python environment at {python_env_dir}")
         
     def _calculate_file_hash(self, filepath, algorithm='sha256'):
         """Calculate cryptographic hash of a file"""
@@ -417,92 +581,72 @@ echo "OpenSSL Tools root: {self.package_folder}"
         except Exception as e:
             self.output.warning(f"Failed to calculate hash for {filepath}: {e}")
             return None
-
-    def _generate_sbom(self):
-        """Generate Software Bill of Materials with security features following openssl-tools patterns"""
-        self.output.info("Generating Software Bill of Materials (SBOM) with security features...")
-        
-        try:
-            from openssl_tools.utils.sbom_generator import SBOMGenerator
-            
-            # Package information for SBOM
-            package_info = {
-                'name': self.name,
-                'version': str(self.version),
-                'description': self.description,
-                'homepage': self.homepage,
-                'url': self.url,
-                'license': self.license,
-                'package_folder': self.package_folder,
-                'os': str(self.settings.os),
-                'arch': str(self.settings.arch),
-                'build_type': str(self.settings.build_type),
-                'options': {k: str(v) for k, v in self.options.items()},
-                'settings': {k: str(v) for k, v in self.settings.items()},
-                'dependencies': self._get_package_dependencies()
-            }
-            
-            # SBOM generator configuration
-            sbom_config = {
-                'enable_vulnerability_scanning': True,
-                'enable_package_signing': os.getenv('CONAN_SIGN_PACKAGES', 'false').lower() == 'true',
-                'enable_dependency_analysis': True,
-                'enable_license_analysis': True,
-                'trivy_path': 'trivy',
-                'syft_path': 'syft',
-                'cosign_path': 'cosign'
-            }
-            
-            # Generate SBOM
-            sbom_generator = SBOMGenerator(sbom_config)
-            sbom_data = sbom_generator.generate_sbom(package_info)
-            
-            # Save SBOM
-            sbom_path = os.path.join(self.package_folder, "sbom.json")
-            save(self, sbom_path, json.dumps(sbom_data, indent=2))
-            
-            # Also save as YAML for readability
-            sbom_yaml_path = os.path.join(self.package_folder, "sbom.yaml")
-            import yaml
-            save(self, sbom_yaml_path, yaml.dump(sbom_data, default_flow_style=False, sort_keys=False))
-            
-            self.output.info(f"SBOM generated with {len(sbom_data.get('components', []))} components")
-            if sbom_data.get('vulnerabilities'):
-                self.output.warning(f"Found {len(sbom_data['vulnerabilities'])} vulnerabilities")
-            
-        except ImportError:
-            self.output.warning("Enhanced SBOM generation not available, using basic SBOM")
-            self._generate_basic_sbom()
-        except Exception as e:
-            self.output.warning(f"Enhanced SBOM generation failed: {e}, using basic SBOM")
-            self._generate_basic_sbom()
     
-    def _generate_basic_sbom(self):
-        """Generate basic SBOM as fallback"""
-        # Calculate hashes for main files
-        file_hashes = {}
-        for root, dirs, files in os.walk(self.package_folder):
-            for file in files:
-                if file.endswith(('.py', '.json', '.yaml', '.yml')):
-                    file_path = os.path.join(root, file)
-                    sha256 = self._calculate_file_hash(file_path, 'sha256')
+    def _validate_licenses(self):
+        """Validate dependency licenses for compliance"""
+        approved_licenses = [
+            "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", 
+            "ISC", "Zlib", "OpenSSL"
+        ]
+        
+        license_report = {
+            "approved": [],
+            "unknown": [],
+            "incompatible": []
+        }
+        
+        # For Python tools, we don't have C++ dependencies
+        deps = getattr(self, 'deps_cpp_info', None)
+        if deps and hasattr(deps, 'deps'):
+            for dep in deps.deps:
+                # In real implementation, you'd query license info from Conan metadata
+                # This is a simplified version
+                dep_license = "Unknown"  # Would get from deps[dep] metadata
+            
+                if dep_license in approved_licenses:
+                    license_report["approved"].append(f"{dep}: {dep_license}")
+                elif dep_license == "Unknown":
+                    license_report["unknown"].append(dep)
+                    self.output.warning(f"Unknown license for dependency: {dep}")
+                else:
+                    license_report["incompatible"].append(f"{dep}: {dep_license}")
+                    self.output.warning(f"Potentially incompatible license: {dep} ({dep_license})")
+        
+        # Save license report
+        license_path = os.path.join(self.package_folder, "licenses", "license-report.json")
+        save(self, license_path, json.dumps(license_report, indent=2))
+        return license_report
+    
+    def _generate_sbom(self):
+        """Generate enhanced SBOM with security features"""
+        self.output.info("Generating Software Bill of Materials (SBOM)...")
+        
+        # Calculate hashes for main libraries
+        lib_hashes = {}
+        lib_dir = os.path.join(self.package_folder, "lib")
+        if os.path.exists(lib_dir):
+            for lib_file in ["libssl.a", "libcrypto.a", "libssl.so", "libcrypto.so",
+                            "libssl.dylib", "libcrypto.dylib"]:
+                lib_path = os.path.join(lib_dir, lib_file)
+                if os.path.exists(lib_path):
+                    sha256 = self._calculate_file_hash(lib_path, 'sha256')
                     if sha256:
-                        rel_path = os.path.relpath(file_path, self.package_folder)
-                        file_hashes[rel_path] = {
+                        lib_hashes[lib_file] = {
                             "sha256": sha256,
                             "algorithm": "SHA-256"
                         }
         
-        # Enhanced metadata collection - pattern from openssl-tools
+        # Enhanced metadata collection
         build_metadata = {
             "build_timestamp": os.environ.get("SOURCE_DATE_EPOCH", ""),
             "build_platform": f"{self.settings.os}-{self.settings.arch}",
-            "compiler": "python",  # Python tools don't use C++ compiler
-            "build_type": "Release",  # Default for Python tools
-            "conan_version": "2.0",  # Would get from actual Conan version
+            "compiler": f"{self.settings.compiler}-{self.settings.compiler.version}",
+            "build_type": str(self.settings.build_type),
+            "conan_version": "2.0",
             "build_options": {k: str(v) for k, v in self.options.items()}
         }
         
+        # Enhanced SBOM data structure
         sbom_data = {
             "bomFormat": "CycloneDX",
             "specVersion": "1.5",
@@ -511,14 +655,14 @@ echo "OpenSSL Tools root: {self.package_folder}"
             "metadata": {
                 "timestamp": str(os.environ.get("SOURCE_DATE_EPOCH", "")),
                 "component": {
-                    "type": "application",
+                    "type": "library",
                     "bom-ref": f"{self.name}@{self.version}",
                     "name": self.name,
                     "version": str(self.version),
                     "description": self.description,
                     "licenses": [{"license": {"id": "Apache-2.0"}}],
                     "hashes": [{"alg": "SHA-256", "content": h["sha256"]} 
-                              for h in file_hashes.values()],
+                              for h in lib_hashes.values()],
                     "externalReferences": [
                         {
                             "type": "website",
@@ -533,7 +677,7 @@ echo "OpenSSL Tools root: {self.package_folder}"
                         {"name": "build_metadata", "value": json.dumps(build_metadata)},
                         {"name": "conan_options", "value": json.dumps({k: str(v) for k, v in self.options.items()})},
                         {"name": "build_platform", "value": f"{self.settings.os}-{self.settings.arch}"},
-                        {"name": "package_type", "value": "python-tools"}
+                        {"name": "compiler", "value": f"{self.settings.compiler}-{self.settings.compiler.version}"}
                     ]
                 },
                 "tools": [
@@ -548,55 +692,41 @@ echo "OpenSSL Tools root: {self.package_folder}"
             "vulnerabilities": []
         }
         
-        # Add dependencies to SBOM
-        deps = getattr(self, "deps_cpp_info", None)
-        if deps and hasattr(deps, "deps"):
+        # Add dependencies to SBOM with enhanced metadata
+        deps = getattr(self, 'deps_cpp_info', None)
+        if deps and hasattr(deps, 'deps'):
             for dep in deps.deps:
                 try:
-                    dep_version = str(deps[dep].version) if hasattr(deps[dep], "version") else "unknown"
+                    dep_version = str(deps[dep].version) if hasattr(deps[dep], 'version') else "unknown"
                     component = {
                         "type": "library",
                         "bom-ref": f"{dep}@{dep_version}",
                         "name": dep,
                         "version": dep_version,
                         "scope": "required",
-                        "licenses": []
+                        "licenses": []  # Would be populated from dependency metadata
                     }
                     sbom_data["components"].append(component)
                 except Exception as e:
-                    self.output.warning(f"Failed to add dependency {dep} to SBOM: {e}")
+                    self.output.warning(f"Could not add dependency {dep} to SBOM: {e}")
         
         # Save SBOM
         sbom_path = os.path.join(self.package_folder, "sbom.json")
         save(self, sbom_path, json.dumps(sbom_data, indent=2))
         self.output.success(f"SBOM generated: {sbom_path}")
-    
-    def _get_package_dependencies(self):
-        """Get package dependencies for SBOM"""
-        dependencies = {}
         
-        # Get Conan dependencies
-        deps = getattr(self, "deps_cpp_info", None)
-        if deps and hasattr(deps, "deps"):
-            for dep in deps.deps:
-                try:
-                    dep_version = str(deps[dep].version) if hasattr(deps[dep], "version") else "unknown"
-                    dependencies[dep] = {
-                        'version': dep_version,
-                        'type': 'library',
-                        'scope': 'required',
-                        'optional': False
-                    }
-                except Exception as e:
-                    self.output.warning(f"Failed to get dependency info for {dep}: {e}")
+        # Generate package signature if key is available
+        self._sign_package(sbom_path)
         
-        return dependencies
+        # Validate licenses
+        self._validate_licenses()
         
         # Generate vulnerability report placeholder
         self._generate_vulnerability_report()
-
+    
     def _sign_package(self, sbom_path):
         """Sign package for supply chain security (placeholder for actual signing)"""
+        # This would integrate with actual signing tools like cosign, gpg, etc.
         signing_enabled = os.getenv("CONAN_SIGN_PACKAGES", "false").lower() == "true"
         
         if not signing_enabled:
@@ -604,6 +734,9 @@ echo "OpenSSL Tools root: {self.package_folder}"
             return
         
         self.output.info("Package signing placeholder - integrate with cosign/gpg in production")
+        # Example integration points:
+        # - cosign sign-blob --key cosign.key sbom.json
+        # - gpg --detach-sign --armor sbom.json
         
         signature_metadata = {
             "signed": True,
@@ -614,9 +747,10 @@ echo "OpenSSL Tools root: {self.package_folder}"
         
         sig_path = os.path.join(self.package_folder, "package-signature.json")
         save(self, sig_path, json.dumps(signature_metadata, indent=2))
-
+    
     def _generate_vulnerability_report(self):
         """Generate vulnerability scan report (integration point)"""
+        # This would integrate with tools like Trivy, Snyk, OWASP Dependency Check
         vuln_report = {
             "scanTool": "placeholder",
             "scanDate": str(os.environ.get("SOURCE_DATE_EPOCH", "")),
@@ -625,52 +759,175 @@ echo "OpenSSL Tools root: {self.package_folder}"
             "note": "Integrate with Trivy/Snyk for actual vulnerability scanning"
         }
         
+        # Example integration commands (to be run in CI):
+        # trivy fs --format json --output trivy-report.json .
+        # snyk test --json > snyk-report.json
+        
         vuln_path = os.path.join(self.package_folder, "vulnerability-report.json")
         save(self, vuln_path, json.dumps(vuln_report, indent=2))
         self.output.info(f"Vulnerability report placeholder generated: {vuln_path}")
         
     def package_info(self):
-        """Package info following ngapy patterns with Conan-managed Python environment"""
-        # Python package info
-        self.cpp_info.libs = []
+        """Set package information for consumers with component separation"""
+        # Separate components for proper dependency resolution
+        # SSL component
+        self.cpp_info.components["ssl"].libs = ["ssl"]
+        self.cpp_info.components["ssl"].requires = ["crypto"]
         
-        # Set Python paths following ngapy patterns - managed by Conan cache/remote
-        python_package_path = os.path.join(self.package_folder, "openssl_tools")
-        self.env_info.PYTHONPATH.append(python_package_path)
+        # Crypto component  
+        self.cpp_info.components["crypto"].libs = ["crypto"]
         
-        # Set Conan-managed Python environment variables
-        self.env_info.OPENSSL_TOOLS_CONFIG = os.path.join(self.package_folder, "tools_config.json")
-        self.env_info.OPENSSL_TOOLS_ROOT = self.package_folder
+        # Platform-specific system libraries for each component
+        if self.settings.os == "Linux":
+            self.cpp_info.components["ssl"].system_libs.extend(["dl", "pthread"])
+            self.cpp_info.components["crypto"].system_libs.extend(["dl", "pthread"])
+        elif self.settings.os == "Windows":
+            self.cpp_info.components["ssl"].system_libs.extend(["ws2_32", "gdi32", "advapi32", "crypt32", "user32"])
+            self.cpp_info.components["crypto"].system_libs.extend(["ws2_32", "gdi32", "advapi32", "crypt32", "user32"])
+        elif self.settings.os == "Macos":
+            self.cpp_info.components["ssl"].frameworks.append("Security")
+            self.cpp_info.components["crypto"].frameworks.append("Security")
+            
+        # Set binary paths for all components
+        self.cpp_info.bindirs = ["bin"]
+        self.cpp_info.includedirs = ["include"]
+        self.cpp_info.libdirs = ["lib"]
         
-        # Set Python interpreter path from Conan environment
-        conan_python_path = os.path.join(self.package_folder, "python")
-        if os.path.exists(conan_python_path):
-            self.env_info.PYTHON_EXECUTABLE = os.path.join(conan_python_path, "bin", "python")
-            self.env_info.PYTHON_HOME = conan_python_path
+        # Environment variables
+        self.env_info.PATH.append(os.path.join(self.package_folder, "bin"))
+        self.env_info.LD_LIBRARY_PATH.append(os.path.join(self.package_folder, "lib"))
+        
+        # OpenSSL specific configurations
+        if self.options.openssldir:
+            self.env_info.OPENSSL_CONF = os.path.join(str(self.options.openssldir), "openssl.cnf")
         else:
-            # Fallback to system Python with Conan-managed paths
-            self.env_info.PYTHON_EXECUTABLE = sys.executable
-            self.env_info.PYTHON_HOME = os.path.dirname(os.path.dirname(sys.executable))
-        
-        # Set Conan cache paths for Python environment
-        conan_cache_python = os.path.join(self.package_folder, "conan_cache", "python")
-        if os.path.exists(conan_cache_python):
-            self.env_info.CONAN_PYTHON_CACHE = conan_cache_python
-            self.env_info.PYTHONPATH.append(conan_cache_python)
-        
-        # Add to PATH for command-line tools
-        bin_path = os.path.join(self.package_folder, "bin")
-        if os.path.exists(bin_path):
-            self.env_info.PATH.append(bin_path)
-        
-        # Set Conan remote Python environment variables
-        self.env_info.CONAN_PYTHON_ENV = "managed"
-        self.env_info.CONAN_PYTHON_SOURCE = "cache_remote"
-        
+            self.env_info.OPENSSL_CONF = os.path.join(self.package_folder, "ssl", "openssl.cnf")
+            
     def package_id(self):
-        """Optimize package ID for better caching"""
-        # Python tools don't depend on compiler or build_type
-        # Only keep os and arch for Python tools
-        # For Python packages, we only care about os and arch
-        # This method is intentionally simple to avoid Conan API issues
-        pass
+        """Optimize package ID for better caching with FIPS separation"""
+        # Runtime path options don't affect binary compatibility
+        del self.info.options.openssldir
+        del self.info.options.cafile  
+        del self.info.options.capath
+        
+        # Test-only options don't affect package ID
+        del self.info.options.enable_unit_test
+        del self.info.options.enable_external_tests
+        del self.info.options.enable_demos
+        del self.info.options.enable_h3demo
+        
+        # Debug options that don't affect binary interface
+        del self.info.options.enable_trace
+        del self.info.options.enable_crypto_mdebug
+        del self.info.options.enable_crypto_mdebug_backtrace
+        
+        # Sanitizers produce different binaries but can use same cache strategy
+        # Group all sanitizer builds together for caching purposes
+        if (self.info.options.enable_asan or 
+            self.info.options.enable_msan or 
+            self.info.options.enable_tsan or
+            self.info.options.enable_ubsan):
+            # Normalize to "sanitized" build
+            self.info.options.enable_asan = "any_sanitizer"
+            del self.info.options.enable_msan
+            del self.info.options.enable_tsan
+            del self.info.options.enable_ubsan
+        
+        # Fuzzer options don't affect normal usage
+        del self.info.options.enable_fuzzer_afl
+        del self.info.options.enable_fuzzer_libfuzzer
+        
+        # Build test options
+        try:
+            delattr(self.info.options, "enable_buildtest_c++")
+        except AttributeError:
+            pass  # Option might be named differently
+        
+        # CRITICAL FOR FIPS: FIPS builds must have separate cache key
+        # to avoid cross-contamination with non-FIPS builds
+        if self.info.options.fips:
+            # FIPS builds get a unique cache key
+            self.info.options.fips = "fips_enabled"
+        else:
+            # Non-FIPS builds are normalized
+            self.info.options.fips = "fips_disabled"
+        
+        # Enhanced cache key optimization
+        # Group compatible configurations for better cache reuse
+        if self.settings.build_type == "Debug":
+            # All debug builds can share cache regardless of specific debug options
+            self.info.settings.build_type = "Debug"
+        
+        # Group similar architectures for better cache reuse
+        if str(self.settings.arch) in ["x86_64", "amd64"]:
+            self.info.settings.arch = "x86_64"
+        elif str(self.settings.arch) in ["arm64", "aarch64"]:
+            self.info.settings.arch = "arm64"
+        
+        # Group compatible compiler versions
+        if str(self.settings.compiler) == "gcc":
+            if str(self.settings.compiler.version) in ["11", "12", "13"]:
+                self.info.settings.compiler.version = "11+"
+        elif str(self.settings.compiler) == "clang":
+            if str(self.settings.compiler.version) in ["14", "15", "16"]:
+                self.info.settings.compiler.version = "14+"
+    
+    def _setup_fuzz_corpora(self):
+        """Set up fuzz corpora data from Conan package."""
+        try:
+            self.output.info("Setting up fuzz corpora data from Conan package...")
+            
+            # Create fuzz/corpora directory
+            corpora_dir = os.path.join(self.source_folder, "fuzz", "corpora")
+            os.makedirs(corpora_dir, exist_ok=True)
+            
+            # Check if corpora directory is empty or doesn't exist
+            if not os.listdir(corpora_dir):
+                # Get the fuzz corpora package path
+                fuzz_corpora_dep = None
+                for dep in self.dependencies.values():
+                    if dep.ref.name == "openssl-fuzz-corpora":
+                        fuzz_corpora_dep = dep
+                        break
+                
+                if fuzz_corpora_dep:
+                    # Get the corpora path from the package
+                    corpora_package_path = os.path.join(fuzz_corpora_dep.package_folder, "corpora")
+                    
+                    if os.path.exists(corpora_package_path):
+                        self.output.info("Copying fuzz corpora data from Conan package...")
+                        
+                        # Copy corpora data to fuzz/corpora
+                        import shutil
+                        for item in os.listdir(corpora_package_path):
+                            if not item.startswith('.'):
+                                src = os.path.join(corpora_package_path, item)
+                                dst = os.path.join(corpora_dir, item)
+                                
+                                if os.path.isdir(src):
+                                    if os.path.exists(dst):
+                                        shutil.rmtree(dst)
+                                    shutil.copytree(src, dst)
+                                else:
+                                    shutil.copy2(src, dst)
+                        
+                        # Count files for verification
+                        corpora_files = []
+                        for root, dirs, files in os.walk(corpora_dir):
+                            corpora_files.extend(files)
+                        
+                        self.output.info(f"Copied {len(corpora_files)} fuzz corpora files from Conan package")
+                        
+                        # Set environment variable for fuzz tests
+                        os.environ['OPENSSL_FUZZ_CORPORA_PATH'] = corpora_dir
+                        
+                    else:
+                        self.output.warning("Fuzz corpora package path not found")
+                else:
+                    self.output.warning("Fuzz corpora dependency not found")
+            else:
+                self.output.info("Fuzz corpora data already exists, skipping copy")
+                
+        except Exception as e:
+            self.output.warning(f"Failed to set up fuzz corpora: {e}")
+            self.output.warning("Fuzz tests may not have access to corpora data")

@@ -37,7 +37,7 @@ class CIEnvironmentSetup:
         self.profiles_dest = self.conan_home / 'profiles'
         self.conan_dev_venv = self.repo_root / 'conan-dev' / 'venv'
         
-        # Follow oms-dev/openssl-tools pattern: use conan-dev Python as primary
+        # Follow oms-dev/ngapy-dev pattern: use conan-dev Python as primary
         if self.conan_dev_venv.exists():
             self.python_executable = self.conan_dev_venv / 'bin' / 'python'
         else:
@@ -45,7 +45,7 @@ class CIEnvironmentSetup:
             self.python_executable = Path(sys.executable)
         
     def setup_python_environment(self) -> None:
-        """Set up Python environment following oms-dev/openssl-tools patterns."""
+        """Set up Python environment following oms-dev/ngapy-dev patterns."""
         print("[PYTHON] Setting up Python environment...")
         
         # Follow oms-dev pattern: Set PYTHON_APPLICATION environment variable
@@ -78,7 +78,7 @@ class CIEnvironmentSetup:
             print("   (Additional packages will be installed automatically in CI)")
             return
         
-        # Install required packages following openssl-tools pattern
+        # Install required packages following ngapy-dev pattern
         requirements = [
             'conan>=2.0.0',
             'PyYAML',
