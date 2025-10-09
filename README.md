@@ -244,6 +244,58 @@ pytest -n auto
 - **Integration Testing**: Cross-repository compatibility
 - **Performance Benchmarking**: Performance regression testing
 
+## 🔄 Cross-Repository CI Integration
+
+This repository automatically receives build triggers from [sparesparrow/openssl](https://github.com/sparesparrow/openssl) via GitHub repository_dispatch events.
+
+### How it works:
+
+1. **PR Created**: A pull request is created in the OpenSSL repository
+2. **Event Dispatch**: The `trigger-tools.yml` workflow dispatches a `openssl-build-triggered` event to this repository
+3. **Matrix Generation**: The `openssl-ci-dispatcher.yml` workflow receives the event and analyzes changed files
+4. **Intelligent Building**: Build matrix is generated based on file changes (crypto/, ssl/, fips/, etc.)
+5. **Parallel Execution**: OpenSSL is built in parallel across multiple platforms and configurations
+6. **Status Reporting**: Results are reported back via GitHub commit status API and PR comments
+7. **Artifact Upload**: Built packages are uploaded to Artifactory for distribution
+
+### Workflow Components:
+
+#### Main Dispatcher (`openssl-ci-dispatcher.yml`)
+- **Job: prepare-matrix**: Analyzes changed files and generates optimized build matrix
+- **Job: build-openssl**: Builds OpenSSL in parallel across selected configurations
+- **Job: report-status**: Reports results back to OpenSSL repository
+
+#### Build Matrix Generator (`scripts/build_matrix_generator.py`)
+- Analyzes file changes using GitHub API
+- Maps changes to relevant build profiles:
+  - `crypto/` changes → linux-gcc-release, windows-msvc, macos-clang
+  - `providers/fips/` changes → linux-fips (separate cache)
+  - `test/` changes → linux-gcc-debug
+  - `conanfile.py` changes → FULL MATRIX
+- Fallback to minimal build if analysis fails
+
+#### Status Reporter (`scripts/status_reporter.py`)
+- **Commit Status API**: Creates status checks visible in PR
+- **Check Runs API**: Provides detailed build reports with performance metrics
+- **PR Comments**: Posts formatted tables with build results and cache statistics
+
+#### Performance Analyzer (`scripts/performance_analyzer.py`)
+- Analyzes Conan build output for performance metrics
+- Calculates cache hit rates and build times
+- Generates detailed performance reports
+
+### Required Secrets:
+
+- `ARTIFACTORY_TOKEN` - JFrog Artifactory API token
+- `ARTIFACTORY_USER` - Artifactory username  
+- `OPENSSL_REPO_TOKEN` - GitHub PAT with repo scope for status updates
+
+### Cache Management:
+
+- **Nightly Warmup**: `cache-warmup.yml` runs daily at 2 AM to pre-build common configurations
+- **Intelligent Caching**: Separate cache for FIPS builds to prevent contamination
+- **Performance Monitoring**: Cache hit rates and build times are tracked and reported
+
 ### Repository Coordination
 
 The tools repository coordinates with the main OpenSSL repository through:

@@ -1,0 +1,147 @@
+name: Cache Warmup
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs at 2 AM daily
+  workflow_dispatch:
+
+env:
+  CONAN_VERSION: "2.0.17"
+  ARTIFACTORY_URL: "https://artifactory.company.com/artifactory/api/conan/openssl-conan"
+
+jobs:
+  warmup-cache:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            profile: linux-gcc-release
+            cache_key: linux-gcc11-rel
+          - os: ubuntu-22.04
+            profile: linux-fips
+            cache_key: linux-fips
+          - os: windows-2022
+            profile: windows-msvc
+            cache_key: win-msvc2022
+          - os: macos-13
+            profile: macos-clang
+            cache_key: macos-clang15
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout OpenSSL
+      uses: actions/checkout@v4
+      with:
+        repository: sparesparrow/openssl
+        ref: master
+        token: ${{ secrets.OPENSSL_REPO_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install Conan
+      run: |
+        pip install conan==${{ env.CONAN_VERSION }}
+        conan --version
+    
+    - name: Configure Artifactory
+      env:
+        ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+      run: |
+        conan remote add artifactory-openssl ${{ env.ARTIFACTORY_URL }} --force
+        conan remote login artifactory-openssl ${{ secrets.ARTIFACTORY_USER }} -p $ARTIFACTORY_TOKEN
+    
+    - name: Checkout openssl-tools
+      uses: actions/checkout@v4
+      with:
+        repository: sparesparrow/openssl-tools
+        token: ${{ secrets.OPENSSL_REPO_TOKEN }}
+        path: openssl-tools
+    
+    - name: Setup cache profiles
+      run: |
+        # Create .conan directory structure
+        mkdir -p .conan/profiles
+        
+        # Copy profiles from openssl-tools
+        cp openssl-tools/conan-profiles/*.profile .conan/profiles/ || true
+        
+        # Create basic profile if none exist
+        if [ ! -f ".conan/profiles/${{ matrix.profile }}.profile" ]; then
+          cat > .conan/profiles/${{ matrix.profile }}.profile << 'EOF'
+        [settings]
+        os=${{ matrix.os == 'ubuntu-22.04' && 'Linux' || matrix.os == 'windows-2022' && 'Windows' || 'Macos' }}
+        arch=x86_64
+        compiler=gcc
+        compiler.version=11
+        compiler.libcxx=libstdc++11
+        build_type=Release
+        
+        [options]
+        openssl:shared=False
+        openssl:fips=${{ matrix.profile == 'linux-fips' && 'True' || 'False' }}
+        
+        [conf]
+        tools.system.package_manager:mode=install
+        tools.system.package_manager:sudo=True
+        EOF
+        fi
+    
+    - name: Build and upload
+      env:
+        ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+      run: |
+        echo "Building OpenSSL for ${{ matrix.profile }} on ${{ matrix.os }}"
+        
+        # Start timing
+        start_time=$(date +%s)
+        
+        # Build with Conan
+        conan create . \
+          --profile=.conan/profiles/${{ matrix.profile }}.profile \
+          --build=missing \
+          --output-folder=build_output \
+          --format=json > conan_output.json 2>&1 || {
+          echo "Build failed for ${{ matrix.profile }}"
+          exit 1
+        }
+        
+        # Calculate build time
+        end_time=$(date +%s)
+        build_time=$((end_time - start_time))
+        echo "Build completed in ${build_time}s"
+        
+        # Upload to Artifactory
+        conan upload "*" -r artifactory-openssl --confirm --all
+        
+        echo "Upload completed for ${{ matrix.profile }}"
+    
+    - name: Analyze performance
+      run: |
+        python openssl-tools/scripts/performance_analyzer.py \
+          --input conan_output.json \
+          --output performance_report.json \
+          --build-time $build_time
+    
+    - name: Upload cache warmup report
+      uses: actions/upload-artifact@v3
+      with:
+        name: cache-warmup-${{ matrix.profile }}-${{ matrix.os }}
+        path: |
+          performance_report.json
+          conan_output.json
+        retention-days: 7
+    
+    - name: Report cache warmup status
+      if: always()
+      env:
+        GITHUB_TOKEN: ${{ secrets.OPENSSL_REPO_TOKEN }}
+      run: |
+        python openssl-tools/scripts/status_reporter.py \
+          --repo sparesparrow/openssl-tools \
+          --sha ${{ github.sha }} \
+          --artifacts-dir . \
+          --reason "cache-warmup-${{ matrix.profile }}"

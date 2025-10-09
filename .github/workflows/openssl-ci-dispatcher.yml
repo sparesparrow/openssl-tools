@@ -1,0 +1,189 @@
+name: OpenSSL CI Dispatcher
+
+on:
+  repository_dispatch:
+    types: [openssl-build-triggered]
+
+env:
+  CONAN_VERSION: "2.0.17"
+  ARTIFACTORY_URL: "https://artifactory.company.com/artifactory/api/conan/openssl-conan"
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      openssl-sha: ${{ steps.generate-matrix.outputs.openssl-sha }}
+      build-reason: ${{ steps.generate-matrix.outputs.build-reason }}
+    
+    steps:
+    - name: Checkout openssl-tools
+      uses: actions/checkout@v4
+      with:
+        repository: sparesparrow/openssl-tools
+        token: ${{ secrets.OPENSSL_REPO_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install dependencies
+      run: |
+        pip install PyGithub requests gitpython
+    
+    - name: Generate build matrix
+      id: generate-matrix
+      env:
+        GITHUB_TOKEN: ${{ secrets.OPENSSL_REPO_TOKEN }}
+      run: |
+        python scripts/build_matrix_generator.py \
+          --repo sparesparrow/openssl \
+          --sha ${{ github.event.client_payload.sha }} \
+          --output build_matrix.json \
+          --reason "${{ github.event.client_payload.reason }}"
+        
+        # Read outputs
+        MATRIX=$(cat build_matrix.json)
+        echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+        echo "openssl-sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
+        echo "build-reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
+    
+    - name: Upload matrix
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-matrix
+        path: build_matrix.json
+
+  build-openssl:
+    needs: prepare-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    
+    steps:
+    - name: Checkout OpenSSL
+      uses: actions/checkout@v4
+      with:
+        repository: sparesparrow/openssl
+        ref: ${{ needs.prepare-matrix.outputs.openssl-sha }}
+        token: ${{ secrets.OPENSSL_REPO_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install Conan
+      run: |
+        pip install conan==${{ env.CONAN_VERSION }}
+        conan --version
+    
+    - name: Configure Artifactory
+      env:
+        ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+      run: |
+        conan remote add artifactory-openssl ${{ env.ARTIFACTORY_URL }} --force
+        conan remote login artifactory-openssl ${{ secrets.ARTIFACTORY_USER }} -p $ARTIFACTORY_TOKEN
+    
+    - name: Download build matrix
+      uses: actions/download-artifact@v3
+      with:
+        name: build-matrix
+        path: .
+    
+    - name: Build OpenSSL
+      id: build
+      run: |
+        echo "Building OpenSSL for ${{ matrix.profile }} on ${{ matrix.os }}"
+        
+        # Start timing
+        start_time=$(date +%s)
+        
+        # Build with Conan
+        conan create . \
+          --profile=.conan/profiles/${{ matrix.profile }}.profile \
+          --build=missing \
+          --output-folder=build_output \
+          --format=json > conan_output.json 2>&1 || {
+          echo "Build failed for ${{ matrix.profile }}"
+          exit 1
+        }
+        
+        # Calculate build time
+        end_time=$(date +%s)
+        build_time=$((end_time - start_time))
+        echo "build_time=$build_time" >> $GITHUB_OUTPUT
+    
+    - name: Analyze performance
+      run: |
+        python scripts/performance_analyzer.py \
+          --input conan_output.json \
+          --output performance_report.json \
+          --build-time ${{ steps.build.outputs.build_time }}
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: openssl-${{ matrix.profile }}-${{ matrix.os }}
+        path: |
+          build_output/
+          conan_output.json
+          performance_report.json
+        retention-days: 30
+    
+    - name: Upload to Artifactory
+      env:
+        ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+      run: |
+        conan upload "*" -r artifactory-openssl --confirm --all
+
+  report-status:
+    needs: [prepare-matrix, build-openssl]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout openssl-tools
+      uses: actions/checkout@v4
+      with:
+        repository: sparesparrow/openssl-tools
+        token: ${{ secrets.OPENSSL_REPO_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+    
+    - name: Install dependencies
+      run: |
+        pip install PyGithub requests
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+    
+    - name: Generate status report
+      env:
+        GITHUB_TOKEN: ${{ secrets.OPENSSL_REPO_TOKEN }}
+      run: |
+        python scripts/status_reporter.py \
+          --repo sparesparrow/openssl \
+          --sha ${{ needs.prepare-matrix.outputs.openssl-sha }} \
+          --artifacts-dir artifacts \
+          --reason "${{ needs.prepare-matrix.outputs.build-reason }}"
+    
+    - name: Comment on PR
+      if: github.event.client_payload.pr_number
+      env:
+        GITHUB_TOKEN: ${{ secrets.OPENSSL_REPO_TOKEN }}
+      run: |
+        python scripts/status_reporter.py \
+          --repo sparesparrow/openssl \
+          --sha ${{ needs.prepare-matrix.outputs.openssl-sha }} \
+          --artifacts-dir artifacts \
+          --reason "${{ needs.prepare-matrix.outputs.build-reason }}" \
+          --pr-number ${{ github.event.client_payload.pr_number }} \
+          --comment
