@@ -50,7 +50,7 @@ jobs:
         echo "build-reason=${{ github.event.client_payload.reason }}" >> $GITHUB_OUTPUT
     
     - name: Upload matrix
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-matrix
         path: build_matrix.json
@@ -88,7 +88,7 @@ jobs:
         conan remote login artifactory-openssl ${{ secrets.ARTIFACTORY_USER }} -p $ARTIFACTORY_TOKEN
     
     - name: Download build matrix
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build-matrix
         path: .
@@ -124,7 +124,7 @@ jobs:
           --build-time ${{ steps.build.outputs.build_time }}
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: openssl-${{ matrix.profile }}-${{ matrix.os }}
         path: |
@@ -161,7 +161,7 @@ jobs:
         pip install PyGithub requests
     
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts
     

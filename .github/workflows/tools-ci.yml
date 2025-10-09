@@ -166,7 +166,7 @@ jobs:
         semgrep --config=auto --json --output=semgrep-report.json . || true
         
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-reports
         path: |
@@ -318,7 +318,7 @@ jobs:
         python build_optimizer.py --stats >> build_report.md
         
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-artifacts
         path: |

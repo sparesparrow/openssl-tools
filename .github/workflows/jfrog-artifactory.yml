@@ -7,6 +7,13 @@ on:
     branches: [ master, main ]
   release:
     types: [ published ]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual JFrog integration run'
+        required: false
+        default: 'manual-trigger'
+        type: string
 
 jobs:
   build-and-publish:
@@ -108,7 +115,7 @@ jobs:
         jf rt scan openssl-tools-conan --format=json --output=scan-results.json
         
     - name: Upload scan results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-scan-results
         path: scan-results.json

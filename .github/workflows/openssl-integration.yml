@@ -365,7 +365,7 @@ jobs:
         python fuzz_integration.py --report fuzz-results/openssl-fuzz-report.json
         
     - name: Upload fuzz results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: fuzz-results
         path: |
@@ -477,7 +477,7 @@ jobs:
         python performance_test.py > performance_results.txt
         
     - name: Upload performance results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: performance-results
         path: performance_results.txt
@@ -548,7 +548,7 @@ jobs:
         fi
         
     - name: Upload integration report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: integration-report
         path: integration_report.md

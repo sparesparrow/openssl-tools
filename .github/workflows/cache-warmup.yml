@@ -138,7 +138,7 @@ jobs:
           --build-time $build_time
     
     - name: Upload cache warmup report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cache-warmup-${{ matrix.profile }}-${{ matrix.os }}
         path: |
