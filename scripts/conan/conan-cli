@@ -1,0 +1,5 @@
+#!/bin/bash
+# Conan CLI - Unix shell launcher
+# Cross-platform replacement for bash scripts
+
+python "$(dirname "$0")/conan_cli.py" "$@"
