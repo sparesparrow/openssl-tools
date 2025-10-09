@@ -199,7 +199,7 @@ class BuildMatrixGenerator:
         return result
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Generate build matrix for OpenSSL CI')
     parser.add_argument('--repo', required=True, help='Repository name (owner/repo)')

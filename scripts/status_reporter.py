@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import Dict, List, Any, Optional
 from github import Github
 from github.GithubException import GithubException
@@ -20,9 +21,11 @@ from github.GithubException import GithubException
 class StatusReporter:
     """Reports build status back to OpenSSL repository."""
     
-    def __init__(self, github_token: str):
-        """Initialize with GitHub API token."""
+    def __init__(self, github_token: str, max_retries: int = 3, retry_delay: float = 1.0):
+        """Initialize with GitHub API token and retry configuration."""
         self.github = Github(github_token)
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
     
     def analyze_artifacts(self, artifacts_dir: str) -> Dict[str, Any]:
         """Analyze build artifacts and generate summary."""
@@ -101,10 +104,36 @@ class StatusReporter:
         
         return results
     
+    def _retry_github_api_call(self, func, *args, **kwargs):
+        """Retry GitHub API calls with exponential backoff."""
+        for attempt in range(self.max_retries):
+            try:
+                return func(*args, **kwargs)
+            except GithubException as e:
+                if attempt == self.max_retries - 1:
+                    raise e
+                
+                # Check if it's a retryable error
+                if e.status in [500, 502, 503, 504, 429]:
+                    delay = self.retry_delay * (2 ** attempt)
+                    print(f"GitHub API error (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay}s...", file=sys.stderr)
+                    time.sleep(delay)
+                else:
+                    # Non-retryable error
+                    raise e
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise e
+                delay = self.retry_delay * (2 ** attempt)
+                print(f"Unexpected error (attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {delay}s...", file=sys.stderr)
+                time.sleep(delay)
+        
+        return None
+
     def create_status_check(self, repo_name: str, sha: str, results: Dict[str, Any]) -> str:
         """Create commit status check."""
         try:
-            repo = self.github.get_repo(repo_name)
+            repo = self._retry_github_api_call(self.github.get_repo, repo_name)
             
             # Determine overall status
             if results['failed_jobs'] == 0:
@@ -118,7 +147,8 @@ class StatusReporter:
                 description = f"⚠️ {results['successful_jobs']}/{results['total_jobs']} builds successful"
             
             # Create status check
-            status = repo.get_commit(sha).create_status(
+            status = self._retry_github_api_call(
+                repo.get_commit(sha).create_status,
                 state=state,
                 target_url=f"https://github.com/sparesparrow/openssl-tools/actions",
                 description=description,
@@ -135,7 +165,7 @@ class StatusReporter:
     def create_check_run(self, repo_name: str, sha: str, results: Dict[str, Any]) -> str:
         """Create detailed check run."""
         try:
-            repo = self.github.get_repo(repo_name)
+            repo = self._retry_github_api_call(self.github.get_repo, repo_name)
             
             # Determine conclusion
             if results['failed_jobs'] == 0:
@@ -152,7 +182,8 @@ class StatusReporter:
             output = self._generate_check_run_output(results)
             
             # Create check run
-            check_run = repo.create_check_run(
+            check_run = self._retry_github_api_call(
+                repo.create_check_run,
                 name="OpenSSL Tools CI",
                 head_sha=sha,
                 status="completed",
@@ -228,14 +259,14 @@ class StatusReporter:
     def create_pr_comment(self, repo_name: str, pr_number: int, results: Dict[str, Any]) -> str:
         """Create formatted PR comment."""
         try:
-            repo = self.github.get_repo(repo_name)
-            pr = repo.get_pull(pr_number)
+            repo = self._retry_github_api_call(self.github.get_repo, repo_name)
+            pr = self._retry_github_api_call(repo.get_pull, pr_number)
             
             # Generate comment body
             comment_body = self._generate_pr_comment_body(results)
             
             # Create comment
-            comment = pr.create_issue_comment(comment_body)
+            comment = self._retry_github_api_call(pr.create_issue_comment, comment_body)
             
             print(f"Created PR comment on #{pr_number}", file=sys.stderr)
             return comment.html_url
@@ -288,7 +319,7 @@ class StatusReporter:
         return body
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Report build status to OpenSSL repository')
     parser.add_argument('--repo', required=True, help='Repository name (owner/repo)')
@@ -298,6 +329,8 @@ def main():
     parser.add_argument('--pr-number', type=int, help='PR number for commenting')
     parser.add_argument('--comment', action='store_true', help='Create PR comment')
     parser.add_argument('--github-token', help='GitHub token (or use GITHUB_TOKEN env var)')
+    parser.add_argument('--max-retries', type=int, default=3, help='Maximum retry attempts for GitHub API calls')
+    parser.add_argument('--retry-delay', type=float, default=1.0, help='Initial retry delay in seconds')
     
     args = parser.parse_args()
     
@@ -308,8 +341,8 @@ def main():
         sys.exit(1)
     
     try:
-        # Initialize reporter
-        reporter = StatusReporter(github_token)
+        # Initialize reporter with retry configuration
+        reporter = StatusReporter(github_token, args.max_retries, args.retry_delay)
         
         # Analyze artifacts
         results = reporter.analyze_artifacts(args.artifacts_dir)

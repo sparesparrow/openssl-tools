@@ -284,6 +284,21 @@ This repository automatically receives build triggers from [sparesparrow/openssl
 - Calculates cache hit rates and build times
 - Generates detailed performance reports
 
+## Required GitHub Secrets
+
+V Settings → Secrets and variables → Actions přidejte:
+
+**OPENSSL_REPO_TOKEN**
+- GitHub Personal Access Token s scopes: `repo`, `workflow`, `write:packages`
+- Účel: Reportování build statusu zpět do sparesparrow/openssl
+
+**ARTIFACTORY_TOKEN** 
+- JFrog Artifactory API token
+- Účel: Upload/download Conan packages
+
+**ARTIFACTORY_USER**
+- Vaše Artifactory username
+
 ### Required Secrets:
 
 - `ARTIFACTORY_TOKEN` - JFrog Artifactory API token

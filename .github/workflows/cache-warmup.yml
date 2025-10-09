@@ -4,10 +4,21 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Runs at 2 AM daily
   workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual cache warmup'
+        required: false
+        default: 'manual-trigger'
+        type: string
+      profiles:
+        description: 'Comma-separated list of profiles to warm up (leave empty for all)'
+        required: false
+        default: ''
+        type: string
 
 env:
   CONAN_VERSION: "2.0.17"
-  ARTIFACTORY_URL: "https://artifactory.company.com/artifactory/api/conan/openssl-conan"
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL || 'https://artifactory.company.com/artifactory/api/conan/openssl-conan' }}
 
 jobs:
   warmup-cache:
@@ -144,4 +155,4 @@ jobs:
           --repo sparesparrow/openssl-tools \
           --sha ${{ github.sha }} \
           --artifacts-dir . \
-          --reason "cache-warmup-${{ matrix.profile }}"
+          --reason "${{ github.event.inputs.reason || 'cache-warmup' }}-${{ matrix.profile }}"
