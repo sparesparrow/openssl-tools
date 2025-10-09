@@ -1,0 +1,209 @@
+# Package Registry Configuration
+# This file defines the package registries used for uploading OpenSSL packages
+
+registries:
+  artifactory:
+    name: "Artifactory"
+    url: "${ARTIFACTORY_URL}"
+    repository: "conan-local"
+    username: "${ARTIFACTORY_USERNAME}"
+    password: "${ARTIFACTORY_PASSWORD}"
+    enabled: true
+    priority: 1
+    description: "Primary package registry for OpenSSL packages"
+    
+  github-packages:
+    name: "GitHub Packages"
+    url: "https://maven.pkg.github.com/${GITHUB_REPOSITORY}"
+    repository: "conan"
+    username: "${GITHUB_ACTOR}"
+    password: "${GITHUB_TOKEN}"
+    enabled: true
+    priority: 2
+    description: "GitHub Packages registry for OpenSSL packages"
+    # GitHub Packages specific configuration
+    auth_header: "Authorization: Bearer ${GITHUB_TOKEN}"
+    retry_attempts: 3
+    retry_wait: 10
+    timeout: 300
+    
+  conan-center:
+    name: "Conan Center"
+    url: "https://center.conan.io"
+    repository: "conancenter"
+    username: "${CONAN_CENTER_USERNAME}"
+    password: "${CONAN_CENTER_PASSWORD}"
+    enabled: false
+    priority: 3
+    description: "Conan Center for public package distribution"
+    
+  local-server:
+    name: "Local Server"
+    url: "${LOCAL_SERVER_URL}"
+    repository: "conan-local"
+    username: "${LOCAL_SERVER_USERNAME}"
+    password: "${LOCAL_SERVER_PASSWORD}"
+    enabled: false
+    priority: 4
+    description: "Local development server"
+
+# Upload configuration
+upload:
+  # Default registries to upload to
+  default_registries:
+    - "artifactory"
+    - "github-packages"
+  
+  # Package reference template
+  package_template: "openssl/{version}@openssl/stable"
+  
+  # Upload settings
+  settings:
+    force_upload: true
+    upload_sources: true
+    upload_metadata: true
+    parallel_uploads: 4
+  
+  # Retention policies
+  retention:
+    keep_versions: 10
+    keep_days: 90
+    cleanup_old: true
+
+# Environment variables mapping
+environment:
+  ARTIFACTORY_URL: "https://your-artifactory-instance.com"
+  ARTIFACTORY_USERNAME: "conan-user"
+  ARTIFACTORY_PASSWORD: "conan-password"
+  ARTIFACTORY_REPO: "conan-local"
+  
+  GITHUB_REPOSITORY: "openssl/openssl"
+  GITHUB_ACTOR: "github-username"
+  GITHUB_TOKEN: "ghp_xxxxxxxxxxxx"
+  
+  CONAN_CENTER_USERNAME: "conan-center-user"
+  CONAN_CENTER_PASSWORD: "conan-center-password"
+  
+  LOCAL_SERVER_URL: "http://localhost:9300"
+  LOCAL_SERVER_USERNAME: "admin"
+  LOCAL_SERVER_PASSWORD: "password"
+
+# Package metadata
+package:
+  name: "openssl"
+  description: "OpenSSL is a robust, commercial-grade, full-featured toolkit for TLS and SSL protocols"
+  license: "Apache-2.0"
+  homepage: "https://www.openssl.org"
+  url: "https://github.com/openssl/openssl"
+  topics:
+    - "ssl"
+    - "tls"
+    - "cryptography"
+    - "security"
+    - "openssl"
+  
+  # Supported platforms
+  platforms:
+    - "Linux"
+    - "Windows"
+    - "macOS"
+    - "FreeBSD"
+  
+  # Supported architectures
+  architectures:
+    - "x86_64"
+    - "arm64"
+    - "armv7"
+    - "ppc64le"
+    - "s390x"
+  
+  # Supported compilers
+  compilers:
+    - "gcc"
+    - "clang"
+    - "msvc"
+    - "apple-clang"
+
+# CI/CD integration
+ci:
+  # Trigger conditions
+  triggers:
+    - "push to main branch"
+    - "push to release branches"
+    - "manual workflow dispatch"
+    - "package version changes"
+  
+  # Build matrix
+  build_matrix:
+    platforms:
+      - "ubuntu-22.04"
+      - "windows-2022"
+      - "macos-12"
+      - "macos-14"
+    
+    profiles:
+      - "linux-gcc11"
+      - "linux-clang15"
+      - "windows-msvc2022"
+      - "macos-clang14"
+      - "macos-arm64"
+  
+  # Artifact management
+  artifacts:
+    upload_build_logs: true
+    upload_test_results: true
+    upload_coverage_reports: true
+    upload_sbom: true
+    retention_days: 30
+
+# Security settings
+security:
+  # Package signing
+  signing:
+    enabled: false
+    key_id: ""
+    key_file: ""
+  
+  # Vulnerability scanning
+  vulnerability_scanning:
+    enabled: true
+    tools:
+      - "trivy"
+      - "grype"
+  
+  # License compliance
+  license_compliance:
+    enabled: true
+    allowed_licenses:
+      - "Apache-2.0"
+      - "MIT"
+      - "BSD-3-Clause"
+      - "OpenSSL"
+    blocked_licenses:
+      - "GPL-2.0"
+      - "GPL-3.0"
+      - "AGPL-3.0"
+
+# Monitoring and alerting
+monitoring:
+  # Upload notifications
+  notifications:
+    slack:
+      enabled: false
+      webhook_url: ""
+      channel: "#openssl-packages"
+    
+    email:
+      enabled: false
+      recipients: []
+    
+    github:
+      enabled: true
+      create_issues: true
+  
+  # Metrics collection
+  metrics:
+    upload_success_rate: true
+    upload_duration: true
+    package_size: true
+    download_count: true

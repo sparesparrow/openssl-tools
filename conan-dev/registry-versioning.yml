@@ -1,0 +1,103 @@
+# Registry Versioning Configuration
+# Ensures proper versioning and rollback protection
+
+versioning:
+  strategy: semantic  # semantic, calendar, git-describe
+  pre_release_suffix: dev
+  build_metadata: true
+  
+  version_scheme:
+    major: breaking_changes
+    minor: new_features
+    patch: bug_fixes
+  
+  auto_increment: true
+  require_changelog: true
+
+rollback:
+  enabled: true
+  retention_days: 30
+  max_versions: 10
+  
+  compatibility_checks: true
+  dependency_validation: true
+  
+  safety_checks:
+    - version_exists
+    - compatibility_check
+    - dependency_validation
+    - impact_assessment
+  
+  rollback_steps:
+    - validate_safety
+    - create_backup
+    - update_registry
+    - verify_functionality
+    - update_dependents
+    - monitor_stability
+
+registries:
+  development:
+    versioning: dev
+    rollback_enabled: true
+    compatibility_checks: false
+    auto_deploy: true
+  
+  staging:
+    versioning: rc
+    rollback_enabled: true
+    compatibility_checks: true
+    auto_deploy: false
+    approval_required: true
+  
+  production:
+    versioning: stable
+    rollback_enabled: true
+    compatibility_checks: true
+    auto_deploy: false
+    approval_required: true
+    security_scan_required: true
+
+security:
+  signature_required: true
+  checksum_verification: true
+  vulnerability_scan: true
+  
+  key_rotation:
+    enabled: true
+    interval_days: 90
+    auto_rotate: true
+  
+  audit_logging:
+    enabled: true
+    retention_days: 365
+    log_level: info
+
+monitoring:
+  enabled: true
+  
+  metrics:
+    - version_count
+    - rollback_frequency
+    - compatibility_issues
+    - deployment_success_rate
+  
+  alerts:
+    - failed_rollback
+    - compatibility_issues
+    - security_vulnerabilities
+    - version_conflicts
+
+notifications:
+  enabled: true
+  
+  channels:
+    - email
+    - slack
+    - github
+  
+  events:
+    - version_created
+    - rollback_executed
+    - compatibility_issue
+    - security_alert

@@ -1,0 +1,15 @@
+conan_dir: /home/sparrow/projects/openssl/conan-dev
+launchers:
+  build: conan-build
+  cli: conan-cli
+  install: conan-install
+  setup: conan-dev-setup
+platform: linux
+profiles:
+  available:
+  - linux-gcc11
+  - linux-clang15
+  - debug
+  default: linux-gcc11
+python_executable: /usr/bin/python3
+scripts_dir: /home/sparrow/projects/openssl/scripts/conan
