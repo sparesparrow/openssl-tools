@@ -103,6 +103,7 @@ jobs:
     - name: Test build optimization
       run: |
         python build_optimizer.py --stats
+        python build_optimizer.py --retention-stats
         python build_optimizer.py --list
         
     - name: Test package signing
@@ -335,6 +336,8 @@ jobs:
         echo "" >> build_report.md
         echo "## Cache Statistics" >> build_report.md
         python build_optimizer.py --stats >> build_report.md
+        echo "## Retention Policy Statistics" >> build_report.md
+        python build_optimizer.py --retention-stats >> build_report.md
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4

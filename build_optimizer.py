@@ -45,9 +45,10 @@ class BuildInfo:
 class BuildCacheManager:
     """Manages build cache and optimization."""
     
-    def __init__(self, cache_dir: Path = None, max_cache_size_gb: int = 10):
+    def __init__(self, cache_dir: Path = None, max_cache_size_gb: int = 10, retention_days: int = 30):
         self.cache_dir = cache_dir or Path.home() / ".openssl-build-cache"
         self.max_cache_size_gb = max_cache_size_gb
+        self.retention_days = retention_days  # Cache retention policy in days
         self.index_file = self.cache_dir / "build_index.json"
         self.stats_file = self.cache_dir / "cache_stats.json"
         
@@ -57,6 +58,9 @@ class BuildCacheManager:
         # Load existing index
         self.build_index = self._load_index()
         self.cache_stats = self._load_stats()
+        
+        # Apply retention policy on initialization
+        self._apply_retention_policy()
         
     def calculate_build_hash(self, source_files: List[Path], 
                            build_options: Dict[str, Any],
@@ -174,6 +178,9 @@ class BuildCacheManager:
             # Check if cache cleanup is needed
             self._cleanup_cache_if_needed()
             
+            # Apply retention policy after storing new artifacts
+            self._apply_retention_policy()
+            
             return True
             
         except Exception as e:
@@ -224,6 +231,70 @@ class BuildCacheManager:
                 
         self._save_index()
         
+    def _apply_retention_policy(self):
+        """Apply retention policy to remove old cache entries."""
+        if self.retention_days <= 0:
+            return
+            
+        cutoff_date = datetime.now() - timedelta(days=self.retention_days)
+        removed_count = 0
+        
+        for build_hash, entry in list(self.build_index.items()):
+            try:
+                created_at = datetime.fromisoformat(entry.get("created_at", "1970-01-01"))
+                if created_at < cutoff_date:
+                    cache_path = self.cache_dir / build_hash
+                    if cache_path.exists():
+                        shutil.rmtree(cache_path)
+                    del self.build_index[build_hash]
+                    removed_count += 1
+                    logger.info(f"Removed expired cache entry: {build_hash[:8]}... (created: {created_at.date()})")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid date format in cache entry {build_hash[:8]}: {e}")
+                # Remove malformed entries
+                cache_path = self.cache_dir / build_hash
+                if cache_path.exists():
+                    shutil.rmtree(cache_path)
+                del self.build_index[build_hash]
+                removed_count += 1
+                
+        if removed_count > 0:
+            self._save_index()
+            logger.info(f"Retention policy applied: removed {removed_count} expired cache entries (older than {self.retention_days} days)")
+            
+    def get_retention_stats(self) -> Dict:
+        """Get retention policy statistics."""
+        cutoff_date = datetime.now() - timedelta(days=self.retention_days)
+        total_entries = len(self.build_index)
+        expired_entries = 0
+        total_size_bytes = 0
+        expired_size_bytes = 0
+        
+        for build_hash, entry in self.build_index.items():
+            try:
+                created_at = datetime.fromisoformat(entry.get("created_at", "1970-01-01"))
+                size_bytes = entry.get("size_bytes", 0)
+                total_size_bytes += size_bytes
+                
+                if created_at < cutoff_date:
+                    expired_entries += 1
+                    expired_size_bytes += size_bytes
+            except (ValueError, TypeError):
+                # Count malformed entries as expired
+                expired_entries += 1
+                expired_size_bytes += entry.get("size_bytes", 0)
+                
+        return {
+            "retention_days": self.retention_days,
+            "total_entries": total_entries,
+            "expired_entries": expired_entries,
+            "active_entries": total_entries - expired_entries,
+            "total_size_gb": total_size_bytes / (1024**3),
+            "expired_size_gb": expired_size_bytes / (1024**3),
+            "active_size_gb": (total_size_bytes - expired_size_bytes) / (1024**3),
+            "cutoff_date": cutoff_date.isoformat()
+        }
+        
     def list_cached_builds(self) -> List[Dict]:
         """List all cached builds."""
         builds = []
@@ -249,6 +320,9 @@ class BuildCacheManager:
         if total_requests > 0:
             hit_rate = self.cache_stats.get("cache_hits", 0) / total_requests
             
+        # Get retention statistics
+        retention_stats = self.get_retention_stats()
+            
         return {
             "cache_size_gb": cache_size_gb,
             "max_cache_size_gb": self.max_cache_size_gb,
@@ -256,7 +330,14 @@ class BuildCacheManager:
             "cache_misses": self.cache_stats.get("cache_misses", 0),
             "hit_rate": hit_rate,
             "total_builds": self.cache_stats.get("total_builds", 0),
-            "cached_builds": len(self.build_index)
+            "cached_builds": len(self.build_index),
+            "retention_policy": {
+                "retention_days": self.retention_days,
+                "active_entries": retention_stats["active_entries"],
+                "expired_entries": retention_stats["expired_entries"],
+                "active_size_gb": retention_stats["active_size_gb"],
+                "expired_size_gb": retention_stats["expired_size_gb"]
+            }
         }
         
     def clear_cache(self, older_than_days: int = None) -> int:
@@ -431,8 +512,11 @@ def main():
     parser = argparse.ArgumentParser(description="OpenSSL Build Cache Manager")
     parser.add_argument("--cache-dir", type=Path, help="Cache directory path")
     parser.add_argument("--max-size", type=int, default=10, help="Max cache size in GB")
+    parser.add_argument("--retention-days", type=int, default=30, help="Cache retention policy in days (default: 30)")
     parser.add_argument("--list", action="store_true", help="List cached builds")
     parser.add_argument("--stats", action="store_true", help="Show cache statistics")
+    parser.add_argument("--retention-stats", action="store_true", help="Show retention policy statistics")
+    parser.add_argument("--apply-retention", action="store_true", help="Apply retention policy manually")
     parser.add_argument("--clear", type=int, help="Clear cache entries older than N days")
     parser.add_argument("--clear-all", action="store_true", help="Clear all cache entries")
     
@@ -440,7 +524,8 @@ def main():
     
     cache_manager = BuildCacheManager(
         cache_dir=args.cache_dir,
-        max_cache_size_gb=args.max_size
+        max_cache_size_gb=args.max_size,
+        retention_days=args.retention_days
     )
     
     if args.list:
@@ -462,6 +547,26 @@ def main():
         print(f"  Cache Misses: {stats['cache_misses']}")
         print(f"  Total Builds: {stats['total_builds']}")
         print(f"  Cached Builds: {stats['cached_builds']}")
+        print(f"  Retention Policy: {stats['retention_policy']['retention_days']} days")
+        print(f"  Active Entries: {stats['retention_policy']['active_entries']}")
+        print(f"  Expired Entries: {stats['retention_policy']['expired_entries']}")
+        
+    if args.retention_stats:
+        retention_stats = cache_manager.get_retention_stats()
+        print("Retention Policy Statistics:")
+        print(f"  Retention Period: {retention_stats['retention_days']} days")
+        print(f"  Cutoff Date: {retention_stats['cutoff_date']}")
+        print(f"  Total Entries: {retention_stats['total_entries']}")
+        print(f"  Active Entries: {retention_stats['active_entries']}")
+        print(f"  Expired Entries: {retention_stats['expired_entries']}")
+        print(f"  Total Size: {retention_stats['total_size_gb']:.2f} GB")
+        print(f"  Active Size: {retention_stats['active_size_gb']:.2f} GB")
+        print(f"  Expired Size: {retention_stats['expired_size_gb']:.2f} GB")
+        
+    if args.apply_retention:
+        print(f"Applying retention policy ({args.retention_days} days)...")
+        cache_manager._apply_retention_policy()
+        print("Retention policy applied successfully")
         
     if args.clear:
         cleared = cache_manager.clear_cache(older_than_days=args.clear)
