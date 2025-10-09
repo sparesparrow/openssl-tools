@@ -272,3 +272,9 @@ coverage.xml
 local_config.py
 config.local.json
 .env.local
+
+# Conan 2.x cache
+.conan2/
+
+# Cursor IDE
+.cursor/
