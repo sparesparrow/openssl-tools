@@ -1,0 +1,117 @@
+# Standard CI Setup Template
+# This template provides consistent Python and Conan setup across all workflows
+
+name: Standard CI Setup
+
+# Standard environment variables
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Standard setup job that can be reused
+  setup-environment:
+    name: Setup Environment
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    outputs:
+      conan-home: ${{ env.CONAN_USER_HOME }}
+      python-version: ${{ env.PYTHON_VERSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Setup CI Environment
+        run: |
+          python scripts/setup-ci-environment.py
+          
+      - name: Validate Conan Installation
+        run: |
+          conan --version
+          conan profile list
+          
+      - name: List Available Profiles
+        run: |
+          echo "Available profiles:"
+          ls -la ${{ env.CONAN_USER_HOME }}/profiles/
+          echo ""
+          echo "Profile contents:"
+          for profile in ${{ env.CONAN_USER_HOME }}/profiles/*.profile; do
+            echo "=== $(basename $profile) ==="
+            cat "$profile"
+            echo ""
+          done
+
+  # Standard build job template
+  build:
+    name: Build (${{ matrix.profile }})
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    needs: setup-environment
+    strategy:
+      matrix:
+        profile: [linux-gcc11, linux-clang15, windows-msvc2022, macos-clang14]
+        include:
+          - profile: linux-gcc11
+            os: ubuntu-22.04
+          - profile: linux-clang15
+            os: ubuntu-22.04
+          - profile: windows-msvc2022
+            os: windows-2022
+          - profile: macos-clang14
+            os: macos-12
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          
+      - name: Setup CI Environment
+        run: |
+          python scripts/setup-ci-environment.py
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_USER_HOME }}
+          key: conan-${{ runner.os }}-${{ matrix.profile }}-${{ hashFiles('conanfile.py', 'conan-dev/profiles/*.profile') }}
+          restore-keys: |
+            conan-${{ runner.os }}-${{ matrix.profile }}-
+            conan-${{ runner.os }}-
+            
+      - name: Install dependencies
+        run: |
+          conan install . --profile=${{ matrix.profile }} --build=missing
+          
+      - name: Build package
+        run: |
+          conan build . --profile=${{ matrix.profile }}
+          
+      - name: Test package
+        run: |
+          conan test test_package . --profile=${{ matrix.profile }}
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.profile }}
+          path: |
+            ${{ env.CONAN_USER_HOME }}/p/*/p/
+            build/
+          retention-days: 30
