@@ -16,12 +16,25 @@ on:
         default: ''
         type: string
 
+# Modern security best practices
+permissions:
+  contents: read
+  actions: read
+  packages: write
+  id-token: write
+
+# Prevent concurrent runs of the same workflow
+concurrency:
+  group: cache-warmup-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CONAN_VERSION: "2.0.17"
   ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL || 'https://artifactory.company.com/artifactory/api/conan/openssl-conan' }}
 
 jobs:
   warmup-cache:
+    timeout-minutes: 60  # Prevent long-running builds
     strategy:
       matrix:
         include:

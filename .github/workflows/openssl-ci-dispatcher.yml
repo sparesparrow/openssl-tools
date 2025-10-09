@@ -4,12 +4,27 @@ on:
   repository_dispatch:
     types: [openssl-build-triggered]
 
+# Modern security best practices
+permissions:
+  contents: read
+  actions: read
+  packages: write
+  id-token: write
+  statuses: write
+  pull-requests: write
+
+# Prevent concurrent runs of the same workflow
+concurrency:
+  group: openssl-ci-dispatcher-${{ github.event.client_payload.sha || github.sha }}
+  cancel-in-progress: false
+
 env:
   CONAN_VERSION: "2.0.17"
-  ARTIFACTORY_URL: "https://artifactory.company.com/artifactory/api/conan/openssl-conan"
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL || 'https://artifactory.company.com/artifactory/api/conan/openssl-conan' }}
 
 jobs:
   prepare-matrix:
+    timeout-minutes: 10  # Quick matrix generation
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate-matrix.outputs.matrix }}
@@ -57,6 +72,7 @@ jobs:
 
   build-openssl:
     needs: prepare-matrix
+    timeout-minutes: 90  # Allow time for complex builds
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -141,6 +157,7 @@ jobs:
 
   report-status:
     needs: [prepare-matrix, build-openssl]
+    timeout-minutes: 5  # Quick status reporting
     runs-on: ubuntu-latest
     if: always()
     

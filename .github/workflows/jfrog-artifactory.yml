@@ -15,8 +15,21 @@ on:
         default: 'manual-trigger'
         type: string
 
+# Modern security best practices
+permissions:
+  contents: read
+  actions: read
+  packages: write
+  id-token: write
+
+# Prevent concurrent runs of the same workflow
+concurrency:
+  group: jfrog-artifactory-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-publish:
+    timeout-minutes: 45  # Prevent long-running builds
     runs-on: ubuntu-latest
     
     steps:
