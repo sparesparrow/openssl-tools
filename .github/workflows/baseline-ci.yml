@@ -1,0 +1,55 @@
+# Baseline CI - Simple Safety Net
+# Always runs without change detection or caching to catch issues missed by smart workflows
+# This provides a fallback if the optimized workflows have bugs
+
+name: Baseline CI
+
+on:
+  push:
+    branches: [main, master, 'release/*']
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OSSL_RUN_CI_TESTS: 1
+
+jobs:
+  # Simple GCC build - always runs, no conditions, no cache
+  baseline-gcc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Set up Conan Python Environment
+        run: |
+          python scripts/setup-ci-environment.py
+      
+      - name: Create Conan build profile
+        run: |
+          conan profile detect --force
+      
+      - name: Conan install
+        run: |
+          conan install . --profile=conan-dev/profiles/linux-gcc11.profile -o fips=True
+      
+      - name: Conan build
+        run: |
+          conan build . --profile=conan-dev/profiles/linux-gcc11.profile -o fips=True
+      
+      - name: Conan test
+        run: |
+          conan test . --profile=conan-dev/profiles/linux-gcc11.profile -o fips=True

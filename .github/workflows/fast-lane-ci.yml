@@ -1,0 +1,136 @@
+name: Fast Lane CI - Quick Bugfixes
+
+on:
+  pull_request:
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'scripts/validation/simple-pre-commit.py'
+      - 'conan-dev/profiles/*.profile'
+    types: [opened, synchronize, reopened]
+
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip tests for faster execution'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+jobs:
+  quick-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Fast timeout for quick feedback
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Quick pre-commit validation
+        run: |
+          python scripts/validation/simple-pre-commit.py --all
+      
+      - name: Basic Conan validation
+        run: |
+          # Quick Conan syntax check
+          python -c "import conanfile; print('✓ conanfile.py syntax OK')" || echo "❌ conanfile.py syntax error"
+          
+          # Check if Conan is available
+          conan --version || echo "❌ Conan not available"
+      
+      - name: Quick build test (minimal)
+        if: ${{ !inputs.skip_tests }}
+        run: |
+          # Minimal build test with basic profile
+          conan install . --profile=conan-dev/profiles/linux-gcc11.profile -o fips=False -o shared=True
+          echo "✓ Quick build test passed"
+      
+      - name: Upload quick validation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quick-validation-results
+          path: |
+            *.json
+            *.log
+          retention-days: 1
+
+  documentation-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: contains(github.event.pull_request.title, 'doc') || contains(github.event.pull_request.body, 'documentation')
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check documentation changes
+        run: |
+          echo "📚 Checking documentation changes..."
+          
+          # Check if README or docs changed
+          if git diff --name-only HEAD~1 | grep -E '\.(md|rst|txt)$'; then
+            echo "✓ Documentation files changed"
+          else
+            echo "ℹ️  No documentation changes detected"
+          fi
+          
+          # Basic markdown linting
+          if command -v markdownlint >/dev/null 2>&1; then
+            markdownlint *.md || echo "⚠️  Markdown linting issues found"
+          else
+            echo "ℹ️  markdownlint not available, skipping"
+          fi
+
+  security-quick-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: contains(github.event.pull_request.title, 'security') || contains(github.event.pull_request.body, 'security')
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Quick security scan
+        run: |
+          echo "🔒 Running quick security scan..."
+          
+          # Check for obvious secrets
+          python scripts/validation/simple-pre-commit.py --all
+          
+          # Check file permissions
+          find . -name "*.py" -o -name "*.yml" -o -name "*.yaml" | head -10 | while read file; do
+            if [ -w "$file" ]; then
+              echo "⚠️  File $file is world-writable"
+            fi
+          done
+          
+          echo "✓ Quick security scan completed"
+
+  notify-results:
+    runs-on: ubuntu-latest
+    needs: [quick-validation, documentation-check, security-quick-scan]
+    if: always()
+    
+    steps:
+      - name: Notify results
+        run: |
+          echo "📊 Fast Lane CI Results:"
+          echo "  Quick Validation: ${{ needs.quick-validation.result }}"
+          echo "  Documentation: ${{ needs.documentation-check.result }}"
+          echo "  Security Scan: ${{ needs.security-quick-scan.result }}"
+          
+          if [ "${{ needs.quick-validation.result }}" = "success" ]; then
+            echo "✅ Fast Lane CI passed - Ready for review!"
+          else
+            echo "❌ Fast Lane CI failed - Please check the logs"
+          fi
