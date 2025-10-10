@@ -3,7 +3,7 @@ name: Basic OpenSSL Integration Test
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, develop, simplify-openssl-build]
+    branches: [ main, master, develop ]
     paths:
       - 'conanfile.py'
       - '.github/workflows/basic-openssl-integration-test.yml'
