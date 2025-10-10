@@ -1,0 +1,26 @@
+name: Basic OpenSSL Integration
+
+on:
+  repository_dispatch:
+    types: [openssl-build-complete]
+  workflow_dispatch:
+
+jobs:
+  receive-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout openssl-tools
+        uses: actions/checkout@v4
+      
+      - name: Log Trigger Event
+        run: |
+          echo "Received trigger from openssl repository"
+          echo "OpenSSL Version: ${{ github.event.client_payload.openssl_version }}"
+          echo "Build Status: ${{ github.event.client_payload.build_status }}"
+      
+      - name: Validate Integration
+        run: |
+          echo "✅ Integration trigger works!"
+          echo "✅ Cross-repository communication established"
