@@ -1,8 +1,9 @@
 name: Test Simple
 
-concurrency:
-  group: test-simple-${{ github.ref }}
-  cancel-in-progress: true
+# Disabled to avoid conflicts with Consolidated CI
+# concurrency:
+#   group: test-simple-${{ github.ref }}
+#   cancel-in-progress: true
 
 on:
   workflow_dispatch:
