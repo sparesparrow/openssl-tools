@@ -205,6 +205,12 @@ artifacts/
 *.zip
 SHA256SUMS
 BUILD_INFO.json
+# Local build logs and SBOM outputs
+logs/
+sbom.json
+sbom/*.json
+*.spdx.json
+bom.json
 
 # Temporary files
 *.tmp
