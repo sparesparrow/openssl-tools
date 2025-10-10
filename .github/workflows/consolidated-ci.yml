@@ -4,7 +4,7 @@ name: Consolidated CI
 # This prevents queue backlog by having only one workflow per push
 
 concurrency:
-  group: openssl-ci-consolidated-${{ github.ref }}
+  group: openssl-ci-unified-${{ github.ref }}
   cancel-in-progress: true
 
 on:

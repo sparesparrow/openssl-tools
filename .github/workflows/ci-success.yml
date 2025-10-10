@@ -4,14 +4,15 @@ name: CI Success
 # This replaces multiple conflicting workflows
 
 concurrency:
-  group: openssl-ci-success-${{ github.ref }}
+  group: openssl-ci-unified-${{ github.ref }}
   cancel-in-progress: true
 
 on:
-  push:
-    branches: [ main, master, develop, simplify-openssl-build ]
-  pull_request:
-    branches: [ main, master, develop, simplify-openssl-build ]
+  # Temporarily disabled to avoid conflicts with Consolidated CI
+  # push:
+  #   branches: [ main, master, develop, simplify-openssl-build ]
+  # pull_request:
+  #   branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
 
 jobs:
