@@ -3,7 +3,7 @@ name: CI Fallback
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master, develop, simplify-openssl-build ]
+    branches: [ main, master, develop ]
 
 jobs:
   test:
