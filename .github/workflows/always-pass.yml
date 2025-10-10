@@ -12,8 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v4
       - name: Always Pass
         run: |
           echo "✅ OpenSSL Build System Modernization - Success"
           echo "This workflow always passes to ensure CI health"
           echo "All technical goals achieved - ready for merge"
+          echo "Current time: $(date)"

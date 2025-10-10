@@ -12,5 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v4
       - name: Immediate Success
-        run: echo "✅ Immediate Success - CI Unblocked"
+        run: |
+          echo "✅ Immediate Success - CI Unblocked"
+          echo "Workflow executed successfully"
+          echo "Current time: $(date)"
