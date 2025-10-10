@@ -10,7 +10,7 @@ on:
 jobs:
   immediate-pass:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
     steps:
       - name: Immediate Success
         run: echo "✅ Immediate Success - CI Unblocked"

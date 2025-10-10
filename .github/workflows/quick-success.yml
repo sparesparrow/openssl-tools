@@ -1,5 +1,9 @@
 name: Quick Success
 
+concurrency:
+  group: quick-success-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
@@ -10,6 +14,7 @@ on:
 jobs:
   quick-pass:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Quick Success
         run: |

@@ -9,6 +9,7 @@ on:
 jobs:
   simple-success:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Always Success
         run: |
@@ -19,6 +20,7 @@ jobs:
           
   windows-success:
     runs-on: windows-latest
+    timeout-minutes: 5
     steps:
       - name: Windows Success
         run: |
@@ -27,6 +29,7 @@ jobs:
           
   macos-success:
     runs-on: macos-latest
+    timeout-minutes: 5
     steps:
       - name: macOS Success
         run: |

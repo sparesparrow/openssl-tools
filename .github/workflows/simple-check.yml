@@ -2,7 +2,7 @@ name: Simple Check
 
 concurrency:
   group: simple-check-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 on:
   push:
@@ -14,6 +14,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Simple validation
