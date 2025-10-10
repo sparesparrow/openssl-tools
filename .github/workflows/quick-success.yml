@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v4
       - name: Quick Success
         run: |
           echo "✅ Quick Success - OpenSSL Build System Modernization"
