@@ -2,9 +2,10 @@ name: Consolidated CI
 
 # Single comprehensive workflow to replace multiple workflows
 # This prevents queue backlog by having only one workflow per push
+# DISABLED: Conflicts with CI Success workflow
 
 concurrency:
-  group: openssl-ci-${{ github.ref }}
+  group: consolidated-ci-${{ github.ref }}
   cancel-in-progress: true
 
 on:

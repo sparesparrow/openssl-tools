@@ -8,10 +8,11 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    branches: [ main, master, develop, simplify-openssl-build ]
-  pull_request:
-    branches: [ main, master, develop, simplify-openssl-build ]
+  # DISABLED: Conflicts with Consolidated CI workflow
+  # push:
+  #   branches: [ main, master, develop, simplify-openssl-build ]
+  # pull_request:
+  #   branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
 
 jobs:
