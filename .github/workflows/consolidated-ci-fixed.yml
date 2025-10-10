@@ -1,10 +1,7 @@
-name: Consolidated CI - Fixed
-
-# Single comprehensive workflow to replace multiple conflicting workflows
-# This prevents queue backlog by having only one workflow per push
+name: Consolidated CI Fixed
 
 concurrency:
-  group: consolidated-ci-fixed-${{ github.ref }}-${{ github.event_name }}
+  group: consolidated-ci-${{ github.ref }}
   cancel-in-progress: true
 
 on:
@@ -48,12 +45,11 @@ jobs:
           python3 -m py_compile conanfile.py
           echo "✅ conanfile.py syntax valid"
 
-  # Basic build test - only on main branches or workflow_dispatch
+  # Basic build test
   build-test:
     name: Build Test
     runs-on: ubuntu-latest
     needs: validate
-    if: contains(fromJSON('["main", "master", "develop", "simplify-openssl-build"]'), github.ref_name)
     timeout-minutes: 10
     steps:
       - name: Checkout code

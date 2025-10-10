@@ -9,11 +9,10 @@ concurrency:
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
-  # Disabled for simplify-openssl-build to prevent conflicts
 
 env:
   CONAN_USER_HOME: ${{ github.workspace }}/.conan2
