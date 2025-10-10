@@ -1,7 +1,7 @@
 name: Consolidated CI Simple
 
 concurrency:
-  group: openssl-ci-simple-${{ github.ref }}
+  group: consolidated-ci-${{ github.ref }}
   cancel-in-progress: true
 
 on:
