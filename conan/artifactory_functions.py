@@ -5,7 +5,7 @@ Based on openssl-tools patterns for Conan Artifactory integration
 """
 
 from .conan_functions import get_default_conan
-from ..openssl_tools.util.execute_command import execute_command
+from util.execute_command import execute_command
 
 # Configuration will be loaded from YAML files
 artifactory_configuration = None

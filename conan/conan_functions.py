@@ -21,9 +21,9 @@ except ImportError:
 
 import yaml
 
-from ..openssl_tools.util.copy_tools import get_file_metadata
-from ..openssl_tools.util.execute_command import execute_command
-from ..openssl_tools.util.file_operations import find_first_existing_file, find_executable_in_path
+from util.copy_tools import get_file_metadata
+from util.execute_command import execute_command
+from util.file_operations import find_first_existing_file, find_executable_in_path
 
 log = logging.getLogger('__main__.' + __name__)
 

@@ -1,4 +1,4 @@
-script_folder="/home/sparrow/projects/openssl-tools/test_consumer"
+script_folder="$HOME/projects/openssl-tools/test_consumer"
 echo "echo Restoring environment" > "$script_folder/deactivate_conanrunenv.sh"
 for v in 
 do

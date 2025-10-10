@@ -219,7 +219,7 @@ artifactory:
   conan_paths: [
     '/usr/local/bin/conan',
     '/opt/conan/bin/conan',
-    '/home/sparrow/.local/bin/conan'
+    '$HOME/.local/bin/conan'
   ]
 ```
 

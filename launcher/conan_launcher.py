@@ -10,6 +10,7 @@ import os
 import sys
 import subprocess
 import tempfile
+import yaml
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -17,17 +18,46 @@ from typing import List, Optional, Dict, Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from openssl_tools.util.custom_logging import setup_logging_from_config
-from openssl_tools.util.conan_python_env import (
+from util.custom_logging import setup_logging_from_config
+from util.conan_python_env import (
     ConanPythonEnvironment, 
     setup_conan_python_environment,
     get_conan_python_interpreter
 )
 from conan.conan_functions import (
-    get_default_conan, setup_parallel_download, remove_conan_lock_files,
+    get_default_conan, setup_parallel_download, remove_conan_lock_files
+)
+from conan.artifactory_functions import (
     enable_conan_remote, setup_artifactory_remote
 )
-from openssl_tools.core.config import ConfigLoaderManager
+
+
+class ConfigLoaderManager:
+    """Simple configuration loader for launcher"""
+    
+    def __init__(self):
+        self.project_root = Path(__file__).parent.parent
+        self.conf_dir = self.project_root / "conf"
+    
+    def get_configuration(self):
+        """Load configuration from YAML files"""
+        config = type('Config', (), {})()
+        
+        # Load launcher config
+        launcher_config_path = self.conf_dir / "launcher.yaml"
+        if launcher_config_path.exists():
+            with open(launcher_config_path, 'r') as f:
+                launcher_data = yaml.safe_load(f)
+                config.launcher = launcher_data.get('launcher', {})
+        
+        # Load artifactory config
+        artifactory_config_path = self.conf_dir / "1_artifactory.yaml"
+        if artifactory_config_path.exists():
+            with open(artifactory_config_path, 'r') as f:
+                artifactory_data = yaml.safe_load(f)
+                config.artifactory = artifactory_data
+        
+        return config
 
 
 class Configuration:

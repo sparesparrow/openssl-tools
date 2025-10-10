@@ -19,7 +19,7 @@
                 "CMAKE_BUILD_TYPE": "Release"
             },
             "toolchainFile": "conan_toolchain.cmake",
-            "binaryDir": "/home/sparrow/projects/openssl"
+            "binaryDir": "$HOME/projects/openssl"
         }
     ],
     "buildPresets": [

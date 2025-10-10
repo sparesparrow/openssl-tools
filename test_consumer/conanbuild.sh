@@ -1,1 +1,1 @@
-. "/home/sparrow/projects/openssl-tools/test_consumer/conanbuildenv.sh"
+. "$HOME/projects/openssl-tools/test_consumer/conanbuildenv.sh"

@@ -19,7 +19,7 @@ import subprocess
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from openssl_tools.util.custom_logging import setup_logging_from_config
+from util.custom_logging import setup_logging_from_config
 from conan_launcher import (
     Configuration, check_conan_validity, setup_conan_environment,
     run_package_python_script
