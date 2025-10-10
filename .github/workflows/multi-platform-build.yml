@@ -1,8 +1,8 @@
 name: Multi-Platform OpenSSL Build
 
 concurrency:
-  group: multi-platform-${{ github.ref }}
-  cancel-in-progress: true
+  group: multi-platform-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 on:
   push:

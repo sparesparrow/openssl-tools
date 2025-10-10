@@ -1,7 +1,7 @@
 name: OpenSSL CI/CD Pipeline
 
 concurrency:
-  group: ci-${{ github.ref }}-${{ github.event_name }}
+  group: openssl-ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 on:

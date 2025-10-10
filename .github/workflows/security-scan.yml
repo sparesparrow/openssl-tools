@@ -1,8 +1,8 @@
 name: Security Scanning & Compliance
 
 concurrency:
-  group: security-scan-${{ github.ref }}
-  cancel-in-progress: true
+  group: security-scan-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 on:
   push:
