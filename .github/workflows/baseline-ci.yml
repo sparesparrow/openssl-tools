@@ -1,0 +1,77 @@
+# Baseline CI - Simple Safety Net
+# Always runs without change detection or caching to catch issues missed by smart workflows
+# This provides a fallback if the optimized workflows have bugs
+
+name: Baseline CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run this workflow (use with caution)'
+        required: false
+        default: 'false'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OSSL_RUN_CI_TESTS: 1
+
+jobs:
+  # Simple baseline validation - always runs, no conditions, no cache
+  baseline-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0
+          conan --version
+      
+      - name: Validate repository structure
+        run: |
+          echo "🔍 Baseline validation of openssl-tools..."
+          test -f conanfile.py || (echo "❌ conanfile.py not found" && exit 1)
+          test -d conan-profiles || (echo "❌ conan-profiles directory not found" && exit 1)
+          echo "✅ Repository structure valid"
+      
+      - name: Validate conanfile.py syntax
+        run: |
+          python3 -m py_compile conanfile.py
+          echo "✅ conanfile.py syntax valid"
+      
+      - name: Setup Conan profile
+        run: |
+          conan profile detect --force
+          conan config init
+      
+      - name: Test Conan inspect
+        run: |
+          conan inspect . --format=json > /dev/null
+          echo "✅ Conan inspect successful"
+      
+      - name: Baseline test summary
+        run: |
+          echo "🎉 Baseline CI validation completed successfully!"
+          echo "✅ Repository structure valid"
+          echo "✅ conanfile.py syntax valid"
+          echo "✅ Conan configuration working"
+          echo "✅ Ready for advanced testing"

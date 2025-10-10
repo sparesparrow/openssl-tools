@@ -1,0 +1,120 @@
+name: Basic OpenSSL Integration Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'conanfile.py'
+      - '.github/workflows/basic-openssl-integration-test.yml'
+
+env:
+  CONAN_VERSION: "2.0.17"
+
+jobs:
+  test-basic-openssl-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout openssl-tools
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          conan --version
+      
+      - name: Validate openssl-tools structure
+        run: |
+          echo "🔍 Validating openssl-tools structure..."
+          test -f conanfile.py || (echo "❌ conanfile.py not found" && exit 1)
+          test -d conan-profiles || (echo "❌ conan-profiles directory not found" && exit 1)
+          echo "✅ openssl-tools structure valid"
+      
+      - name: Test conanfile.py syntax
+        run: |
+          echo "🔍 Testing conanfile.py syntax..."
+          python -m py_compile conanfile.py
+          echo "✅ conanfile.py syntax valid"
+      
+      - name: Test Conan inspect
+        run: |
+          echo "🔍 Testing Conan inspect..."
+          conan inspect . --format=json > /dev/null
+          echo "✅ Conan inspect successful"
+      
+      - name: Test basic Conan configuration
+        run: |
+          echo "🔍 Testing basic Conan configuration..."
+          
+          # Test version detection
+          python3 -c "
+          import sys
+          sys.path.append('.')
+          from conanfile import OpenSSLConan
+          
+          conan = OpenSSLConan()
+          conan.recipe_folder = '.'
+          conan.set_version()
+          print(f'✅ Version detection: {conan.version}')
+          "
+      
+      - name: Test Conan profile validation
+        run: |
+          echo "🔍 Testing Conan profile validation..."
+          
+          # Test existing profile
+          if [ -f "conan-profiles/linux-gcc11.profile" ]; then
+            conan profile show --profile=conan-profiles/linux-gcc11.profile
+            echo "✅ Existing profile validation successful"
+          else
+            echo "⚠️ No existing profile found, creating test profile"
+            mkdir -p conan-profiles
+            cat > conan-profiles/test.profile << EOF
+          [settings]
+          os=Linux
+          arch=x86_64
+          compiler=gcc
+          compiler.version=11
+          compiler.libcxx=libstdc++11
+          build_type=Release
+          
+          [options]
+          openssl/*:shared=True
+          openssl/*:fips=False
+          openssl/*:no_asm=False
+          EOF
+            conan profile show --profile=conan-profiles/test.profile
+            echo "✅ Test profile validation successful"
+          fi
+      
+      - name: Test Conan create (dry run)
+        run: |
+          echo "🔍 Testing Conan create (dry run)..."
+          
+          # Test conan create without actually building
+          PROFILE="conan-profiles/linux-gcc11.profile"
+          if [ ! -f "$PROFILE" ]; then
+            PROFILE="conan-profiles/test.profile"
+          fi
+          conan create . --build=missing --profile="$PROFILE" --dry-run
+          echo "✅ Conan create dry run successful"
+      
+      - name: Report success
+        run: |
+          echo "🎉 Basic OpenSSL integration test completed successfully!"
+          echo "✅ All fundamental components working:"
+          echo "  - openssl-tools structure valid"
+          echo "  - conanfile.py syntax valid"
+          echo "  - Conan inspect working"
+          echo "  - Version detection working"
+          echo "  - Profile validation working"
+          echo "  - Conan create dry run successful"
+          echo ""
+          echo "🚀 Ready for actual build testing!"
