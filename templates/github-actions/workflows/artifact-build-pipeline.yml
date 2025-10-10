@@ -1,0 +1,154 @@
+name: 'OpenSSL Artifact Build Pipeline'
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build (comma-separated)'
+        required: false
+        default: 'ubuntu-22.04-clang,windows-2022'
+      enable_fips:
+        description: 'Enable FIPS mode'
+        type: boolean
+        default: false
+
+env:
+  ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
+  ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+  ARTIFACTORY_REPO: openssl-releases
+
+jobs:
+  build-ubuntu-20-04-gcc:
+    runs-on: ubuntu-20.04
+    if: contains(github.event.inputs.platforms, 'ubuntu-20.04-gcc') || github.event.inputs.platforms == ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup OpenSSL Build
+        uses: ./.github/actions/setup-openssl-build
+        with:
+          compiler: 'gcc-11'
+          architecture: 'x86_64'
+          enable_fips: ${{ github.event.inputs.enable_fips || 'false' }}
+      
+      - name: Build OpenSSL
+        run: |
+          ./Configure linux-x86_64 --prefix=/opt/openssl --openssldir=/opt/openssl/ssl shared zlib
+          make -j$(nproc)
+      
+      - name: Run Tests
+        uses: ./.github/actions/run-openssl-tests
+        with:
+          test_type: 'unit'
+          parallel_jobs: '4'
+      
+      - name: Create Artifacts
+        run: |
+          make install DESTDIR=/tmp/install
+          tar czf openssl-ubuntu-20.04-gcc.tar.gz -C /tmp/install .
+      
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-ubuntu-20.04-gcc
+          path: openssl-ubuntu-20.04-gcc.tar.gz
+
+  build-ubuntu-22-04-clang:
+    runs-on: ubuntu-22.04
+    if: contains(github.event.inputs.platforms, 'ubuntu-22.04-clang') || github.event.inputs.platforms == ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup OpenSSL Build
+        uses: ./.github/actions/setup-openssl-build
+        with:
+          compiler: 'clang-14'
+          architecture: 'x86_64'
+          enable_fips: ${{ github.event.inputs.enable_fips || 'false' }}
+      
+      - name: Build OpenSSL
+        run: |
+          ./Configure linux-x86_64 --prefix=/opt/openssl --openssldir=/opt/openssl/ssl shared zlib
+          make -j$(nproc)
+      
+      - name: Run Tests
+        uses: ./.github/actions/run-openssl-tests
+        with:
+          test_type: 'unit'
+          parallel_jobs: '4'
+      
+      - name: Create Artifacts
+        run: |
+          make install DESTDIR=/tmp/install
+          tar czf openssl-ubuntu-22.04-clang.tar.gz -C /tmp/install .
+      
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-ubuntu-22.04-clang
+          path: openssl-ubuntu-22.04-clang.tar.gz
+
+  build-windows-2022:
+    runs-on: windows-2022
+    if: contains(github.event.inputs.platforms, 'windows-2022') || github.event.inputs.platforms == ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup OpenSSL Build
+        uses: ./.github/actions/setup-openssl-build
+        with:
+          compiler: 'msvc193'
+          architecture: 'x86_64'
+          enable_fips: ${{ github.event.inputs.enable_fips || 'false' }}
+      
+      - name: Build OpenSSL
+        shell: cmd
+        run: |
+          perl Configure VC-WIN64A --prefix=C:\openssl --openssldir=C:\openssl\ssl shared zlib
+          nmake
+      
+      - name: Run Tests
+        shell: cmd
+        run: nmake test
+      
+      - name: Create Artifacts
+        shell: cmd
+        run: |
+          nmake install DESTDIR=C:\install
+          powershell Compress-Archive -Path C:\install\* -DestinationPath openssl-windows-2022.zip
+      
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-windows-2022
+          path: openssl-windows-2022.zip
+
+  upload-to-artifactory:
+    needs: [build-ubuntu-20-04-gcc, build-ubuntu-22-04-clang, build-windows-2022]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      
+      - name: Upload to Artifactory
+        run: |
+          # Upload artifacts to Artifactory
+          for artifact in artifacts/*/; do
+            platform=$(basename "$artifact")
+            echo "Uploading $platform artifacts..."
+            # Add Artifactory upload logic here
+          done

@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  ubuntu-20-04-gcc:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ubuntu-builder
+      args:
+        UBUNTU_VERSION: "20.04"
+        COMPILER: "gcc-11"
+        BUILD_TYPE: "Release"
+        ENABLE_FIPS: "ON"
+      target: artifacts
+      cache_from:
+        - ubuntu:20.04
+        - ubuntu:20.04:latest
+    volumes:
+      - ../artifacts/ubuntu-20.04-gcc:/artifacts
+    environment:
+      - PLATFORM=ubuntu-20.04
+      - COMPILER=gcc-11
+      - ARCH=x86_64
+      - DOCKER_BUILDKIT=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  ubuntu-22-04-clang:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ubuntu-builder
+      args:
+        UBUNTU_VERSION: "22.04"
+        COMPILER: "clang-14"
+        BUILD_TYPE: "Release"
+        ENABLE_FIPS: "ON"
+      target: artifacts
+      cache_from:
+        - ubuntu:22.04
+        - ubuntu:22.04:latest
+    volumes:
+      - ../artifacts/ubuntu-22.04-clang:/artifacts
+    environment:
+      - PLATFORM=ubuntu-22.04
+      - COMPILER=clang-14
+      - ARCH=x86_64
+      - DOCKER_BUILDKIT=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  windows-2022:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.windows-builder
+      args:
+        WINDOWS_VERSION: "ltsc2022"
+        BUILD_TYPE: "Release"
+        ENABLE_FIPS: "ON"
+      target: artifacts
+      cache_from:
+        - mcr.microsoft.com/windows/servercore:ltsc2022
+    volumes:
+      - ../artifacts/windows-2022:/artifacts
+    environment:
+      - PLATFORM=windows-2022
+      - COMPILER=msvc193
+      - ARCH=x86_64
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          memory: 3G
+
+  macos-x86_64:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.macos-builder
+      args:
+        BUILD_TYPE: "Release"
+        TARGET_ARCH: "x86_64"
+      target: artifacts
+      cache_from:
+        - ubuntu:22.04
+    volumes:
+      - ../artifacts/macos-x86_64:/artifacts
+    environment:
+      - PLATFORM=macos
+      - COMPILER=clang
+      - ARCH=x86_64
+      - DOCKER_BUILDKIT=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  macos-arm64:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.macos-builder
+      args:
+        BUILD_TYPE: "Release"
+        TARGET_ARCH: "arm64"
+      target: artifacts
+      cache_from:
+        - ubuntu:22.04
+    volumes:
+      - ../artifacts/macos-arm64:/artifacts
+    environment:
+      - PLATFORM=macos
+      - COMPILER=clang
+      - ARCH=arm64
+      - DOCKER_BUILDKIT=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
