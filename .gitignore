@@ -612,3 +612,15 @@ docker-compose.override.yml
 # ============================================================================
 # End of OpenSSL-Tools .gitignore
 # ============================================================================
+
+# ============================================================================
+# Cleanup - Large Files and Development Artifacts
+# ============================================================================
+json
+os
+workspace-analysis.log
+cleanup-report.txt
+validate-phase*.sh
+conan-dev/venv/
+test-consumer/
+artifacts/
