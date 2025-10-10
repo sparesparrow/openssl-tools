@@ -1,6 +1,8 @@
 name: Basic OpenSSL Integration
 
 on:
+  repository_dispatch:
+    types: [openssl-build-triggered]
   workflow_dispatch:
     inputs:
       openssl_branch:
