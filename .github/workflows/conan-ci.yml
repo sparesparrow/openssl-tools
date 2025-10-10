@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   pull_request:
     branches: [ main, master, develop ]
   workflow_dispatch:
