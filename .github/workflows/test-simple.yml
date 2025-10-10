@@ -1,13 +1,12 @@
 name: Test Simple
 
-# Removed concurrency group to allow parallel execution
-# concurrency:
-#   group: openssl-ci-unified-${{ github.ref }}
-#   cancel-in-progress: true
+concurrency:
+  group: test-simple-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   workflow_dispatch:
-  # Temporarily disabled to avoid conflicts with Consolidated CI
+  # Disabled to avoid conflicts with Consolidated CI
   # push:
   #   branches: [ simplify-openssl-build ]
 
