@@ -13,11 +13,15 @@ class OpenSSLCryptoConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     options = {
         "shared": [True, False],
-        "fPIC": [True, False]
+        "fPIC": [True, False],
+        "fips": [True, False],
+        "enable_fips_module": [True, False]
     }
     default_options = {
         "shared": True,
-        "fPIC": True
+        "fPIC": True,
+        "fips": False,
+        "enable_fips_module": False
     }
     
     def requirements(self):
@@ -61,6 +65,15 @@ class OpenSSLCryptoConan(ConanFile):
             f"--prefix={self.package_folder}",
             f"--openssldir={self.package_folder}/ssl"
         ]
+        
+        # Add FIPS support if enabled
+        if self.options.fips:
+            configure_args.append("enable-fips")
+            self.output.info("🔒 FIPS mode enabled")
+        
+        if self.options.enable_fips_module:
+            configure_args.append("enable-fips-module")
+            self.output.info("🔒 FIPS module enabled")
         
         self.output.info(f"Configuring OpenSSL crypto with: {' '.join(configure_args)}")
         self.run(f"perl Configure {' '.join(configure_args)}")
