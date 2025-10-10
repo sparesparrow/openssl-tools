@@ -3,9 +3,10 @@ name: CI Success
 # Single workflow to ensure CI passes
 # This replaces multiple conflicting workflows
 
-concurrency:
-  group: openssl-ci-unified-${{ github.ref }}
-  cancel-in-progress: true
+# Removed concurrency group to allow parallel execution
+# concurrency:
+#   group: openssl-ci-unified-${{ github.ref }}
+#   cancel-in-progress: true
 
 on:
   # Temporarily disabled to avoid conflicts with Consolidated CI
