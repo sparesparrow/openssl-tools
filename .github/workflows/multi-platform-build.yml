@@ -176,13 +176,11 @@ jobs:
       run: pip install "conan>=2.0,<3.0"
 
     - name: Setup Artifactory
-      if: ${{ secrets.ARTIFACTORY_TOKEN != '' }}
       run: |
         conan remote add artifactory "${{ vars.ARTIFACTORY_URL }}" --force
         conan remote login artifactory "${{ vars.ARTIFACTORY_USER }}" -p "${{ secrets.ARTIFACTORY_TOKEN }}"
 
     - name: Upload to Artifactory
-      if: ${{ secrets.ARTIFACTORY_TOKEN != '' }}
       run: |
         conan upload "openssl-crypto/3.2.0" -r=artifactory --confirm
         conan upload "openssl-ssl/3.2.0" -r=artifactory --confirm
