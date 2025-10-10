@@ -102,7 +102,7 @@ jobs:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     needs: validate
-    if: contains(fromJSON('["main", "master", "develop", "simplify-openssl-build"]'), github.ref_name)
+    if: contains(fromJSON('["main", "master", "develop"]'), github.ref_name)
     strategy:
       fail-fast: false
       matrix:
