@@ -1,8 +1,14 @@
 name: Simple Check
 
+concurrency:
+  group: simple-check-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
+    branches: [ main, master, develop, simplify-openssl-build ]
   pull_request:
+    branches: [ main, master, develop ]
 
 jobs:
   check:

@@ -1,5 +1,9 @@
 name: Security Scanning & Compliance
 
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, develop, simplify-openssl-build ]

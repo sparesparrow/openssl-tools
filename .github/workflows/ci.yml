@@ -1,5 +1,9 @@
 name: OpenSSL CI/CD Pipeline
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, master, develop, simplify-openssl-build ]
@@ -98,6 +102,7 @@ jobs:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     needs: validate
+    if: contains(fromJSON('["main", "master", "develop", "simplify-openssl-build"]'), github.ref_name)
     strategy:
       fail-fast: false
       matrix:

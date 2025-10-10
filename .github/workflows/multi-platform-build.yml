@@ -1,5 +1,9 @@
 name: Multi-Platform OpenSSL Build
 
+concurrency:
+  group: multi-platform-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main, develop, simplify-openssl-build ]
@@ -53,8 +57,8 @@ jobs:
 
   build-matrix:
     needs: pre-checks
-    # Run on workflow_dispatch or if there are changes
-    if: github.event_name == 'workflow_dispatch' || needs.pre-checks.outputs.should-build == 'true'
+    # Run on workflow_dispatch or if there are changes AND on main/develop branches
+    if: (github.event_name == 'workflow_dispatch' || needs.pre-checks.outputs.should-build == 'true') && contains(fromJSON('["main", "develop", "simplify-openssl-build"]'), github.ref_name)
     runs-on: ${{ matrix.os }}
     
     strategy:

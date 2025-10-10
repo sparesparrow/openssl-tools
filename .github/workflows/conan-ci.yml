@@ -1,8 +1,12 @@
 name: Conan Build & Test
 
+concurrency:
+  group: conan-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: ['**']
+    branches: [ main, master, develop, simplify-openssl-build ]
     paths:
       - 'conanfile.py'
       - 'conan-dev/**'
