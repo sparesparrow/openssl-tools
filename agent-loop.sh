@@ -82,7 +82,7 @@ EOF
 
   # 5) Spusť Cursor Agent s dynamicky složeným PROMPTEM
   export PROMPT
-  cursor-agent --once -f agent "$PROMPT" || true
+  timeout 600s cursor-agent -f --print agent "$PROMPT" || true
 
   # 6) Ukonči smyčku, pokud je vše zelené, jinak čekej a opakuj
   if [[ "${ALL_GREEN}" == "true" ]]; then
