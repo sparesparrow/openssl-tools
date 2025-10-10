@@ -134,4 +134,4 @@ jobs:
           echo "  - Profile validation working"
           echo "  - Conan create dry run successful"
           echo ""
-          echo "🚀 Ready for actual build testing!"
+          echo "🚀 Ready for actual build testing!"# Test trigger - Fri Oct 10 03:33:09 AM CEST 2025

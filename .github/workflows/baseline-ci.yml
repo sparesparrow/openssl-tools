@@ -5,10 +5,14 @@
 name: Baseline CI
 
 on:
-  push:
-    branches: [main, master, 'release/*']
-  pull_request:
-    branches: [main, master]
+  # DISABLED: This workflow was designed for OpenSSL source repo, not openssl-tools
+  # Re-enable when proper integration with OpenSSL source is implemented
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run this workflow (use with caution)'
+        required: true
+        default: 'false'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -4,13 +4,14 @@
 name: Modern CI with Conan
 
 on:
-  push:
-    branches: [ main, master, 'release/*' ]
-  pull_request:
-    branches: [ main, master ]
-  schedule:
-    # Run nightly builds
-    - cron: '0 2 * * *'
+  # DISABLED: This workflow was designed for OpenSSL source repo, not openssl-tools
+  # Re-enable when proper integration with OpenSSL source is implemented
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run this workflow (use with caution)'
+        required: true
+        default: 'false'
 
 # Global environment variables
 env:
