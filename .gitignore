@@ -198,6 +198,14 @@ compile_commands.json
 CTestTestfile.cmake
 _deps/
 
+# OpenSSL build artifacts
+artifacts/
+*.tar.gz
+*.tar.bz2
+*.zip
+SHA256SUMS
+BUILD_INFO.json
+
 # Temporary files
 *.tmp
 *.temp
