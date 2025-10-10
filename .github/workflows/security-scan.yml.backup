@@ -1,0 +1,92 @@
+name: Security Scanning & Compliance
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ✅ DOPORUČENÍ: Rozšíření bezpečnostních skenů
+  security-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    # CodeQL Analysis
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python
+        queries: security-extended
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+    # Dependency Review
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: critical
+
+    # SAST with Bandit
+    - name: SAST Scanning (Bandit)
+      run: |
+        pip install bandit[toml]
+        bandit -r scripts/ -f json -o bandit-report.json || true
+
+    # ✅ DOPORUČENÍ: SBOM generování jako artefakt
+    - name: Generate SBOM
+      run: |
+        pip install cyclonedx-bom
+        cyclonedx-py --output-format json --output-file sbom-cyclonedx.json .
+        
+    - name: Upload Security Artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          sbom-cyclonedx.json
+        retention-days: 30
+
+  # FIPS Compliance Check
+  fips-validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: FIPS Compliance Validation
+      run: |
+        echo "🔒 FIPS Compliance Validation"
+        echo "============================"
+        
+        # Check for FIPS options in conanfiles
+        for conanfile in openssl-*/conanfile.py; do
+          if grep -q "enable_fips" "$conanfile"; then
+            echo "✅ FIPS option found in $conanfile"
+          else
+            echo "⚠️ FIPS option missing in $conanfile"
+          fi
+        done
+        
+        echo "✅ FIPS validation complete"
