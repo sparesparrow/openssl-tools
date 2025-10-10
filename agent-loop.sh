@@ -6,10 +6,7 @@ INTERVAL="${INTERVAL:-60}"
 
 # Helper: safe JSON escape (pro vložení JSONu z gh do textového promptu)
 json_escape() {
-  python3 - <<'PY'
-import sys, json
-print(json.dumps(sys.stdin.read())[1:-1])
-PY
+  jq -R -r @json <<<"$1" | sed 's/^"\(.*\)"$/\1/'
 }
 
 while true; do
@@ -43,9 +40,9 @@ while true; do
 
   # 4) Vytvoř PROMPT z template + dynamických částí
   # Připrav escapované JSON bloky pro bezpečné vložení
-  RUNS_JSON_ESCAPED="$(printf "%s" "${RUNS_JSON:-[]}" | json_escape || true)"
-  PRS_JSON_ESCAPED="$(printf "%s" "${PRS_JSON:-[]}" | json_escape || true)"
-  LAST_COMMITS_ESCAPED="$(printf "%s" "${LAST_COMMITS:-}" | json_escape || true)"
+  RUNS_ESCAPED=$(json_escape "$RUNS_JSON")
+  PRS_ESCAPED=$(json_escape "$PRS_JSON")
+  COMMITS_ESCAPED=$(json_escape "$LAST_COMMITS")
 
   read -r -d '' PROMPT <<EOF || true
 You are a CI/CD repair and orchestration agent for OpenSSL modernization.

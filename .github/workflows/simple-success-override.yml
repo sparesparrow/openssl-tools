@@ -1,7 +1,9 @@
 name: Simple Success Override
 on: 
   pull_request:
+    branches: [ main, master, develop ]
   push:
+    branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
 
 jobs:
