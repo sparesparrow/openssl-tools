@@ -63,13 +63,13 @@ retry() {
 extract_json() {
   local input="$1"
   
-  # Try direct parse
+  # Try direct parse first
   if echo "$input" | jq -e . >/dev/null 2>&1; then
     echo "$input"
     return 0
   fi
   
-  # Try extracting from ```json blocks
+  # Try extracting from ```json blocks (more robust)
   local extracted
   extracted=$(echo "$input" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
   if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
@@ -84,7 +84,34 @@ extract_json() {
     return 0
   fi
   
-  # Try finding first JSON object {...}
+  # Try finding JSON in the result field of cursor-agent output
+  if echo "$input" | jq -e '.result' >/dev/null 2>&1; then
+    local result_content
+    result_content=$(echo "$input" | jq -r '.result' 2>/dev/null || echo "")
+    if [[ -n "$result_content" ]]; then
+      # Try to extract JSON from the result content
+      if echo "$result_content" | jq -e . >/dev/null 2>&1; then
+        echo "$result_content"
+        return 0
+      fi
+      
+      # Try extracting from markdown in result (handle escaped newlines)
+      extracted=$(echo "$result_content" | sed 's/\\n/\n/g' | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
+      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+        echo "$extracted"
+        return 0
+      fi
+      
+      # Try extracting from any ``` blocks in result (handle escaped newlines)
+      extracted=$(echo "$result_content" | sed 's/\\n/\n/g' | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
+      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+        echo "$extracted"
+        return 0
+      fi
+    fi
+  fi
+  
+  # Try finding first JSON object {...} anywhere in the input
   extracted=$(echo "$input" | grep -oP '\{(?:[^{}]|(?R))*\}' | head -1 2>/dev/null || echo "")
   if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
     echo "$extracted"
@@ -92,6 +119,7 @@ extract_json() {
   fi
   
   log error "Could not extract valid JSON from input"
+  log debug "Input was: $(echo "$input" | head -c 200)"
   return 1
 }
 
