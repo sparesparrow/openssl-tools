@@ -6,7 +6,7 @@ name: Optimized Basic CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
     paths:
       - 'conanfile.py'
       - 'conan-profiles/**'

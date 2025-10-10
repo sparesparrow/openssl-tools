@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [ main, master, develop ]
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
 
 jobs:
