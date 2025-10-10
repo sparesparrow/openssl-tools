@@ -2,7 +2,7 @@ name: Cross-Repository Integration Test
 
 on:
   repository_dispatch:
-    types: [openssl-build-request]
+    types: [openssl-build-triggered]
   workflow_dispatch:
     inputs:
       test_openssl_sha:
