@@ -1,4 +1,4 @@
-name: Test Runner Availability
+name: Test Runner
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
       - name: Test
-        run: echo "Runner is available"
+        run: echo "✅ Runner test successful"
