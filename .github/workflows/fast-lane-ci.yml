@@ -3,8 +3,20 @@ name: Fast Lane CI - Quick Bugfixes
 on:
   pull_request:
     paths:
+      # Core source changes - fast validation
+      - 'crypto/**'
+      - 'ssl/**'
+      - 'apps/**'
+      - 'include/**'
+      - 'test/**'
+      # Build system changes
       - 'conanfile.py'
       - 'conanfile.txt'
+      - 'CMakeLists.txt'
+      - 'configure'
+      - 'config'
+      # CI/CD changes
+      - '.github/workflows/fast-lane-ci.yml'
       - 'scripts/validation/simple-pre-commit.py'
       - 'conan-dev/profiles/*.profile'
     types: [opened, synchronize, reopened]
