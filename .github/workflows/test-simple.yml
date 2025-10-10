@@ -1,5 +1,9 @@
 name: Test Simple
 
+concurrency:
+  group: openssl-ci-test-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
