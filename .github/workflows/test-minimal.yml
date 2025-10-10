@@ -2,10 +2,17 @@ name: Test Minimal
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ simplify-openssl-build ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v4
       - name: Test
-        run: echo "✅ Minimal test passed"
+        run: |
+          echo "✅ Minimal test workflow working"
+          echo "Time: $(date)"
+          echo "Branch: ${{ github.ref_name }}"
