@@ -1,19 +1,18 @@
-name: Consolidated CI
+name: Consolidated CI - Fixed
 
-# Single comprehensive workflow to replace multiple workflows
+# Single comprehensive workflow to replace multiple conflicting workflows
 # This prevents queue backlog by having only one workflow per push
 
 concurrency:
-  group: consolidated-ci-${{ github.ref }}
+  group: consolidated-ci-fixed-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, simplify-openssl-build ]
   workflow_dispatch:
-  # Disabled for simplify-openssl-build to prevent conflicts
 
 env:
   CONAN_USER_HOME: ${{ github.workspace }}/.conan2
