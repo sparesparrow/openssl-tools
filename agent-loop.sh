@@ -1025,13 +1025,21 @@ execute_batch_actions() {
     case "$action" in
       rerun:*)
         local rid="${action#rerun:}"
-        log info "Rerunning workflow run: $rid"
-        gh run rerun "$rid" 2>&1 || log warn "Failed to rerun $rid"
+        if [[ "$DRY_RUN" == "true" ]]; then
+          log info "DRY RUN: Would rerun workflow run: $rid"
+        else
+          log info "Rerunning workflow run: $rid"
+          gh run rerun "$rid" 2>&1 || log warn "Failed to rerun $rid"
+        fi
         ;;
       approve:*)
         local rid="${action#approve:}"
-        log info "Approving workflow run: $rid"
-        gh run watch "$rid" --approve 2>&1 || log warn "Failed to approve $rid"
+        if [[ "$DRY_RUN" == "true" ]]; then
+          log info "DRY RUN: Would approve workflow run: $rid"
+        else
+          log info "Approving workflow run: $rid"
+          gh run watch "$rid" --approve 2>&1 || log warn "Failed to approve $rid"
+        fi
         ;;
       apply-patch:*)
         local patchname="${action#apply-patch:}"
@@ -1043,7 +1051,11 @@ execute_batch_actions() {
           local fname diffc
           fname="$(jq -r ".patches[$patch_idx].filename" "$plan_file")"
           diffc="$(jq -r ".patches[$patch_idx].diff" "$plan_file")"
-          apply_patch "$fname" "$diffc" || true
+          if [[ "$DRY_RUN" == "true" ]]; then
+            log info "DRY RUN: Would apply patch to $fname"
+          else
+            apply_patch "$fname" "$diffc" || true
+          fi
         else
           log warn "Patch $patchname not found in patches array"
         fi
@@ -1051,31 +1063,43 @@ execute_batch_actions() {
       enable-workflow:*)
         local wpath="${action#enable-workflow:}"
         local wname="$(basename "$wpath")"
-        log info "Enabling workflow: $wname"
-        if [[ -f ".github/workflows-disabled/$wname" ]]; then
-          git mv ".github/workflows-disabled/$wname" ".github/workflows/$wname" 2>/dev/null || true
-          git add ".github/workflows/$wname" 2>/dev/null || true
+        if [[ "$DRY_RUN" == "true" ]]; then
+          log info "DRY RUN: Would enable workflow: $wname"
         else
-          log warn "Workflow $wname not found in workflows-disabled/"
+          log info "Enabling workflow: $wname"
+          if [[ -f ".github/workflows-disabled/$wname" ]]; then
+            git mv ".github/workflows-disabled/$wname" ".github/workflows/$wname" 2>/dev/null || true
+            git add ".github/workflows/$wname" 2>/dev/null || true
+          else
+            log warn "Workflow $wname not found in workflows-disabled/"
+          fi
         fi
         ;;
       disable-workflow:*)
         local wpath="${action#disable-workflow:}"
         local wname="$(basename "$wpath")"
-        log info "Disabling workflow: $wname"
-        if [[ -f ".github/workflows/$wname" ]]; then
-          git mv ".github/workflows/$wname" ".github/workflows-disabled/$wname" 2>/dev/null || true
-          git add ".github/workflows-disabled/$wname" 2>/dev/null || true
+        if [[ "$DRY_RUN" == "true" ]]; then
+          log info "DRY RUN: Would disable workflow: $wname"
         else
-          log warn "Workflow $wname not found in workflows/"
+          log info "Disabling workflow: $wname"
+          if [[ -f ".github/workflows/$wname" ]]; then
+            git mv ".github/workflows/$wname" ".github/workflows-disabled/$wname" 2>/dev/null || true
+            git add ".github/workflows-disabled/$wname" 2>/dev/null || true
+          else
+            log warn "Workflow $wname not found in workflows/"
+          fi
         fi
         ;;
       rerun-failed-workflows)
-        log info "Rerunning all failed workflows"
-        # Get current failed runs and rerun them
-        local current_runs
-        current_runs="$(get_runs_json)"
-        approve_or_rerun "$current_runs"
+        if [[ "$DRY_RUN" == "true" ]]; then
+          log info "DRY RUN: Would rerun all failed workflows"
+        else
+          log info "Rerunning all failed workflows"
+          # Get current failed runs and rerun them
+          local current_runs
+          current_runs="$(get_runs_json)"
+          approve_or_rerun "$current_runs"
+        fi
         ;;
       *)
         log warn "Unknown action: $action"
