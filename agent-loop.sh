@@ -772,6 +772,17 @@ execute_batch_actions() {
           log warn "Workflow $wname not found in workflows-disabled/"
         fi
         ;;
+      disable-workflow:*)
+        local wpath="${action#disable-workflow:}"
+        local wname="$(basename "$wpath")"
+        log info "Disabling workflow: $wname"
+        if [[ -f ".github/workflows/$wname" ]]; then
+          git mv ".github/workflows/$wname" ".github/workflows-disabled/$wname" 2>/dev/null || true
+          git add ".github/workflows-disabled/$wname" 2>/dev/null || true
+        else
+          log warn "Workflow $wname not found in workflows/"
+        fi
+        ;;
       rerun-failed-workflows)
         log info "Rerunning all failed workflows"
         # Get current failed runs and rerun them
