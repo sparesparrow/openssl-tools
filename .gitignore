@@ -651,3 +651,21 @@ cleanup-report.txt
 # Redundant README files
 README-agent-loop-improved.md
 README
+
+# IDE-specific configuration
+.cursor/
+.vscode/
+*.code-workspace
+
+# Temporary reports and status files
+*REPORT*.md
+*STATUS*.md
+phase-*.md
+*-completion.md
+*-validation.md
+.github/*-report.md
+docs/temporary-*.md
+
+# Agent loop artifacts
+agent-loop-*.log
+cursor-*.log
