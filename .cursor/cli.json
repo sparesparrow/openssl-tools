@@ -3,6 +3,7 @@
     "allow": [
       "read_file",
       "write_file", 
+      "delete_file",
       "search_code",
       "run_terminal_cmd",
       "web_search",
@@ -14,7 +15,6 @@
       "todo_write"
     ],
     "deny": [
-      "delete_file",
       "force_push",
       "merge_pull_request"
     ]

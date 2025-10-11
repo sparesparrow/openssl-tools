@@ -6,9 +6,9 @@
   "outputFormat": "json",
   "force": true,
   "printResult": true,
-  "stream": false,
+  "stream": true,
   "mcp": {
-    "enabled": false,
+    "enabled": true,
     "servers": [
       "github",
       "openssl-ci",
