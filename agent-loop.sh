@@ -998,9 +998,15 @@ main() {
   log info "Streaming: $USE_STREAMING"
   log info "Cursor Config: $CURSOR_CONFIG_FILE (MCP: $MCP_ENABLED)"
   
-  # Check if cursor-agent is available
+  # Check if cursor-agent is available and configured
   if ! command -v cursor-agent >/dev/null 2>&1; then
     log warn "cursor-agent not found, running in simple mode (rerun/approve only)"
+  elif [[ -z "${CURSOR_API_KEY:-}" ]]; then
+    log warn "cursor-agent found but CURSOR_API_KEY not set, running in simple mode"
+    log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
+    log info "Get your API key from: https://cursor.com/settings/api"
+  else
+    log info "cursor-agent available with API key - AI-powered planning enabled"
   fi
   
   # Ensure we're on the correct branch
@@ -1061,7 +1067,7 @@ main() {
     
     # Generate plan
     local plan
-    if command -v cursor-agent >/dev/null 2>&1; then
+    if command -v cursor-agent >/dev/null 2>&1 && [[ -n "${CURSOR_API_KEY:-}" ]]; then
       plan="$(generate_plan "$runs_json" "$pr_json" "$not_green")"
       
       if [[ -z "$plan" ]]; then
@@ -1073,7 +1079,13 @@ main() {
         execute_plan "$plan"
       fi
     else
-      log info "Running in simple mode - rerunning failed workflows"
+      if command -v cursor-agent >/dev/null 2>&1 && [[ -z "${CURSOR_API_KEY:-}" ]]; then
+        log warn "cursor-agent found but CURSOR_API_KEY not set - running in simple mode"
+        log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
+        log info "Get your API key from: https://cursor.com/settings/api"
+      else
+        log info "cursor-agent not found - running in simple mode"
+      fi
       # Simple mode: just rerun failed workflows
       approve_or_rerun "$not_green"
     fi
