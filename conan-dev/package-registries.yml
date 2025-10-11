@@ -7,7 +7,7 @@ registries:
     url: "${ARTIFACTORY_URL}"
     repository: "conan-local"
     username: "${ARTIFACTORY_USERNAME}"
-    password: "${ARTIFACTORY_PASSWORD}"
+    password: "${ARTIFACTORY_TOKEN}"
     enabled: true
     priority: 1
     description: "Primary package registry for OpenSSL packages"
@@ -74,7 +74,7 @@ upload:
 environment:
   ARTIFACTORY_URL: "https://your-artifactory-instance.com"
   ARTIFACTORY_USERNAME: "conan-user"
-  ARTIFACTORY_PASSWORD: "conan-password"
+  ARTIFACTORY_TOKEN: "conan-password"
   ARTIFACTORY_REPO: "conan-local"
   
   GITHUB_REPOSITORY: "openssl/openssl"

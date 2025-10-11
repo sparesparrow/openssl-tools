@@ -22,7 +22,7 @@ class PackageRegistryManager:
             'artifactory': {
                 'url': os.environ.get('ARTIFACTORY_URL'),
                 'username': os.environ.get('ARTIFACTORY_USERNAME'),
-                'password': os.environ.get('ARTIFACTORY_PASSWORD'),
+                'password': os.environ.get('ARTIFACTORY_TOKEN'),
                 'repo': os.environ.get('ARTIFACTORY_REPO', 'conan-local')
             },
             'github-packages': {

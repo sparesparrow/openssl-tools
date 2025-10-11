@@ -5,7 +5,7 @@ artifactory:
   - /opt/conan/bin/conan
   - $HOME/.local/bin/conan
   conan_url: https://artifactory.example.com/artifactory/api/conan/openssl-tools-local
-  password: ${ARTIFACTORY_PASSWORD}
+  password: ${ARTIFACTORY_TOKEN}
   root: https://artifactory.example.com:443/artifactory
   schema_version: '1.0'
   user: openssl-tools-user

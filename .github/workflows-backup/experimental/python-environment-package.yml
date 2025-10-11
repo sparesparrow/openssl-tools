@@ -302,7 +302,7 @@ jobs:
         if: env.ARTIFACTORY_URL != ''
         run: |
           conan remote add artifactory ${{ env.ARTIFACTORY_URL }}
-          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan user -p ${{ secrets.ARTIFACTORY_TOKEN }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
           conan upload "openssl-python-environment/${{ needs.prepare-package.outputs.package_version }}@openssl/stable" -r=artifactory --all --confirm
       
       - name: Upload build artifacts
@@ -317,7 +317,7 @@ jobs:
     needs: [prepare-package, build-python-environment]
     if: needs.prepare-package.outputs.should_package == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: python-conan-env
     steps:
       - uses: actions/checkout@v4
       

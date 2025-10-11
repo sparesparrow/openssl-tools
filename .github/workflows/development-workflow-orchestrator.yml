@@ -1,0 +1,143 @@
+name: Development Workflow Orchestrator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      workflow_type:
+        description: 'Type of workflow to run'
+        required: true
+        type: choice
+        options:
+          - component-development
+          - security-review
+          - performance-optimization
+          - all
+        default: 'all'
+      trigger_reason:
+        description: 'Reason for triggering workflow'
+        required: false
+        type: string
+        default: 'manual'
+
+jobs:
+  analyze-trigger:
+    name: Analyze Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      workflow-type: ${{ steps.analyze.outputs.workflow-type }}
+      trigger-reason: ${{ steps.analyze.outputs.trigger-reason }}
+      should-trigger: ${{ steps.analyze.outputs.should-trigger }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyze trigger conditions
+        id: analyze
+        run: |
+          echo "🔍 Analyzing trigger conditions..."
+          
+          # Determine workflow type based on event and changes
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "📋 Analyzing PR changes..."
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+            echo "Changed files: $CHANGED_FILES"
+            
+            # Check for crypto/ssl changes
+            if echo "$CHANGED_FILES" | grep -E "(crypto|ssl)" > /dev/null; then
+              echo "workflow-type=security-review" >> $GITHUB_OUTPUT
+              echo "trigger-reason=pr_crypto_ssl_changes" >> $GITHUB_OUTPUT
+              echo "should-trigger=true" >> $GITHUB_OUTPUT
+              echo "✅ PR with crypto/ssl changes detected - triggering Security Review"
+            else
+              echo "workflow-type=component-development" >> $GITHUB_OUTPUT
+              echo "trigger-reason=pr_created" >> $GITHUB_OUTPUT
+              echo "should-trigger=true" >> $GITHUB_OUTPUT
+              echo "✅ PR created - triggering Component Development"
+            fi
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "🚀 Analyzing push to main..."
+            
+            # Check build status
+            if gh run list --status failure --limit 1 > /dev/null 2>&1; then
+              echo "❌ Recent build failures detected - skipping workflow"
+              echo "should-trigger=false" >> $GITHUB_OUTPUT
+            else
+              echo "workflow-type=component-development" >> $GITHUB_OUTPUT
+              echo "trigger-reason=commit_pushed_main" >> $GITHUB_OUTPUT
+              echo "should-trigger=true" >> $GITHUB_OUTPUT
+              echo "✅ Commit to main with successful build - triggering Component Development"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🎯 Manual workflow dispatch..."
+            echo "workflow-type=${{ github.event.inputs.workflow_type }}" >> $GITHUB_OUTPUT
+            echo "trigger-reason=${{ github.event.inputs.trigger_reason }}" >> $GITHUB_OUTPUT
+            echo "should-trigger=true" >> $GITHUB_OUTPUT
+            echo "✅ Manual workflow dispatch - triggering ${{ github.event.inputs.workflow_type }}"
+          else
+            echo "❌ No trigger conditions met"
+            echo "should-trigger=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Component Development Workflow
+  component-development:
+    name: Component Development Workflow
+    needs: analyze-trigger
+    if: |
+      needs.analyze-trigger.outputs.should-trigger == 'true' && 
+      (needs.analyze-trigger.outputs.workflow-type == 'component-development' || 
+       needs.analyze-trigger.outputs.workflow-type == 'all')
+    uses: ./.github/workflows/component-development.yml
+
+  # Security Review Workflow
+  security-review:
+    name: Security Review Workflow
+    needs: analyze-trigger
+    if: |
+      needs.analyze-trigger.outputs.should-trigger == 'true' && 
+      (needs.analyze-trigger.outputs.workflow-type == 'security-review' || 
+       needs.analyze-trigger.outputs.workflow-type == 'all')
+    uses: ./.github/workflows/security-review.yml
+
+  # Performance Optimization Workflow
+  performance-optimization:
+    name: Performance Optimization Workflow
+    needs: analyze-trigger
+    if: |
+      needs.analyze-trigger.outputs.should-trigger == 'true' && 
+      (needs.analyze-trigger.outputs.workflow-type == 'performance-optimization' || 
+       needs.analyze-trigger.outputs.workflow-type == 'all')
+    uses: ./.github/workflows/performance-optimization.yml
+
+  # Workflow Summary
+  workflow-summary:
+    name: Workflow Summary
+    needs: [analyze-trigger, component-development, security-review, performance-optimization]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "## 🎯 Development Workflow Orchestrator Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Trigger Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- Event: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Ref: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow Type: ${{ needs.analyze-trigger.outputs.workflow-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger Reason: ${{ needs.analyze-trigger.outputs.trigger-reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Should Trigger: ${{ needs.analyze-trigger.outputs.should-trigger }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Execution Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Component Development: ${{ needs.component-development.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Review: ${{ needs.security-review.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance Optimization: ${{ needs.performance-optimization.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Automation Rules Applied" >> $GITHUB_STEP_SUMMARY
+          echo "- PR with crypto/ssl changes → Security Review" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit to main with successful build → Component Development" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance regression detected → Performance Optimization" >> $GITHUB_STEP_SUMMARY

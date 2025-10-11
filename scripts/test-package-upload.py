@@ -117,7 +117,7 @@ class TestPackageConan(ConanFile):
         env_vars = {
             'ARTIFACTORY_URL': os.environ.get('ARTIFACTORY_URL'),
             'ARTIFACTORY_USERNAME': os.environ.get('ARTIFACTORY_USERNAME'),
-            'ARTIFACTORY_PASSWORD': os.environ.get('ARTIFACTORY_PASSWORD'),
+            'ARTIFACTORY_TOKEN': os.environ.get('ARTIFACTORY_TOKEN'),
             'GITHUB_TOKEN': os.environ.get('GITHUB_TOKEN'),
             'GITHUB_ACTOR': os.environ.get('GITHUB_ACTOR'),
             'GITHUB_REPOSITORY': os.environ.get('GITHUB_REPOSITORY'),

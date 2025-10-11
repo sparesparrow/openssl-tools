@@ -188,7 +188,7 @@ jobs:
       - name: Configure Artifactory Remote
         run: |
           conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/conan-local
-          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan user -p ${{ secrets.ARTIFACTORY_TOKEN }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
       
       - name: Upload packages to Artifactory
         run: |

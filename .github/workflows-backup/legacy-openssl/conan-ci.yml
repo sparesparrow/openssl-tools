@@ -59,7 +59,7 @@ jobs:
       CLICOLOR: 1
       ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
       ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
-      ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+      ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,7 +175,7 @@ jobs:
         if: env.ARTIFACTORY_URL != ''
         run: |
           conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
-          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan user -p ${{ secrets.ARTIFACTORY_TOKEN }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
           conan upload "openssl/*" -r=artifactory --all --confirm || true
       
       - name: Upload packages to GitHub Packages

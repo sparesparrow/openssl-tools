@@ -112,7 +112,7 @@ This repository implements a **modern CI/CD architecture** for OpenSSL package m
 | `CONAN_PASSWORD` | Conan remote authentication | Package publishing (optional) |
 | `ARTIFACTORY_URL` | Artifactory integration | Enhanced Conan workflows (optional) |
 | `ARTIFACTORY_USERNAME` | Artifactory authentication | Enhanced Conan workflows (optional) |
-| `ARTIFACTORY_PASSWORD` | Artifactory authentication | Enhanced Conan workflows (optional) |
+| `ARTIFACTORY_TOKEN` | Artifactory authentication | Enhanced Conan workflows (optional) |
 | `COVERITY_TOKEN` | Coverity static analysis | Static analysis workflows (optional) |
 
 ### **Default Behavior**

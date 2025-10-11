@@ -79,7 +79,7 @@ class DependencyManager:
                         "priority": 2,
                         "url": os.getenv("ARTIFACTORY_URL", ""),
                         "username": os.getenv("ARTIFACTORY_USERNAME", ""),
-                        "password": os.getenv("ARTIFACTORY_PASSWORD", "")
+                        "password": os.getenv("ARTIFACTORY_TOKEN", "")
                     },
                     "github_packages": {
                         "enabled": True,

@@ -15,7 +15,7 @@ def test_config_management():
     """Test configuration management"""
     print("Testing configuration management...")
     try:
-        from openssl_tools.core.config import ConfigLoaderManager, create_default_config
+        from launcher.conan_launcher import ConfigLoaderManager, create_default_config
         
         # Create default config
         config_dir = project_root / 'conf'
@@ -36,7 +36,7 @@ def test_build_optimizer():
     """Test build optimizer"""
     print("Testing build optimizer...")
     try:
-        from openssl_tools.utils.build_optimizer import BuildOptimizer
+        from build_optimizer import BuildOptimizer
         
         config = {
             'source_dir': '.',
@@ -64,7 +64,7 @@ def test_sbom_generator():
     """Test SBOM generator"""
     print("Testing SBOM generator...")
     try:
-        from openssl_tools.utils.sbom_generator import SBOMGenerator
+        from scripts.sbom_generator import SBOMGenerator
         
         config = {
             'enable_vulnerability_scanning': False,  # Disable for testing
@@ -104,7 +104,7 @@ def test_python_env_manager():
     """Test Python environment manager"""
     print("Testing Python environment manager...")
     try:
-        from openssl_tools.utils.python_env_manager import PythonEnvironmentManager
+        from setup_python_env import PythonEnvironmentManager
         
         manager = PythonEnvironmentManager()
         available_pythons = manager.available_pythons
@@ -122,9 +122,9 @@ def test_utility_modules():
     """Test utility modules"""
     print("Testing utility modules...")
     try:
-        from openssl_tools.util.file_operations import get_file_metadata, ensure_target_exists
-        from openssl_tools.util.execute_command import execute_command_safe
-        from openssl_tools.util.custom_logging import setup_console_logging
+        from util.file_operations import get_file_metadata, ensure_target_exists
+        from util.execute_command import execute_command_safe
+        from util.custom_logging import setup_console_logging
         
         # Test file operations
         test_file = project_root / 'conanfile.py'
