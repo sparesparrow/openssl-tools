@@ -1,0 +1,75 @@
+ARG UBUNTU_VERSION=22.04
+FROM ubuntu:${UBUNTU_VERSION} as base
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc-11 \
+    g++-11 \
+    clang-14 \
+    cmake \
+    ninja-build \
+    perl \
+    python3 \
+    python3-pip \
+    pkg-config \
+    zlib1g-dev \
+    libssl-dev \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Conan
+RUN pip3 install conan==2.0.* && \
+    conan profile detect --force
+
+# Build stage
+FROM base as builder
+ARG COMPILER=gcc-11
+ARG BUILD_TYPE=Release
+ARG ENABLE_FIPS=ON
+
+WORKDIR /src
+COPY . .
+
+# Configure and build
+RUN mkdir build && cd build && \
+    if [ "$COMPILER" = "gcc-11" ]; then \
+        export CC=gcc-11 CXX=g++-11; \
+    elif [ "$COMPILER" = "clang-14" ]; then \
+        export CC=clang-14 CXX=clang++-14; \
+    fi && \
+    ../Configure linux-x86_64 \
+        --prefix=/opt/openssl \
+        --openssldir=/opt/openssl/ssl \
+        shared zlib \
+        $([ "$ENABLE_FIPS" = "ON" ] && echo "enable-fips") && \
+    make -j$(nproc) && \
+    make test && \
+    make install DESTDIR=/install
+
+# Create Conan package
+RUN conan create . \
+    --profile:build=default \
+    --profile:host=default \
+    -s build_type=${BUILD_TYPE} \
+    -s compiler=${COMPILER%%=*} \
+    -s compiler.version=${COMPILER##*=} \
+    -o openssl:shared=True \
+    -o openssl:fPIC=True
+
+# Runtime stage
+FROM ubuntu:${UBUNTU_VERSION} as runtime
+RUN apt-get update && apt-get install -y \
+    zlib1g \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install/opt/openssl /opt/openssl
+ENV PATH="/opt/openssl/bin:$PATH" \
+    LD_LIBRARY_PATH="/opt/openssl/lib:$LD_LIBRARY_PATH"
+
+# Artifact stage  
+FROM scratch as artifacts
+COPY --from=builder /install /
+COPY --from=builder /root/.conan2/p/ /conan-packages/

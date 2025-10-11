@@ -174,7 +174,7 @@ ci_cd:
     - GITHUB_TOKEN
     - ARTIFACTORY_URL
     - ARTIFACTORY_USERNAME
-    - ARTIFACTORY_PASSWORD
+    - ARTIFACTORY_TOKEN
 
 monitoring:
   # Enable monitoring

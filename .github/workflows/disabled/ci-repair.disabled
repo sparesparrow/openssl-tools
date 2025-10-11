@@ -1,0 +1,26 @@
+name: Auto-repair CI
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'     # každých 30 minut
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+
+      - name: Install GitHub CLI
+        uses: cli/cli@latest
+
+      - name: Install Cursor CLI
+        run: |
+          pip install cursor-cli  # nebo jiná metoda instalace
+
+      - name: Run repair loop
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          bash scripts/ci-repair.sh

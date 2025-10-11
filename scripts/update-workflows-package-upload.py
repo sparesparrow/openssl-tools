@@ -24,7 +24,7 @@ class WorkflowPackageUploadUpdater:
         if: env.ARTIFACTORY_URL != ''
         run: |
           conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
-          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan user -p ${{ secrets.ARTIFACTORY_TOKEN }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
           conan upload "openssl/*" -r=artifactory --all --confirm || true
       
       - name: Upload packages to GitHub Packages
@@ -149,7 +149,7 @@ class WorkflowPackageUploadUpdater:
                 env_vars = """
   ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
   ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
-  ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+  ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
 """
                 
                 # Find the env: line and add variables
@@ -211,7 +211,7 @@ This document lists the secrets that need to be configured in GitHub for package
 - `ARTIFACTORY_URL`: The base URL of your Artifactory instance
   - Example: `https://your-company.jfrog.io`
 - `ARTIFACTORY_USERNAME`: Username for Artifactory authentication
-- `ARTIFACTORY_PASSWORD`: Password or API key for Artifactory authentication
+- `ARTIFACTORY_TOKEN`: Password or API key for Artifactory authentication
 
 ## GitHub Packages Secrets
 
@@ -238,7 +238,7 @@ The following environment variables are used in workflows:
 
 - `ARTIFACTORY_URL`: Base URL for Artifactory
 - `ARTIFACTORY_USERNAME`: Artifactory username
-- `ARTIFACTORY_PASSWORD`: Artifactory password
+- `ARTIFACTORY_TOKEN`: Artifactory password
 - `ARTIFACTORY_REPO`: Artifactory repository name (default: conan-local)
 
 ## Package Upload Behavior

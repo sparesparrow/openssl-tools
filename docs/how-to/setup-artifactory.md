@@ -114,7 +114,7 @@ Add the following secrets to your GitHub repository:
 # Artifactory connection
 ARTIFACTORY_URL: "https://your-instance.jfrog.io"
 ARTIFACTORY_USERNAME: "openssl-ci"
-ARTIFACTORY_PASSWORD: "your-strong-password"
+ARTIFACTORY_TOKEN: "your-strong-password"
 ARTIFACTORY_API_KEY: "your-api-key"
 
 # Conan authentication
@@ -288,7 +288,7 @@ jobs:
       - name: Configure Artifactory
         run: |
           conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/artifactory/api/conan/conan-local
-          conan user -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }} -p ${{ secrets.ARTIFACTORY_PASSWORD }}
+          conan user -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }} -p ${{ secrets.ARTIFACTORY_TOKEN }}
       
       - name: Build Package
         run: |
@@ -332,7 +332,7 @@ jobs:
       - name: Configure Artifactory
         run: |
           conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/artifactory/api/conan/conan-local
-          conan user -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }} -p ${{ secrets.ARTIFACTORY_PASSWORD }}
+          conan user -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }} -p ${{ secrets.ARTIFACTORY_TOKEN }}
       
       - name: Warm up Cache
         run: |

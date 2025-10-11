@@ -1,1 +1,0 @@
-. "$HOME/projects/openssl-tools/test_consumer/deactivate_conanbuildenv.sh"

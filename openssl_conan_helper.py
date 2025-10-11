@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-OpenSSL ngapy Conan Integration Helper
-Simple script to use ngapy Conan integration
+Backward compatibility wrapper for OpenSSL Conan Helper.
+This file provides backward compatibility for existing scripts that import from the root level.
 """
 
 import sys

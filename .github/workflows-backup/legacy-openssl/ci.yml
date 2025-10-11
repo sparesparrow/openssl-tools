@@ -1,0 +1,364 @@
+name: OpenSSL CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, develop, feature/* ]
+  pull_request:
+    branches: [ master, develop ]
+  schedule:
+    # Run daily at 2 AM UTC for security scans
+    - cron: '0 2 * * *'
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+jobs:
+  # Validation stage - runs in parallel
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        check: [lint, security-scan, dependency-check]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Conan install
+        run: |
+          conan-dev/venv/bin/python -m pip install --upgrade pip
+          conan-dev/venv/bin/python -m pip install -r requirements.txt
+          
+      - name: Run linting
+        if: matrix.check == 'lint'
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          conan-dev/venv/bin/python -m flake8 scripts/ --max-line-length=120
+          conan-dev/venv/bin/python -m pylint scripts/ --disable=C0114,C0116
+          
+      - name: Security scan
+        if: matrix.check == 'security-scan'
+        run: |
+          # Install security scanning tools
+          conan-dev/venv/bin/python -m pip install safety bandit
+          
+          # Scan for known vulnerabilities
+          conan-dev/venv/bin/safety check --json --output safety-report.json || true
+          
+          # Scan for security issues
+          conan-dev/venv/bin/bandit -r scripts/ -f json -o bandit-report.json || true
+          
+      - name: Conan dependency check
+        if: matrix.check == 'dependency-check'
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py install --profile linux-gcc11
+          
+      - name: Upload security reports
+        if: matrix.check == 'security-scan'
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            safety-report.json
+            bandit-report.json
+
+  # Build stage - runs in parallel for different platforms
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    needs: validate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-gcc11
+            profile: linux-gcc11
+            arch: x86_64
+          - os: ubuntu-22.04
+            platform: linux-clang15
+            profile: linux-clang15
+            arch: x86_64
+          - os: windows-2022
+            platform: windows-msvc2022
+            profile: windows-msvc2022
+            arch: x86_64
+          - os: macos-12
+            platform: macos-clang14
+            profile: macos-clang14
+            arch: x86_64
+            
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential perl cmake
+          
+      - name: Install system dependencies (Windows)
+        if: matrix.os == 'windows-2022'
+        run: |
+          # Windows dependencies are handled by Conan
+          echo "Windows dependencies handled by Conan"
+          
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-12'
+        run: |
+          brew install cmake perl
+          
+      - name: Install Python dependencies
+        run: |
+          conan-dev/venv/bin/python -m pip install --upgrade pip
+          conan-dev/venv/bin/python -m pip install -r requirements.txt
+          
+      - name: Set up Conan environment
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_USER_HOME }}
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'scripts/ci/ci_config.yaml') }}
+          restore-keys: |
+            conan-${{ runner.os }}-
+            
+      - name: Conan build
+        run: |
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py create --profile ${{ matrix.profile }}
+          
+      - name: Conan generate SBOM
+        run: |
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py create --profile ${{ matrix.profile }}
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-build-${{ matrix.platform }}
+          path: |
+            ${{ env.CONAN_USER_HOME }}/p/*/p/
+            build_metrics.json
+            sbom.json
+          retention-days: 30
+
+  # Test stage - runs after successful builds
+  test:
+    name: Test (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-gcc11
+            profile: linux-gcc11
+          - os: windows-2022
+            platform: windows-msvc2022
+            profile: windows-msvc2022
+          - os: macos-12
+            platform: macos-clang14
+            profile: macos-clang14
+            
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Python dependencies
+        run: |
+          conan-dev/venv/bin/python -m pip install --upgrade pip
+          conan-dev/venv/bin/python -m pip install -r requirements.txt
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: openssl-build-${{ matrix.platform }}
+          path: ${{ env.CONAN_USER_HOME }}/p/*/p/
+          
+      - name: Set up Conan environment
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          
+      - name: Conan test
+        run: |
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py test --profile ${{ matrix.profile }}
+          
+      - name: Run integration tests
+        run: |
+          conan-dev/venv/bin/python scripts/ci/test_harness.py
+          
+      - name: Run performance tests
+        if: matrix.platform == 'linux-gcc11'
+        run: |
+          # Performance tests only on Linux for now
+          conan-dev/venv/bin/python scripts/ci/performance_tests.py
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.platform }}
+          path: |
+            test_results/
+            build_metrics.json
+          retention-days: 30
+
+  # Package stage - creates final packages
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Python dependencies
+        run: |
+          conan-dev/venv/bin/python -m pip install --upgrade pip
+          conan-dev/venv/bin/python -m pip install -r requirements.txt
+          
+      - name: Set up Conan environment
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          
+      - name: Conan create package
+        run: |
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py create --profile linux-gcc11
+          
+      - name: Conan generate final SBOM
+        run: |
+          conan-dev/venv/bin/python scripts/ci/conan_automation.py create --profile linux-gcc11
+          
+      - name: Upload final packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-packages
+          path: |
+            ${{ env.CONAN_USER_HOME }}/p/*/p/
+            sbom.json
+            build_metrics.json
+          retention-days: 90
+
+  # Security scan stage - comprehensive security analysis
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install security tools
+        run: |
+          conan-dev/venv/bin/python -m pip install safety bandit semgrep
+          
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: openssl-packages
+          path: packages/
+          
+      - name: Run comprehensive security scan
+        run: |
+          # Scan Python code
+          conan-dev/venv/bin/bandit -r scripts/ -f json -o bandit-report.json
+          
+          # Scan for vulnerabilities
+          conan-dev/venv/bin/safety check --json --output safety-report.json
+          
+          # Scan with Semgrep
+          conan-dev/venv/bin/semgrep --config=auto scripts/ --json --output=semgrep-report.json
+          
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-final
+          path: |
+            bandit-report.json
+            safety-report.json
+            semgrep-report.json
+          retention-days: 90
+
+  # Deploy stage - deploys to staging/production
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [package, security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    environment: python-conan-env
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Python dependencies
+        run: |
+          conan-dev/venv/bin/python -m pip install --upgrade pip
+          conan-dev/venv/bin/python -m pip install -r requirements.txt
+          
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: openssl-packages
+          path: packages/
+          
+      - name: Deploy to production registry
+        run: |
+          # This would deploy to your production Conan registry
+          echo "Deploying to production registry..."
+          # conan-dev/venv/bin/python scripts/ci/deploy.py --environment production
+          
+      - name: Notify deployment
+        run: |
+          echo "Deployment completed successfully"
+          # This would send notifications to stakeholders

@@ -1,0 +1,10 @@
+{
+  "name": "openssl-crypto",
+  "version": "3.2.0",
+  "description": "OpenSSL cryptographic library component",
+  "type": "library",
+  "dependencies": ["zlib"],
+  "build_targets": ["libcrypto.so", "libcrypto.a"],
+  "configure_options": ["no-ssl3", "no-comp", "no-hw", "no-engine", "no-dso"],
+  "test_suite": "crypto_tests"
+}

@@ -1,113 +1,97 @@
-#!/usr/bin/env python3
 """
-OpenSSL Conan Package Recipe - Integration Test Version
-Simplified version for testing basic OpenSSL build integration
+OpenSSL Tools Conan Package
+Provides build tools, automation scripts, and infrastructure components
 """
 
 from conan import ConanFile
-from conan.tools.gnu import AutotoolsToolchain, AutotoolsDeps, Autotools
-from conan.tools.files import copy, save, load, chdir
-from conan.tools.scm import Git
-from conan.tools.system import package_manager
-from conan.errors import ConanInvalidConfiguration
+from conan.tools.files import copy, save
+from conan.tools.layout import basic_layout
 import os
-import re
 import json
+from pathlib import Path
 
-
-class OpenSSLConan(ConanFile):
-    name = "openssl"
-    version = None  # Dynamically determined from VERSION.dat
-    
-    # Package metadata
-    description = "OpenSSL is a robust, commercial-grade, full-featured toolkit for TLS and SSL protocols"
-    homepage = "https://www.openssl.org"
-    url = "https://github.com/openssl/openssl"
+class OpenSSLToolsConan(ConanFile):
+    name = "openssl-tools"
+    version = "1.0.0"
+    description = "OpenSSL build tools, automation scripts, and infrastructure components"
     license = "Apache-2.0"
-    topics = ("ssl", "tls", "cryptography", "security")
+    url = "https://github.com/sparesparrow/openssl-tools"
+    homepage = "https://github.com/sparesparrow/openssl-tools"
+    topics = ("openssl", "build-tools", "automation", "ci-cd")
     
-    # Package configuration - minimal options for testing
-    settings = "os", "compiler", "build_type", "arch"
-    options = {
-        "shared": [True, False],
-        "fPIC": [True, False],
-        "fips": [True, False],
-        "no_asm": [True, False],
-        "no_threads": [True, False],
-    }
+    # Package settings
+    package_type = "application"
+    settings = "os", "arch", "compiler", "build_type"
     
-    default_options = {
-        "shared": True,
-        "fPIC": True,
-        "fips": False,
-        "no_asm": False,
-        "no_threads": False,
-    }
+    # No source code to build - this is a tools package
+    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*"
     
-    def set_version(self):
-        """Extract version from VERSION.dat"""
-        try:
-            version_file = os.path.join(self.recipe_folder, "VERSION.dat")
-            if os.path.exists(version_file):
-                with open(version_file, 'r') as f:
-                    content = f.read()
-                    # Simple version extraction
-                    version_match = re.search(r'MAJOR=(\d+)\s+MINOR=(\d+)\s+PATCH=(\d+)', content)
-                    if version_match:
-                        major, minor, patch = version_match.groups()
-                        self.version = f"{major}.{minor}.{patch}"
-                    else:
-                        self.version = "3.5.0"  # fallback
-            else:
-                self.version = "3.5.0"  # fallback
-        except Exception as e:
-            self.output.warning(f"Could not determine version: {e}")
-            self.version = "3.5.0"  # fallback
-    
-    def configure(self):
-        """Configure build options"""
-        if not self.options.shared:
-            del self.options.fPIC
-    
-    def build_requirements(self):
-        """Specify build requirements"""
-        if self.settings.os == "Windows":
-            self.tool_requires("nasm/2.16.01")
-            self.tool_requires("strawberryperl/5.32.1.1")
-        else:
-            # Use system perl for Unix-like systems
-            pass
-    
-    def source(self):
-        """Source is already available in recipe_folder"""
-        pass
-    
-    def generate(self):
-        """Generate build files"""
-        tc = AutotoolsToolchain(self)
-        tc.generate()
-        
-        deps = AutotoolsDeps(self)
-        deps.generate()
-    
-    def build(self):
-        """Build OpenSSL"""
-        autotools = Autotools(self)
-        autotools.configure()
-        autotools.make()
+    def layout(self):
+        basic_layout(self)
     
     def package(self):
-        """Package OpenSSL"""
-        autotools = Autotools(self)
-        autotools.install()
+        # Copy all tools and scripts
+        copy(self, "scripts/*", src=self.source_folder, dst=os.path.join(self.package_folder, "scripts"))
+        copy(self, "profiles/*", src=self.source_folder, dst=os.path.join(self.package_folder, "profiles"))
+        copy(self, "docker/*", src=self.source_folder, dst=os.path.join(self.package_folder, "docker"))
+        copy(self, "templates/*", src=self.source_folder, dst=os.path.join(self.package_folder, "templates"))
+        copy(self, ".cursor/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".cursor"))
+        
+        # Copy configuration files
+        copy(self, "*.md", src=self.source_folder, dst=self.package_folder)
+        copy(self, ".env.template", src=self.source_folder, dst=self.package_folder)
+        copy(self, ".devcontainer/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".devcontainer"))
+        
+        # Create package info
+        self._create_package_info()
+    
+    def _create_package_info(self):
+        """Create package information file"""
+        package_info = {
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "tools": [
+                "docker-build-and-upload.sh",
+                "cursor-agents-coordinator.sh", 
+                "validate-artifactory-packages.sh",
+                "generate_sbom.py",
+                "dev-setup.sh"
+            ],
+            "profiles": [
+                "ubuntu-20.04.profile",
+                "ubuntu-22.04.profile",
+                "windows-msvc2022.profile",
+                "macos-arm64.profile",
+                "macos-x86_64.profile"
+            ],
+            "docker_services": [
+                "ubuntu-20-04-gcc",
+                "ubuntu-22-04-clang",
+                "windows-2022",
+                "macos-x86_64",
+                "macos-arm64"
+            ],
+            "github_actions": [
+                "setup-openssl-build",
+                "run-openssl-tests"
+            ]
+        }
+        
+        save(self, os.path.join(self.package_folder, "package_info.json"), 
+             json.dumps(package_info, indent=2))
     
     def package_info(self):
-        """Define package information"""
-        self.cpp_info.libs = ["ssl", "crypto"]
+        """Define package information for consumers"""
+        self.cpp_info.bindirs = ["scripts"]
+        self.cpp_info.libdirs = []
+        self.cpp_info.includedirs = []
         
-        if self.settings.os == "Linux":
-            self.cpp_info.system_libs = ["dl", "pthread"]
-        elif self.settings.os == "Windows":
-            self.cpp_info.system_libs = ["ws2_32", "gdi32", "advapi32", "crypt32", "user32"]
-        elif self.settings.os == "Macos":
-            self.cpp_info.frameworks = ["Security", "CoreFoundation"]
+        # Set environment variables for tools
+        self.runenv_info.define("OPENSSL_TOOLS_ROOT", self.package_folder)
+        self.runenv_info.define("OPENSSL_TOOLS_SCRIPTS", os.path.join(self.package_folder, "scripts"))
+        self.runenv_info.define("OPENSSL_TOOLS_PROFILES", os.path.join(self.package_folder, "profiles"))
+        self.runenv_info.define("OPENSSL_TOOLS_DOCKER", os.path.join(self.package_folder, "docker"))
+        
+        # Add to PATH
+        self.env_info.PATH.append(os.path.join(self.package_folder, "scripts"))

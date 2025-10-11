@@ -1,0 +1,13 @@
+name: Minimal Success
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+
+jobs:
+  success:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Success
+        run: echo "✅ Success"

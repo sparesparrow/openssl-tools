@@ -16,7 +16,7 @@ except ImportError:
     ARTIFACTORY_AVAILABLE = False
     ArtifactoryPath = None
 
-from openssl_tools.util.copy_tools import ensure_target_exists
+from util.copy_tools import ensure_target_exists
 
 log = logging.getLogger('__main__.' + __name__)
 
