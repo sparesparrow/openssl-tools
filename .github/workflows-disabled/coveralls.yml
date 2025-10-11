@@ -24,12 +24,6 @@ permissions:
   contents: read
 
 jobs:
-env:
-  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
-  CONAN_COLOR_DISPLAY: 1
-  CLICOLOR_FORCE: 1
-  CLICOLOR: 1
-
   define-matrix:
     runs-on: ubuntu-latest
     outputs:
@@ -49,29 +43,11 @@ env:
           else
           MATRIX=$(cat << EOF
           [{
-              "branch": "openssl-3.6",
-              "extra_config": "no-afalgeng enable-fips enable-tfo"
-            },{
-              "branch": "openssl-3.5",
-              "extra_config": "no-afalgeng enable-fips enable-tfo"
-            },{
-              "branch": "openssl-3.4",
-              "extra_config": "no-afalgeng enable-fips enable-tfo"
-            }, {
-              "branch": "openssl-3.3",
-              "extra_config": "no-afalgeng enable-fips enable-tfo"
-            }, {
-              "branch": "openssl-3.2",
-              "extra_config": "no-afalgeng enable-fips enable-tfo"
-            }, {
-              "branch": "openssl-3.1",
-              "extra_config": "no-afalgeng enable-fips"
-            }, {
-              "branch": "openssl-3.0",
-              "extra_config": "no-afalgeng enable-fips"
-            }, {
               "branch": "master",
-              "extra_config": "no-afalgeng enable-fips enable-tfo enable-lms enable-crypto-mdebug enable-allocfail-tests"
+              "extra_config": "no-afalgeng enable-fips"
+            }, {
+              "branch": "simplify-openssl-build",
+              "extra_config": "no-afalgeng enable-fips"
           }]
           EOF
           )
@@ -88,6 +64,11 @@ env:
       matrix:
         branches: ${{ fromJSON(needs.define-matrix.outputs.branches) }}
     runs-on: ubuntu-latest
+    env:
+      CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+      CONAN_COLOR_DISPLAY: 1
+      CLICOLOR_FORCE: 1
+      CLICOLOR: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -100,7 +81,7 @@ env:
       run: |
         sudo apt-get update
         sudo apt-get -yq install lcov
-        sudo apt-get -yq install bison gettext keyutils ldap-utils libldap2-dev libkeyutils-dev conan-dev/venv/bin/python python-paste python-pyrad slapd tcsh python-virtualenv virtualenv python-kdcproxy
+        sudo apt-get -yq install bison gettext keyutils ldap-utils libldap2-dev libkeyutils-dev python3-pip python3-venv
     - name: install Test2::V0 for gost_engine testing
       uses: perl-actions/install-with-cpanm@10d60f00b4073f484fc29d45bfbe2f776397ab3d #v1.7
       with:
@@ -130,7 +111,7 @@ env:
     - name: Coveralls upload
       uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b #v2.3.6
       with:
-        github-token: ${{ secrets.github_token }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         git-branch: ${{ matrix.branches.branch }}
         git-commit: ${{ env.githubid }}
         path-to-lcov: ./lcov.info
