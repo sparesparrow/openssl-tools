@@ -624,3 +624,30 @@ validate-phase*.sh
 conan-dev/venv/
 test-consumer/
 artifacts/
+
+# Cursor IDE configuration (local)
+.cursor/
+
+# Temporary reports and logs
+*-report.md
+*-status.md
+*-summary.md
+*_COMPLETE.md
+*_STATUS.md
+ACTUAL_*.md
+EXPERT_*.md
+FINAL_*.md
+IMPLEMENTATION_*.md
+QUEUE_*.md
+WORKFLOW_*.md
+YAML_*.md
+
+# Test and development artifacts
+test_consumer/
+artifacts/
+logs/
+cleanup-report.txt
+
+# Redundant README files
+README-agent-loop-improved.md
+README
