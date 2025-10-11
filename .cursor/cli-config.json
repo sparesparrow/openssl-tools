@@ -1,6 +1,6 @@
 {
   "agent": {
-    "model": "claude-3.5-sonnet",
+    "model": "auto",
     "temperature": 0.2,
     "max_tokens": 8192,
     "timeout_ms": 60000
