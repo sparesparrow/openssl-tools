@@ -192,23 +192,41 @@ Required JSON structure:
   tmp_clean="$(mktemp)"
   
   # Use timeout with --print and --force for headless execution
+  # Separate stderr from stdout to avoid mixing error messages with JSON
+  local tmp_stderr
+  tmp_stderr="$(mktemp)"
   local exit_code=0
+  
   if command -v cursor-agent >/dev/null 2>&1; then
     if timeout "${AGENT_TIMEOUT_SEC}s" cursor-agent -p --force \
       --output-format json \
-      "$full_prompt" >"$tmp_output" 2>&1; then
+      "$full_prompt" >"$tmp_output" 2>"$tmp_stderr"; then
       log info "Agent completed successfully"
     else
       exit_code=$?
       log warn "Agent exited with code $exit_code"
-      # Log the output for debugging
+      # Log stderr for debugging (usually contains the python3 ENOENT error)
+      if [[ -f "$tmp_stderr" ]] && [[ -s "$tmp_stderr" ]]; then
+        log debug "Agent stderr: $(head -c 200 "$tmp_stderr" 2>/dev/null || echo 'empty')"
+      fi
+      # Log stdout for debugging
       if [[ -f "$tmp_output" ]] && [[ -s "$tmp_output" ]]; then
-        log debug "Agent output: $(head -c 500 "$tmp_output" 2>/dev/null || echo 'empty')"
+        log debug "Agent stdout: $(head -c 500 "$tmp_output" 2>/dev/null || echo 'empty')"
       fi
     fi
   else
     log error "cursor-agent command not found"
     exit_code=127
+  fi
+  
+  # Preprocess output to find the last line that looks like JSON
+  # This handles cases where there might be noise before the JSON
+  local json_line
+  if [[ -f "$tmp_output" ]]; then
+    json_line="$(grep -E '^\{.*\}$' "$tmp_output" | tail -1 2>/dev/null || echo "")"
+    if [[ -n "$json_line" ]]; then
+      echo "$json_line" > "$tmp_output"
+    fi
   fi
   
   # Extract the actual result from the JSON wrapper
@@ -236,11 +254,17 @@ Required JSON structure:
     log error "Invalid JSON response from agent"
     if [[ -f "$tmp_output" ]]; then
       log debug "Raw agent output: $(head -c 500 "$tmp_output" 2>/dev/null || echo 'empty')"
+      # Try to find any JSON-like content
+      local potential_json
+      potential_json="$(grep -oE '\{[^}]*\}' "$tmp_output" 2>/dev/null | head -1 || echo "")"
+      if [[ -n "$potential_json" ]]; then
+        log debug "Found potential JSON: $(echo "$potential_json" | head -c 200)"
+      fi
     fi
     cp "$tmp_output" "$outfile" 2>/dev/null || echo '{}' > "$outfile"
   fi
   
-  rm -f "$tmp_output" "$tmp_clean"
+  rm -f "$tmp_output" "$tmp_clean" "$tmp_stderr"
   
   # Log excerpt for debugging
   if [[ -f "$outfile" ]]; then
@@ -758,8 +782,8 @@ execute_batch_actions() {
       *)
         log warn "Unknown action: $action"
         ;;
-    esac
-  done
+      esac
+    done
   
   # Commit any changes from batch actions
   if ! git diff --cached --quiet || ! git diff --quiet; then
@@ -923,9 +947,9 @@ main() {
     
     if [[ "$not_green_len" == "0" ]]; then
       log success "All workflows are green! 🎉"
-      break
-    fi
-    
+    break
+  fi
+
     log info "Found $not_green_len workflows needing attention"
     
     # Generate plan
@@ -963,4 +987,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   main "$@"
 fi
-  
