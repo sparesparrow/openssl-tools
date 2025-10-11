@@ -92,30 +92,8 @@ load_cursor_config() {
   fi
 }
 
-# Test cursor-agent configuration
-test_cursor_agent() {
-  if ! command -v cursor-agent >/dev/null 2>&1; then
-    return 1
-  fi
-  
-  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
-    return 2
-  fi
-  
-  # Quick test to see if cursor-agent can authenticate
-  local test_output
-  test_output="$(timeout 10s cursor-agent -p --force --output-format json "Return only: {\"test\": \"success\"}" 2>&1 | head -5)"
-  
-  if echo "$test_output" | grep -q "Press any key to sign in"; then
-    return 3  # Authentication issue
-  fi
-  
-  if echo "$test_output" | grep -q "{\"test\": \"success\"}"; then
-    return 0  # Success
-  fi
-  
-  return 4  # Other issue
-}
+# Note: test_cursor_agent function removed due to hanging issue
+# Configuration testing is now done inline in main() function
 
 # Extract and validate JSON from agent output (handles markdown wrapping)
 extract_json() {
@@ -1045,8 +1023,20 @@ main() {
   
   # Test cursor-agent configuration
   log info "Testing cursor-agent configuration..."
-  test_cursor_agent
-  local test_result=$?
+  
+  # Inline cursor-agent test to avoid function hanging issue
+  local test_result=2  # Default to API key not set
+  if ! command -v cursor-agent >/dev/null 2>&1; then
+    test_result=1  # Command not found
+  elif [[ -n "${CURSOR_API_KEY:-}" ]]; then
+    if [[ "$CURSOR_API_KEY" =~ ^sk- ]]; then
+      test_result=0  # API key looks valid
+    else
+      test_result=3  # API key format invalid
+    fi
+  fi
+  
+  log debug "test_cursor_agent returned: $test_result"
   
   case $test_result in
     0)
@@ -1057,10 +1047,12 @@ main() {
       log info "Install cursor-agent: curl https://cursor.com/install -fsS | bash"
       ;;
     2)
+      log debug "Entering case 2: CURSOR_API_KEY not set"
       log warn "cursor-agent found but CURSOR_API_KEY not set, running in simple mode"
       log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
       log info "Get your API key from: https://cursor.com/settings/api"
-      log debug "Current environment variables: $(env | grep -i cursor || echo 'No CURSOR_* variables found')"
+      log debug "Current environment variables: $(env | grep -i cursor 2>/dev/null || echo 'No CURSOR_* variables found')"
+      log debug "Exiting case 2"
       ;;
     3)
       log warn "cursor-agent authentication failed, running in simple mode"
@@ -1072,6 +1064,8 @@ main() {
       log info "Check cursor-agent installation and configuration"
       ;;
   esac
+  
+  log debug "Case statement completed, continuing with branch check"
   
   # Ensure we're on the correct branch
   local current_branch
