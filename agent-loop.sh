@@ -163,7 +163,12 @@ run_cursor_agent() {
   local prompt="${1:-}"; shift
   local outfile="${1:-}"; shift
 
-  [[ -z "${CURSOR_API_KEY:-}" ]] && { log error "CURSOR_API_KEY not set"; return 1; }
+  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
+    log error "CURSOR_API_KEY not set - cursor-agent requires a valid API key"
+    log info "To use cursor-agent, set CURSOR_API_KEY environment variable"
+    log info "Get your API key from: https://cursor.com/settings/api"
+    return 1
+  fi
 
   # Build prompt based on mode - be very explicit about JSON output
   local full_prompt
@@ -346,7 +351,12 @@ run_cursor_agent_stream() {
   local prompt="$1"; shift
   local outfile="$1"; shift
 
-  [[ -z "${CURSOR_API_KEY:-}" ]] && { log error "CURSOR_API_KEY not set"; return 1; }
+  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
+    log error "CURSOR_API_KEY not set - cursor-agent requires a valid API key"
+    log info "To use cursor-agent, set CURSOR_API_KEY environment variable"
+    log info "Get your API key from: https://cursor.com/settings/api"
+    return 1
+  fi
 
   local full_prompt
   case "$mode" in
