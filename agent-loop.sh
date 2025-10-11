@@ -92,6 +92,31 @@ load_cursor_config() {
   fi
 }
 
+# Test cursor-agent configuration
+test_cursor_agent() {
+  if ! command -v cursor-agent >/dev/null 2>&1; then
+    return 1
+  fi
+  
+  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
+    return 2
+  fi
+  
+  # Quick test to see if cursor-agent can authenticate
+  local test_output
+  test_output="$(timeout 10s cursor-agent -p --force --output-format json "Return only: {\"test\": \"success\"}" 2>&1 | head -5)"
+  
+  if echo "$test_output" | grep -q "Press any key to sign in"; then
+    return 3  # Authentication issue
+  fi
+  
+  if echo "$test_output" | grep -q "{\"test\": \"success\"}"; then
+    return 0  # Success
+  fi
+  
+  return 4  # Other issue
+}
+
 # Extract and validate JSON from agent output (handles markdown wrapping)
 extract_json() {
   local input="$1"
@@ -274,6 +299,26 @@ Required JSON structure:
     else
       exit_code=$?
       log warn "Agent exited with code $exit_code"
+      
+      # Provide specific error messages based on exit code
+      case $exit_code in
+        1)
+          log error "Cursor-agent failed - likely authentication or configuration issue"
+          log info "Check your CURSOR_API_KEY: https://cursor.com/settings/api"
+          ;;
+        124)
+          log error "Cursor-agent timed out after ${AGENT_TIMEOUT_SEC}s"
+          log info "Try increasing AGENT_TIMEOUT_SEC or check network connectivity"
+          ;;
+        127)
+          log error "Cursor-agent command not found"
+          log info "Install cursor-agent: curl https://cursor.com/install -fsS | bash"
+          ;;
+        *)
+          log error "Cursor-agent failed with unexpected exit code $exit_code"
+          ;;
+      esac
+      
       # Log stderr for debugging (usually contains the python3 ENOENT error)
       if [[ -f "$tmp_stderr" ]] && [[ -s "$tmp_stderr" ]]; then
         log debug "Agent stderr: $(head -c 200 "$tmp_stderr" 2>/dev/null || echo 'empty')"
@@ -998,16 +1043,35 @@ main() {
   log info "Streaming: $USE_STREAMING"
   log info "Cursor Config: $CURSOR_CONFIG_FILE (MCP: $MCP_ENABLED)"
   
-  # Check if cursor-agent is available and configured
-  if ! command -v cursor-agent >/dev/null 2>&1; then
-    log warn "cursor-agent not found, running in simple mode (rerun/approve only)"
-  elif [[ -z "${CURSOR_API_KEY:-}" ]]; then
-    log warn "cursor-agent found but CURSOR_API_KEY not set, running in simple mode"
-    log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
-    log info "Get your API key from: https://cursor.com/settings/api"
-  else
-    log info "cursor-agent available with API key - AI-powered planning enabled"
-  fi
+  # Test cursor-agent configuration
+  log info "Testing cursor-agent configuration..."
+  test_cursor_agent
+  local test_result=$?
+  
+  case $test_result in
+    0)
+      log info "cursor-agent configured correctly - AI-powered planning enabled"
+      ;;
+    1)
+      log warn "cursor-agent not found, running in simple mode (rerun/approve only)"
+      log info "Install cursor-agent: curl https://cursor.com/install -fsS | bash"
+      ;;
+    2)
+      log warn "cursor-agent found but CURSOR_API_KEY not set, running in simple mode"
+      log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
+      log info "Get your API key from: https://cursor.com/settings/api"
+      log debug "Current environment variables: $(env | grep -i cursor || echo 'No CURSOR_* variables found')"
+      ;;
+    3)
+      log warn "cursor-agent authentication failed, running in simple mode"
+      log error "Invalid or expired CURSOR_API_KEY"
+      log info "Get a new API key from: https://cursor.com/settings/api"
+      ;;
+    4)
+      log warn "cursor-agent test failed with unknown issue, running in simple mode"
+      log info "Check cursor-agent installation and configuration"
+      ;;
+  esac
   
   # Ensure we're on the correct branch
   local current_branch
@@ -1067,7 +1131,7 @@ main() {
     
     # Generate plan
     local plan
-    if command -v cursor-agent >/dev/null 2>&1 && [[ -n "${CURSOR_API_KEY:-}" ]]; then
+    if [[ $test_result -eq 0 ]]; then
       plan="$(generate_plan "$runs_json" "$pr_json" "$not_green")"
       
       if [[ -z "$plan" ]]; then
@@ -1079,13 +1143,7 @@ main() {
         execute_plan "$plan"
       fi
     else
-      if command -v cursor-agent >/dev/null 2>&1 && [[ -z "${CURSOR_API_KEY:-}" ]]; then
-        log warn "cursor-agent found but CURSOR_API_KEY not set - running in simple mode"
-        log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
-        log info "Get your API key from: https://cursor.com/settings/api"
-      else
-        log info "cursor-agent not found - running in simple mode"
-      fi
+      log info "Running in simple mode - rerunning failed workflows"
       # Simple mode: just rerun failed workflows
       approve_or_rerun "$not_green"
     fi
