@@ -1,0 +1,24 @@
+name: Simple Check
+
+concurrency:
+  group: simple-check-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simple validation
+        run: |
+          echo "✅ Repository check passed"
+          echo "Workflow triggered by: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref_name }}"

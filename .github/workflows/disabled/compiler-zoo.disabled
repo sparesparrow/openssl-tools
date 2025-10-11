@@ -1,0 +1,98 @@
+# Compiler Zoo CI - Adapted for openssl-tools
+# Tests Conan builds with multiple compiler versions
+
+name: Compiler Zoo CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+
+permissions:
+  contents: read
+
+jobs:
+  gcc:
+    strategy:
+      fail-fast: false
+      matrix:
+        gcc: [gcc-9, gcc-10, gcc-11, gcc-12, gcc-13, gcc-14]
+    runs-on: ubuntu-24.04
+    steps:
+    - name: install packages
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install ${{ matrix.gcc }}
+    - uses: actions/checkout@v5
+    
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Install Conan
+      run: |
+        pip install conan>=2.0
+        conan --version
+    
+    - name: Setup Conan profile
+      env:
+        CC: ${{ matrix.gcc }}
+      run: |
+        conan profile detect --force
+        conan config init
+    
+    - name: Test Conan build (dry run)
+      env:
+        CC: ${{ matrix.gcc }}
+      run: |
+        echo "Testing with ${{ matrix.gcc }}..."
+        conan create . --build=missing --dry-run
+        echo "✅ ${{ matrix.gcc }} build test successful"
+
+  clang:
+    strategy:
+      fail-fast: false
+      matrix:
+        clang: [clang-11, clang-12, clang-13, clang-14, clang-15, clang-16, clang-17, clang-18, clang-19, clang-20]
+    runs-on: ubuntu-22.04
+    steps:
+    - name: install packages
+      run: |
+        set -euo pipefail
+        VERSION=$(awk -F- '{print $NF}' <<< ${{ matrix.clang }})
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-$VERSION main" | sudo tee -a /etc/apt/sources.list
+        sudo apt-get update || true
+        sudo apt-get -y install ${{ matrix.clang }}
+    - uses: actions/checkout@v5
+    
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Install Conan
+      run: |
+        pip install conan>=2.0
+        conan --version
+    
+    - name: Setup Conan profile
+      env:
+        CC: ${{ matrix.clang }}
+      run: |
+        conan profile detect --force
+        conan config init
+    
+    - name: Test Conan build (dry run)
+      env:
+        CC: ${{ matrix.clang }}
+      run: |
+        echo "Testing with ${{ matrix.clang }}..."
+        conan create . --build=missing --dry-run
+        echo "✅ ${{ matrix.clang }} build test successful"

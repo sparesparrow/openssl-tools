@@ -1,0 +1,196 @@
+# Weekly Exhaustive Testing
+# Comprehensive platform matrix testing that runs every Sunday
+# Balances fast daily feedback with thorough weekly coverage
+
+name: Weekly Exhaustive Testing
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+  workflow_dispatch:  # Allow manual triggering
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel weekly runs
+
+permissions:
+  contents: read
+
+env:
+  OSSL_RUN_CI_TESTS: 1
+
+jobs:
+  # Comprehensive platform matrix
+  exhaustive-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux variants
+          - name: "ubuntu-20.04-gcc-9"
+            os: ubuntu-20.04
+            cc: gcc-9
+            config: "--strict-warnings enable-fips"
+            
+          - name: "ubuntu-22.04-gcc-11"
+            os: ubuntu-22.04
+            cc: gcc-11
+            config: "--strict-warnings enable-fips enable-quic"
+            
+          - name: "ubuntu-24.04-gcc-13"
+            os: ubuntu-24.04
+            cc: gcc-13
+            config: "--strict-warnings enable-fips enable-quic enable-lms"
+            
+          # Clang variants
+          - name: "ubuntu-clang-12"
+            os: ubuntu-22.04
+            cc: clang-12
+            config: "--strict-warnings no-fips"
+            
+          - name: "ubuntu-clang-15"
+            os: ubuntu-22.04
+            cc: clang-15
+            config: "--strict-warnings no-fips enable-quic"
+            
+          # ARM64 platforms
+          - name: "linux-arm64-gcc"
+            os: linux-arm64
+            cc: gcc
+            config: "--strict-warnings enable-fips"
+            
+          # macOS variants
+          - name: "macos-x64"
+            os: macos-12
+            cc: clang
+            config: "--strict-warnings enable-fips"
+            
+          - name: "macos-arm64"
+            os: macos-14
+            cc: clang
+            config: "--strict-warnings enable-fips enable-quic"
+            
+          # Windows (if available)
+          - name: "windows-2019"
+            os: windows-2019
+            cc: msvc
+            config: "VC-WIN64A"
+            
+          - name: "windows-2022"
+            os: windows-2022
+            cc: msvc
+            config: "VC-WIN64A enable-fips"
+            
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120  # Longer timeout for comprehensive testing
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: checkout fuzz/corpora
+        run: git submodule update --init --depth 1 fuzz/corpora
+        
+      - name: Setup compiler
+        if: matrix.cc != 'msvc'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cc }}
+          
+      - name: config
+        run: |
+          if [[ "${{ matrix.cc }}" == "msvc" ]]; then
+            ./config ${{ matrix.config }} && perl configdata.pm --dump
+          else
+            CC=${{ matrix.cc }} ./config ${{ matrix.config }} && perl configdata.pm --dump
+          fi
+          
+      - name: make
+        run: make -s -j$(nproc)
+        
+      - name: make test
+        run: .github/workflows/make-test
+        
+      - name: smoke test
+        run: |
+          ./apps/openssl version
+          ./apps/openssl speed -evp aes-128-cbc
+          ./apps/openssl speed -evp sha256
+
+  # Special configurations
+  special-configs:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "minimal"
+            opts: "enable-demos no-bulk no-pic no-asm -DOPENSSL_SMALL_FOOTPRINT"
+          - name: "no-deprecated"
+            opts: "enable-demos no-deprecated enable-fips"
+          - name: "no-shared"
+            opts: "enable-demos no-shared enable-fips"
+          - name: "no-threads"
+            opts: "enable-demos no-threads"
+          - name: "no-zlib"
+            opts: "enable-demos no-zlib"
+          - name: "legacy-crypto"
+            opts: "enable-demos enable-rc5 enable-md2 enable-md4 enable-rc2"
+          - name: "fips-only"
+            opts: "enable-fips no-shared no-deprecated"
+          - name: "debug-build"
+            opts: "enable-demos --debug enable-crypto-mdebug"
+            
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: config
+        run: ./config --strict-warnings ${{ matrix.config.opts }} && perl configdata.pm --dump
+      - name: make
+        run: make -s -j$(nproc)
+      - name: make test
+        run: .github/workflows/make-test
+
+  # Performance benchmarks
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: config
+        run: ./config --strict-warnings enable-fips && perl configdata.pm --dump
+      - name: make
+        run: make -s -j$(nproc)
+      - name: benchmark
+        run: |
+          echo "## Performance Benchmarks" >> $GITHUB_STEP_SUMMARY
+          echo "### AES-128-CBC" >> $GITHUB_STEP_SUMMARY
+          ./apps/openssl speed -evp aes-128-cbc | head -10 >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SHA-256" >> $GITHUB_STEP_SUMMARY
+          ./apps/openssl speed -evp sha256 | head -10 >> $GITHUB_STEP_SUMMARY
+
+  # Summary
+  weekly-summary:
+    needs: [exhaustive-platforms, special-configs, benchmarks]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Weekly Test Summary
+        run: |
+          echo "## Weekly Exhaustive Testing Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Platform Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "- Platforms tested: ${{ needs.exhaustive-platforms.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Special configs: ${{ needs.special-configs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Benchmarks: ${{ needs.benchmarks.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Status" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.exhaustive-platforms.result }}" == "success" ]] && 
+             [[ "${{ needs.special-configs.result }}" == "success" ]] &&
+             [[ "${{ needs.benchmarks.result }}" == "success" ]]; then
+            echo "✅ **All weekly tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some weekly tests failed**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

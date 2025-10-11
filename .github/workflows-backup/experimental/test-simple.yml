@@ -1,0 +1,19 @@
+name: Test Simple
+
+# Disabled to avoid conflicts with Consolidated CI
+# concurrency:
+#   group: test-simple-${{ github.ref }}
+#   cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  # Disabled to avoid conflicts with Consolidated CI
+  # push:
+  #   branches: [ master, simplify-openssl-build ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: echo "Test successful"

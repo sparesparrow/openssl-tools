@@ -1,0 +1,269 @@
+# Optimized CI with Change Detection and Incremental Builds
+# This workflow replaces the existing CI with intelligent build optimization
+
+name: Optimized CI
+
+on:
+  push:
+    branches: [ main, master, 'release/*' ]
+  pull_request:
+    branches: [ main, master ]
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OSSL_RUN_CI_TESTS: 1
+
+jobs:
+  # Detect what changed to avoid unnecessary rebuilds
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      source-changed: ${{ steps.changes.outputs.source }}
+      docs-changed: ${{ steps.changes.outputs.docs }}
+      ci-changed: ${{ steps.changes.outputs.ci }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+      fuzz-changed: ${{ steps.changes.outputs.fuzz }}
+      skip-build: ${{ steps.skip.outputs.skip-build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            source:
+              - 'apps/**'
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'providers/**'
+              - 'include/**'
+              - 'Configure'
+              - 'VERSION.dat'
+              - 'configdata.pm.in'
+              - 'build.info'
+            docs:
+              - 'doc/**'
+              - '*.md'
+              - 'CHANGES.md'
+              - 'NEWS.md'
+            ci:
+              - '.github/workflows/**'
+            tests:
+              - 'test/**'
+            fuzz:
+              - 'fuzz/**'
+              
+      - name: Determine if build can be skipped
+        id: skip
+        run: |
+          if [[ "${{ steps.changes.outputs.source }}" == "false" && 
+                "${{ steps.changes.outputs.tests }}" == "false" && 
+                "${{ steps.changes.outputs.ci }}" == "false" && 
+                "${{ steps.changes.outputs.fuzz }}" == "false" ]]; then
+            echo "skip-build=true" >> $GITHUB_OUTPUT
+            echo "Only docs changed, skipping build"
+          else
+            echo "skip-build=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Quick documentation checks (always run)
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: config
+        run: ./config --strict-warnings --banner=Configured enable-fips && perl configdata.pm --dump
+      - name: make build_generated
+        run: make -s build_generated
+      - name: make doc-nits
+        run: make doc-nits
+      - name: make help
+        run: make help
+      - name: make md-nits
+        run: |
+          sudo gem install mdl
+          make md-nits
+
+  # Core build jobs (only if source changed)
+  basic-build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.skip-build == 'false'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "GCC"
+            os: ubuntu-latest
+            cc: gcc
+            config: "--strict-warnings --banner=Configured enable-demos enable-h3demo enable-sslkeylog enable-fips enable-quic enable-lms"
+          - name: "Clang"
+            os: ubuntu-latest
+            cc: clang
+            config: "--strict-warnings --banner=Configured enable-demos enable-h3demo no-fips"
+            
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      # Cache build artifacts
+      - name: Cache build directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            .
+            !.git
+          key: build-${{ matrix.name }}-${{ hashFiles('Configure', 'VERSION.dat', 'configdata.pm.in') }}-${{ github.sha }}
+          restore-keys: |
+            build-${{ matrix.name }}-${{ hashFiles('Configure', 'VERSION.dat', 'configdata.pm.in') }}-
+            build-${{ matrix.name }}-
+            
+      - name: localegen
+        if: matrix.name == 'GCC'
+        run: sudo locale-gen tr_TR.UTF-8
+        
+      - name: fipsvendor
+        if: matrix.name == 'GCC'
+        run: echo "FIPS_VENDOR=CI" >> VERSION.dat
+        
+      - name: config
+        run: CC=${{ matrix.cc }} ./config ${{ matrix.config }} && perl configdata.pm --dump
+        
+      - name: make (incremental)
+        run: make -s -j4
+        
+      - name: get cpu info
+        run: |
+          cat /proc/cpuinfo
+          ./util/opensslwrap.sh version -c
+          
+      - name: make test
+        run: .github/workflows/make-test
+        
+      - name: check fipsvendor
+        if: matrix.name == 'GCC'
+        run: |
+          util/wrap.pl -fips apps/openssl list -providers | grep 'name: CI FIPS Provider for OpenSSL$'
+          
+      - name: save artifacts
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "ci@${{ matrix.name }}"
+          path: artifacts.tar.gz
+
+  # Fuzzing tests (only if fuzz directory changed or on schedule)
+  fuzz-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.fuzz-changed == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Adjust ASLR for sanitizer
+        run: |
+          sudo cat /proc/sys/vm/mmap_rnd_bits
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          
+      - name: config
+        run: ./config --strict-warnings --banner=Configured --debug -DPEDANTIC -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION enable-asan enable-ubsan enable-rc5 enable-md2 enable-ec_nistp_64_gcc_128 enable-weak-ssl-ciphers enable-ssl3 enable-ssl3-method enable-nextprotoneg && perl configdata.pm --dump
+        
+      - name: make
+        run: make -s -j4
+        
+      - name: get cpu info
+        run: |
+          cat /proc/cpuinfo
+          ./util/opensslwrap.sh version -c
+          
+      - name: make test
+        run: .github/workflows/make-test OPENSSL_TEST_RAND_ORDER=0 TESTS="test_fuzz*"
+        
+      - name: save artifacts
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "ci@fuzz_tests"
+          path: artifacts.tar.gz
+
+  # CIFuzz integration (only run when fuzz directory changes)
+  cifuzz:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.fuzz-changed == 'true' || contains(github.event.head_commit.message, '[run-cifuzz]')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Build Fuzzers
+        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+        with:
+          oss-fuzz-project-name: 'openssl'
+          dry-run: false
+          
+      - name: Run Fuzzers
+        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+        with:
+          oss-fuzz-project-name: 'openssl'
+          fuzz-seconds: 300  # Reduced from 600 to speed up CI
+          dry-run: false
+          
+      - name: Upload Crash
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cifuzz-artifacts
+          path: ./out/artifacts
+
+  # Minimal test suite for documentation-only changes
+  minimal-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.skip-build == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Quick syntax check
+        run: |
+          echo "Running minimal checks for documentation-only changes"
+          ./config --help > /dev/null
+          echo "✅ Configuration syntax OK"
+
+  # Summary job
+  ci-summary:
+    needs: [detect-changes, check-docs, basic-build, fuzz-tests, cifuzz, minimal-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: CI Summary
+        run: |
+          echo "## CI Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Changes detected: ${{ needs.detect-changes.outputs.source-changed == 'true' && '✅ Source' || '⏭️ No source changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Documentation: ${{ needs.check-docs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Basic builds: ${{ needs.basic-build.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Fuzz tests: ${{ needs.fuzz-tests.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CIFuzz: ${{ needs.cifuzz.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if any required job failed
+          if [[ "${{ needs.check-docs.result }}" == "failure" ]] || 
+             [[ "${{ needs.basic-build.result }}" == "failure" ]] ||
+             [[ "${{ needs.fuzz-tests.result }}" == "failure" ]]; then
+            echo "❌ CI failed"
+            exit 1
+          else
+            echo "✅ CI passed"
+          fi

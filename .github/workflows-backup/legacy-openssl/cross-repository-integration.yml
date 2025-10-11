@@ -1,0 +1,229 @@
+name: Cross-Repository Integration Test
+
+on:
+  repository_dispatch:
+    types: [openssl-build-triggered]
+  workflow_dispatch:
+    inputs:
+      test_openssl_sha:
+        description: 'OpenSSL SHA to test (default: main)'
+        required: false
+        default: 'main'
+      test_openssl_ref:
+        description: 'OpenSSL ref to test (default: main)'
+        required: false
+        default: 'main'
+
+jobs:
+  validate-trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.payload.outputs.source_sha }}
+      source_ref: ${{ steps.payload.outputs.source_ref }}
+      build_scope: ${{ steps.payload.outputs.build_scope }}
+    
+    steps:
+      - name: Log trigger payload
+        run: |
+          echo "📋 Received repository_dispatch event"
+          echo "Event type: ${{ github.event.action }}"
+          echo "Client payload: ${{ toJSON(github.event.client_payload) }}"
+      
+      - name: Extract payload
+        id: payload
+        run: |
+          # Extract payload from repository_dispatch or workflow_dispatch
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            source_sha="${{ github.event.client_payload.source_repo_sha }}"
+            source_ref="${{ github.event.client_payload.source_repo_ref }}"
+            build_scope="${{ github.event.client_payload.build_scope }}"
+          else
+            source_sha="${{ github.event.inputs.test_openssl_sha }}"
+            source_ref="${{ github.event.inputs.test_openssl_ref }}"
+            build_scope="manual_test"
+          fi
+          
+          echo "source_sha=$source_sha" >> $GITHUB_OUTPUT
+          echo "source_ref=$source_ref" >> $GITHUB_OUTPUT
+          echo "build_scope=$build_scope" >> $GITHUB_OUTPUT
+          
+          echo "📊 Extracted payload:"
+          echo "  Source SHA: $source_sha"
+          echo "  Source ref: $source_ref"
+          echo "  Build scope: $build_scope"
+      
+      - name: Validate payload
+        run: |
+          SOURCE_SHA="${{ steps.payload.outputs.source_sha }}"
+          SOURCE_REF="${{ steps.payload.outputs.source_ref }}"
+          
+          if [ -z "$SOURCE_SHA" ] || [ -z "$SOURCE_REF" ]; then
+            echo "❌ Missing source_repo_sha or source_repo_ref in payload"
+            exit 1
+          fi
+          
+          echo "✅ Payload validated successfully"
+  
+  build-openssl:
+    needs: validate-trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout openssl-tools
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0
+          conan --version
+      
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan config init
+          conan config set general.revisions_enabled=1
+        continue-on-error: true
+      
+      - name: Checkout OpenSSL source
+        uses: actions/checkout@v4
+        with:
+          repository: sparesparrow/openssl
+          ref: ${{ needs.validate-trigger.outputs.source_ref }}
+          path: openssl-src
+      
+      - name: Copy conanfile.py to OpenSSL source
+        run: |
+          echo "📋 Copying conanfile.py to OpenSSL source..."
+          cp conanfile.py openssl-src/
+          ls -la openssl-src/conanfile.py
+      
+      - name: Validate OpenSSL source
+        run: |
+          echo "🔍 Validating OpenSSL source..."
+          cd openssl-src
+          
+          # Check for essential files
+          if [ -f "VERSION.dat" ]; then
+            echo "✅ VERSION.dat found"
+            head -5 VERSION.dat
+          else
+            echo "❌ VERSION.dat missing"
+            exit 1
+          fi
+          
+          if [ -f "config" ] || [ -f "Configure" ]; then
+            echo "✅ Configure script found"
+          else
+            echo "❌ Configure script missing"
+            exit 1
+          fi
+          
+          # Check for source directories
+          for dir in crypto ssl apps include; do
+            if [ -d "$dir" ]; then
+              echo "✅ $dir directory found"
+            else
+              echo "❌ $dir directory missing"
+              exit 1
+            fi
+          done
+      
+      - name: Test conanfile.py compatibility
+        run: |
+          echo "🔧 Testing conanfile.py compatibility..."
+          cd openssl-src
+          
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          
+          try:
+              from conanfile import OpenSSLConan
+              print('✅ conanfile.py imports successfully')
+              
+              conan = OpenSSLConan()
+              conan.recipe_folder = '.'
+              
+              # Test version detection
+              conan.set_version()
+              print(f'✅ Version detection works: {conan.version}')
+              
+              # Test basic configuration
+              conan.configure()
+              print('✅ Basic configuration works')
+              
+          except Exception as e:
+              print(f'❌ conanfile.py test failed: {e}')
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          "
+      
+      - name: Build OpenSSL with Conan
+        run: |
+          echo "🚀 Building OpenSSL with Conan..."
+          cd openssl-src
+          
+          # Build with minimal, proven configuration
+          conan create . --build=missing \
+            -o shared=False \
+            -o fips=False \
+            -o enable_unit_test=False \
+            -o no_asm=False \
+            -o no_threads=False \
+            -o enable_quic=False \
+            -o no_deprecated=False
+          
+          echo "✅ OpenSSL build completed successfully!"
+      
+      - name: Report success to OpenSSL repository
+        if: success()
+        run: |
+          echo "🎉 SUCCESS: Cross-repository integration working!"
+          echo "✅ OpenSSL source validated"
+          echo "✅ conanfile.py compatible"
+          echo "✅ OpenSSL builds successfully with Conan"
+          echo "✅ Cross-repository integration functional"
+          
+          # Report success back to OpenSSL repository
+          curl -s -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "state": "success",
+              "description": "OpenSSL builds successfully with Conan",
+              "context": "openssl-tools/integration-test",
+              "target_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' \
+            "https://api.github.com/repos/sparesparrow/openssl/statuses/${{ needs.validate-trigger.outputs.source_sha }}"
+          
+          echo "✅ Success status reported to OpenSSL repository"
+      
+      - name: Report failure to OpenSSL repository
+        if: failure()
+        run: |
+          echo "❌ FAILURE: Cross-repository integration failed!"
+          echo "🔍 Check the logs above for specific error details"
+          
+          # Report failure back to OpenSSL repository
+          curl -s -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "state": "failure",
+              "description": "OpenSSL build failed with Conan",
+              "context": "openssl-tools/integration-test",
+              "target_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' \
+            "https://api.github.com/repos/sparesparrow/openssl/statuses/${{ needs.validate-trigger.outputs.source_sha }}"
+          
+          echo "❌ Failure status reported to OpenSSL repository"

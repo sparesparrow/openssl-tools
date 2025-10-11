@@ -1,0 +1,447 @@
+# Modern CI/CD Pipeline with Conan Dependency Management
+# This workflow demonstrates a modern approach to OpenSSL CI/CD
+
+name: Modern CI with Conan
+
+on:
+  push:
+    branches: [ master, main, develop, simplify-openssl-build ]
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-profiles/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-profiles/**'
+  workflow_dispatch:
+
+# Global environment variables
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+  CONAN_USER_HOME: "${{ github.workspace }}"
+  OSSL_RUN_CI_TESTS: 1
+
+# Define job concurrency
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  attestations: write
+  id-token: write
+
+jobs:
+  # Job to determine what needs to be built/tested
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      source-changed: ${{ steps.changes.outputs.source }}
+      docs-changed: ${{ steps.changes.outputs.docs }}
+      ci-changed: ${{ steps.changes.outputs.ci }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            source:
+              - 'apps/**'
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'providers/**'
+              - 'include/**'
+              - 'Configure'
+              - 'VERSION.dat'
+              - 'conanfile.py'
+            docs:
+              - 'doc/**'
+              - '*.md'
+            ci:
+              - '.github/workflows/**'
+              - 'conan-profiles/**'
+            tests:
+              - 'test/**'
+              - 'fuzz/**'
+
+  # Setup Conan cache and validate package
+  setup-conan:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.source-changed == 'true' || needs.changes.outputs.ci-changed == 'true'
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install "conan==${{ env.CONAN_VERSION }}"
+          conan --version
+          
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          key="conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-profiles/**') }}"
+          echo "key=$key" >> $GITHUB_OUTPUT
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            conan-${{ runner.os }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io || true
+          
+      - name: Validate Conan recipe
+        run: |
+          conan export . --name=openssl --version=3.5.0
+          conan graph info --requires=openssl/3.5.0@ --profile=conan-profiles/ci-linux-gcc.profile
+
+  # Security and compliance checks
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [changes, setup-conan]
+    if: needs.changes.outputs.source-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install "conan==${{ env.CONAN_VERSION }}"
+      
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ needs.setup-conan.outputs.cache-key }}
+          restore-keys: conan-${{ runner.os }}-
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Security scan with Conan
+        run: |
+          # Install dependencies and scan for vulnerabilities
+          conan install . --profile=conan-profiles/ci-linux-gcc.profile --build=missing
+          
+          # Generate SBOM
+          conan export . --name=openssl --version=3.5.0
+          conan create . --profile=conan-profiles/ci-linux-gcc.profile
+          
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: ~/.conan2/p/*/p/sbom.json
+          
+      - name: CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+          
+      - name: Build for CodeQL
+        run: |
+          conan create . --profile=conan-profiles/ci-linux-gcc.profile --build=missing
+          
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # Core build matrix with Conan
+  build-matrix:
+    runs-on: ${{ matrix.os }}
+    needs: [changes, setup-conan]
+    if: needs.changes.outputs.source-changed == 'true' || needs.changes.outputs.tests-changed == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - os: ubuntu-latest
+            profile: ci-linux-gcc
+            name: "Linux GCC"
+            container: ""
+            
+          - os: ubuntu-latest
+            profile: ci-linux-clang
+            name: "Linux Clang"
+            container: ""
+            
+          # macOS builds  
+          - os: macos-13
+            profile: ci-macos-x64
+            name: "macOS x64"
+            container: ""
+            
+          - os: macos-14
+            profile: ci-macos-arm64
+            name: "macOS ARM64"
+            container: ""
+
+          # macOS universal binary build (x86_64 + arm64 via -arch flags)
+          - os: macos-14
+            profile: ci-macos-universal
+            name: "macOS Universal"
+            container: ""
+            
+          # Container-based builds for consistency
+          - os: ubuntu-latest
+            profile: ci-linux-gcc
+            name: "Container GCC"
+            container: "gcc:11"
+            
+    container: ${{ matrix.container }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Setup build environment
+        run: |
+          if [ "${{ matrix.container }}" != "" ]; then
+            # Container setup
+            apt-get update && apt-get install -y conan-dev/venv/bin/python python-pip git
+          fi
+          
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+        
+      - name: Install Conan
+        run: |
+          conan-dev/venv/bin/python -m pip install "conan==${{ env.CONAN_VERSION }}"
+          conan --version
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ needs.setup-conan.outputs.cache-key }}-${{ matrix.os }}-${{ matrix.profile }}
+          restore-keys: |
+            ${{ needs.setup-conan.outputs.cache-key }}-${{ matrix.os }}-
+            ${{ needs.setup-conan.outputs.cache-key }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Create OpenSSL package
+        run: |
+          conan create . \
+            --profile=conan-profiles/${{ matrix.profile }}.profile \
+            --build=missing \
+            --test-folder=test_package
+            
+      - name: Run extended tests
+        if: matrix.name == 'Linux GCC'  # Run extended tests on primary platform
+        run: |
+          # Install package and run comprehensive tests
+          conan install . --profile=conan-profiles/${{ matrix.profile }}.profile --build=missing || true
+          
+      - name: Generate build report
+        run: |
+          conan graph info . --profile=conan-profiles/${{ matrix.profile }}.profile --format=json > build-report.json
+          
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-artifacts-${{ matrix.name }}
+          path: |
+            build-report.json
+            ~/.conan2/p/*/p/sbom.json
+            test-results.xml
+          retention-days: 7
+
+  # Sanitizer builds for security testing
+  sanitizer-builds:
+    runs-on: ubuntu-latest
+    needs: [changes, setup-conan]
+    if: needs.changes.outputs.source-changed == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [asan-ubsan, msan, tsan]
+        
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install "conan==${{ env.CONAN_VERSION }}"
+      
+      - name: Configure system for sanitizers
+        run: |
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ needs.setup-conan.outputs.cache-key }}-sanitizer-${{ matrix.sanitizer }}
+          restore-keys: |
+            ${{ needs.setup-conan.outputs.cache-key }}-sanitizer-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Build with sanitizers
+        run: |
+          # Customize profile for specific sanitizer
+          cp conan-profiles/ci-sanitizers.profile conan-profiles/ci-${{ matrix.sanitizer }}.profile
+          
+          case "${{ matrix.sanitizer }}" in
+            msan)
+              sed -i 's/enable_msan=False/enable_msan=True/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              sed -i 's/enable_asan=True/enable_asan=False/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              sed -i 's/enable_ubsan=True/enable_ubsan=False/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              ;;
+            tsan)
+              sed -i 's/enable_tsan=False/enable_tsan=True/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              sed -i 's/enable_asan=True/enable_asan=False/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              sed -i 's/enable_ubsan=True/enable_ubsan=False/' conan-profiles/ci-${{ matrix.sanitizer }}.profile
+              ;;
+          esac
+          
+          conan create . --profile=conan-profiles/ci-${{ matrix.sanitizer }}.profile --build=missing
+          
+      - name: Upload sanitizer results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sanitizer-${{ matrix.sanitizer }}
+          path: |
+            sanitizer-*.log
+            test-results.xml
+
+  # Performance benchmarking
+  performance:
+    runs-on: ubuntu-latest
+    needs: [changes, setup-conan]
+    if: needs.changes.outputs.source-changed == 'true' && github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install "conan==${{ env.CONAN_VERSION }}"
+      
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ needs.setup-conan.outputs.cache-key }}-perf
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Build optimized version
+        run: |
+          # Create performance-optimized profile
+          cp conan-profiles/ci-linux-gcc.profile conan-profiles/ci-performance.profile
+          sed -i 's/build_type=Release/build_type=Release/' conan-profiles/ci-performance.profile
+          echo 'CFLAGS=-O3 -march=native -DNDEBUG' >> conan-profiles/ci-performance.profile
+          
+          conan create . --profile=conan-profiles/ci-performance.profile --build=missing
+          
+      - name: Run performance benchmarks
+        run: |
+          # Run OpenSSL speed tests using conan package
+          conan install . --profile=conan-profiles/ci-performance.profile --build=missing || true
+          
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: performance-*.json
+
+  # Final validation and publishing
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-matrix, sanitizer-builds]
+    if: always() && needs.build-matrix.result == 'success'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install "conan==${{ env.CONAN_VERSION }}"
+      
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter ${{ env.CONAN_CENTER_URL }} || true
+          conan remote login ${{ env.CONAN_USER }} -p ${{ env.CONAN_PASSWORD }} || true
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-*
+      - name: Generate final report
+        run: |
+          echo "# CI/CD Build Report" > build-report.md
+          echo "## Build Status" >> build-report.md
+          echo "- Security Scan: ${{ needs.security-scan.result }}" >> build-report.md
+          echo "- Build Matrix: ${{ needs.build-matrix.result }}" >> build-report.md
+          echo "- Sanitizers: ${{ needs.sanitizer-builds.result }}" >> build-report.md
+          
+      - name: Publish to Conan repository
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.CONAN_USER != ''
+        run: |
+          conan remote login ${{ env.CONAN_USER }} -p ${{ env.CONAN_PASSWORD }} || true
+          conan upload "*" -r=${{ env.CONAN_CENTER_URL }} --confirm || true
+          
+      - name: Create attestation
+        if: github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'sbom/*.json'

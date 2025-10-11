@@ -1,0 +1,174 @@
+# Optimized CI - Incremental Enhancement to Existing CI
+# This workflow adds intelligent optimizations without breaking existing CI
+
+name: Optimized Basic CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop, simplify-openssl-build ]
+    paths:
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ main, master, develop, simplify-openssl-build ]
+    paths:
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+      - 'scripts/**'
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: optimized-basic-ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  OSSL_RUN_CI_TESTS: 1
+
+jobs:
+  # Detect what changed to avoid unnecessary rebuilds
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      scripts-changed: ${{ steps.changes.outputs.scripts }}
+      profiles-changed: ${{ steps.changes.outputs.profiles }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            conan:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+            scripts:
+              - 'scripts/**'
+            profiles:
+              - 'conan-profiles/**'
+
+  # Quick validation checks (always run, fast)
+  check-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repository structure
+        run: |
+          echo "🔍 Validating openssl-tools structure..."
+          test -f conanfile.py || (echo "❌ conanfile.py not found" && exit 1)
+          test -d conan-profiles || (echo "❌ conan-profiles directory not found" && exit 1)
+          echo "✅ Repository structure valid"
+      - name: Validate conanfile.py syntax
+        run: |
+          python3 -m py_compile conanfile.py
+          echo "✅ conanfile.py syntax valid"
+
+  # Core Conan build - optimized with caching
+  basic-conan:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.conan-changed == 'true' || needs.detect-changes.outputs.profiles-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+        
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0
+          conan --version
+        
+      # Cache Conan packages for faster rebuilds
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-profiles/**') }}-${{ github.sha }}
+          restore-keys: |
+            conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-profiles/**') }}-
+            conan-${{ runner.os }}-
+            
+      - name: Setup Conan profile
+        run: |
+          conan profile detect --force
+          conan config init
+          
+      - name: Test Conan build (dry run)
+        run: |
+          if [ -f "conan-profiles/linux-gcc11.profile" ]; then
+            PROFILE="conan-profiles/linux-gcc11.profile"
+          else
+            echo "Creating test profile..."
+            mkdir -p conan-profiles
+            cat > conan-profiles/test.profile << EOF
+          [settings]
+          os=Linux
+          arch=x86_64
+          compiler=gcc
+          compiler.version=11
+          compiler.libcxx=libstdc++11
+          build_type=Release
+          EOF
+            PROFILE="conan-profiles/test.profile"
+          fi
+          conan create . --profile="$PROFILE" --dry-run
+          echo "✅ Conan build test successful"
+
+  # Script validation - only on script changes
+  validate-scripts:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.scripts-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Validate Python scripts
+        run: |
+          echo "🔍 Validating Python scripts..."
+          find scripts -name "*.py" -exec python3 -m py_compile {} \;
+          echo "✅ All Python scripts are valid"
+
+  # Summary job
+  ci-summary:
+    needs: [detect-changes, check-structure, basic-conan, validate-scripts]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI Summary
+        run: |
+          echo "## Optimized CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Change Detection" >> $GITHUB_STEP_SUMMARY
+          echo "- Conan changed: ${{ needs.detect-changes.outputs.conan-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Scripts changed: ${{ needs.detect-changes.outputs.scripts-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Profiles changed: ${{ needs.detect-changes.outputs.profiles-changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Structure check: ${{ needs.check-structure.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Conan build: ${{ needs.basic-conan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Script validation: ${{ needs.validate-scripts.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if any required job failed
+          if [[ "${{ needs.check-structure.result }}" == "failure" ]] || 
+             [[ "${{ needs.basic-conan.result }}" == "failure" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **CI FAILED**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **CI PASSED**" >> $GITHUB_STEP_SUMMARY
+          fi

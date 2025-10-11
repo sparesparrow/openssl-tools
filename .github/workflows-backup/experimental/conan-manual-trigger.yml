@@ -1,0 +1,163 @@
+name: Conan Manual Trigger
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'build'
+        type: choice
+        options:
+          - build
+          - test
+          - release
+          - clean
+      profile:
+        description: 'Profile to use'
+        required: false
+        default: 'linux-gcc11'
+        type: choice
+        options:
+          - linux-gcc11
+          - linux-clang15
+          - windows-msvc2022
+          - macos-clang14
+
+jobs:
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+  parse-comment:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment'
+    outputs:
+      action: ${{ steps.parse.outputs.action }}
+      profile: ${{ steps.parse.outputs.profile }}
+      should-trigger: ${{ steps.parse.outputs.should-trigger }}
+    steps:
+      - name: Parse comment
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          
+          if echo "$COMMENT" | grep -q "/conan build"; then
+            echo "action=build" >> $GITHUB_OUTPUT
+            echo "should-trigger=true" >> $GITHUB_OUTPUT
+            
+            if echo "$COMMENT" | grep -q "linux-clang15"; then
+              echo "profile=linux-clang15" >> $GITHUB_OUTPUT
+            elif echo "$COMMENT" | grep -q "windows"; then
+              echo "profile=windows-msvc2022" >> $GITHUB_OUTPUT
+            elif echo "$COMMENT" | grep -q "macos"; then
+              echo "profile=macos-clang14" >> $GITHUB_OUTPUT
+            else
+              echo "profile=linux-gcc11" >> $GITHUB_OUTPUT
+            fi
+          elif echo "$COMMENT" | grep -q "/conan test"; then
+            echo "action=test" >> $GITHUB_OUTPUT
+            echo "should-trigger=true" >> $GITHUB_OUTPUT
+            echo "profile=linux-gcc11" >> $GITHUB_OUTPUT
+          elif echo "$COMMENT" | grep -q "/conan release"; then
+            echo "action=release" >> $GITHUB_OUTPUT
+            echo "should-trigger=true" >> $GITHUB_OUTPUT
+            echo "profile=linux-gcc11" >> $GITHUB_OUTPUT
+          else
+            echo "should-trigger=false" >> $GITHUB_OUTPUT
+          fi
+
+  manual-build:
+    needs: parse-comment
+    if: |
+      (github.event_name == 'issue_comment' && needs.parse-comment.outputs.should-trigger == 'true' && needs.parse-comment.outputs.action == 'build') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'build')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Set up Conan Python Environment
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+      
+      - name: Set profile
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PROFILE="${{ needs.parse-comment.outputs.profile }}"
+          else
+            PROFILE="${{ github.event.inputs.profile }}"
+          fi
+          echo "PROFILE=$PROFILE" >> $GITHUB_ENV
+      
+      - name: Conan build
+        run: |
+          conan install . --profile=$PROFILE
+          conan build . --profile=$PROFILE
+      
+      - name: Comment result
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Manual build completed successfully with profile: ${{ env.PROFILE }}'
+            })
+
+  manual-test:
+    needs: parse-comment
+    if: |
+      (github.event_name == 'issue_comment' && needs.parse-comment.outputs.should-trigger == 'true' && needs.parse-comment.outputs.action == 'test') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'test')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Set up Conan Python Environment
+        run: |
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+          conan-dev/venv/bin/python scripts/setup-ci-environment.py
+      
+      - name: Set profile
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PROFILE="${{ needs.parse-comment.outputs.profile }}"
+          else
+            PROFILE="${{ github.event.inputs.profile }}"
+          fi
+          echo "PROFILE=$PROFILE" >> $GITHUB_ENV
+      
+      - name: Conan test
+        run: |
+          conan install . --profile=$PROFILE
+          conan build . --profile=$PROFILE
+          conan test . --profile=$PROFILE
+      
+      - name: Comment result
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Manual tests completed successfully with profile: ${{ env.PROFILE }}'
+            })

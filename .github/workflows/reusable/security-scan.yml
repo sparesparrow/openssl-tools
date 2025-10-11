@@ -1,0 +1,98 @@
+# Reusable workflow for security scanning and compliance
+name: Security Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+        description: 'Component name to scan'
+      scan-type:
+        required: false
+        type: string
+        default: 'full'
+        description: 'Scan type (quick, full, fips)'
+      generate-sbom:
+        required: false
+        type: boolean
+        default: true
+        description: 'Generate Software Bill of Materials'
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+
+jobs:
+  security-scan:
+    name: Security Scan (${{ inputs.scan-type }})
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install security tools
+        run: |
+          pip install conan==2.0.17
+          pip install safety bandit semgrep
+          
+      - name: Install Conan
+        run: |
+          
+      - name: Dependency vulnerability scan
+        run: |
+          cd ${{ inputs.component }}
+          conan install . --build=missing
+          safety check --json --output safety-report.json || true
+          
+      - name: Static security analysis
+        run: |
+          cd ${{ inputs.component }}
+          bandit -r . -f json -o bandit-report.json || true
+          
+      - name: SAST scan with Semgrep
+        run: |
+          cd ${{ inputs.component }}
+          semgrep --config=auto --json --output=semgrep-report.json . || true
+          
+      - name: Generate SBOM
+        if: inputs.generate-sbom
+        run: |
+          cd ${{ inputs.component }}
+          conan sbom . --format=cyclonedx --output=sbom.json
+          
+      - name: FIPS compliance check
+        if: inputs.scan-type == 'fips'
+        run: |
+          cd ${{ inputs.component }}
+          conan create . --profile=linux-gcc11 -o fips=True --build=missing
+          # Add FIPS-specific validation here
+          
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports-${{ inputs.component }}
+          path: |
+            safety-report.json
+            bandit-report.json
+            semgrep-report.json
+            sbom.json
+          retention-days: 90
+          
+      - name: Security summary
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Component: ${{ inputs.component }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Scan type: ${{ inputs.scan-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM generated: ${{ inputs.generate-sbom }}" >> $GITHUB_STEP_SUMMARY
