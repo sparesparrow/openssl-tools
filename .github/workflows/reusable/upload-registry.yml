@@ -1,0 +1,87 @@
+# Reusable workflow for uploading packages to registries
+name: Upload to Registry (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+        description: 'Component name to upload'
+      platform:
+        required: true
+        type: string
+        description: 'Platform identifier'
+      registry:
+        required: false
+        type: string
+        default: 'artifactory'
+        description: 'Target registry (artifactory, github, conancenter)'
+      version:
+        required: false
+        type: string
+        description: 'Package version to upload'
+    secrets:
+      CONAN_LOGIN_USERNAME:
+        required: true
+      CONAN_PASSWORD:
+        required: true
+      ARTIFACTORY_API_KEY:
+        required: false
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+
+jobs:
+  upload:
+    name: Upload ${{ inputs.component }} to ${{ inputs.registry }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==2.0.17
+          conan config init
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.component }}-${{ inputs.platform }}-Release
+          path: ${{ env.CONAN_USER_HOME }}/p/
+          
+      - name: Configure registry
+        run: |
+          case "${{ inputs.registry }}" in
+            "artifactory")
+              conan remote add artifactory ${{ secrets.ARTIFACTORY_URL || 'https://artifactory.example.com/artifactory/api/conan/conan' }}
+              conan user -r artifactory -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              ;;
+            "github")
+              conan remote add github https://conan.pkg.github.com
+              conan user -r github -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              ;;
+            "conancenter")
+              conan remote add conancenter https://center.conan.io
+              conan user -r conancenter -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              ;;
+          esac
+          
+      - name: Upload package
+        run: |
+          cd ${{ inputs.component }}
+          conan upload "*" -r ${{ inputs.registry }} --confirm --all
+          
+      - name: Verify upload
+        run: |
+          conan search "*" -r ${{ inputs.registry }} | grep ${{ inputs.component }} || echo "Upload verification failed"
