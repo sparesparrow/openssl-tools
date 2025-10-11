@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "read_file",
+      "write_file", 
+      "search_code",
+      "run_terminal_cmd",
+      "web_search",
+      "update_memory",
+      "fetch_pull_request",
+      "create_pull_request",
+      "list_dir",
+      "read_lints",
+      "todo_write"
+    ],
+    "deny": [
+      "delete_file",
+      "force_push",
+      "merge_pull_request"
+    ]
+  }
+}

@@ -27,7 +27,7 @@ MODE="${2:-execution}"
 
 # Cursor CLI configuration paths
 CURSOR_CONFIG_FILE="${CURSOR_CONFIG_FILE:-.cursor/cli-config.json}"
-CURSOR_MCP_CONFIG="${CURSOR_MCP_CONFIG:-.cursor/mcp-servers.json}"
+CURSOR_MCP_CONFIG="${CURSOR_MCP_CONFIG:-mcp.json}"
 CURSOR_AGENT_CONFIG="${CURSOR_AGENT_CONFIG:-.cursor/agents/ci-repair-agent.yml}"
 
 # Configuration values (will be loaded from config file if available)
