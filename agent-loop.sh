@@ -96,6 +96,7 @@ INTERVAL="${INTERVAL:-200}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
 AGENT_TIMEOUT_SEC="${AGENT_TIMEOUT_SEC:-200}"
 USE_STREAMING="${USE_STREAMING:-true}"
+DRY_RUN="${DRY_RUN:-false}"
 TASK="${1:-"Ensure all PR #$PR_NUMBER workflows are green with minimal safe changes"}"
 MODE="${2:-execution}"
 
@@ -910,6 +911,12 @@ commit_and_push() {
   # Show what will be committed
   log debug "Changes to commit: $(git diff --cached --stat)"
   
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log info "DRY RUN: Would commit with message: $msg"
+    log info "DRY RUN: Would push to $PR_BRANCH"
+    return 0
+  fi
+  
   # Commit
   if ! git diff --cached --quiet; then
     if git commit -m "$msg"; then
@@ -1184,7 +1191,12 @@ main() {
   log info "Mode: $MODE"
   log info "Max iterations: $MAX_ITERATIONS"
   log info "Streaming: $USE_STREAMING"
+  log info "Dry run: $DRY_RUN"
   log info "Cursor Config: $CURSOR_CONFIG_FILE (MCP: $MCP_ENABLED)"
+  
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log info "DRY RUN MODE: No actual changes will be made"
+  fi
   
   # Test cursor-agent configuration
   log info "Testing cursor-agent configuration..."
