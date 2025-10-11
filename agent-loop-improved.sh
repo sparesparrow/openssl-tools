@@ -4,6 +4,20 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Source environment files for proper setup
+if [[ -f ~/.bashrc ]]; then
+    source ~/.bashrc
+fi
+
+if [[ -f .env ]]; then
+    source .env
+fi
+
+# Activate virtual environment if it exists
+if [[ -f venv/bin/activate ]]; then
+    source venv/bin/activate
+fi
+
 # Configuration with validation
 readonly SCRIPT_NAME="${0##*/}"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -431,11 +445,15 @@ test_cursor_api_key() {
     local test_output
     test_output="$(timeout 10s cursor-agent -p --output-format json "$test_prompt" 2>/dev/null || echo "")"
     
-    if [[ -n "$test_output" ]] && echo "$test_output" | jq -e '.test' >/dev/null 2>&1; then
-        return 0  # API key is valid
-    else
-        return 3  # API key is invalid
+    # Extract JSON from the response (handle markdown wrapping)
+    local extracted_json
+    if extracted_json="$(extract_json "$test_output" 2>/dev/null)"; then
+        if echo "$extracted_json" | jq -e '.test' >/dev/null 2>&1; then
+            return 0  # API key is valid
+        fi
     fi
+    
+    return 3  # API key is invalid
 }
 
 # Cursor Agent invocation with JSON output

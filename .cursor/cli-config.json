@@ -8,7 +8,7 @@
   "printResult": true,
   "stream": true,
   "mcp": {
-    "enabled": true,
+    "enabled": false,
     "servers": [
       "github",
       "openssl-ci",
