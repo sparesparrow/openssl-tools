@@ -13,6 +13,80 @@
 
 set -euo pipefail
 
+# Global cleanup tracking
+declare -a temp_files=()
+declare -a background_pids=()
+
+# Cleanup function for signal handling
+cleanup() {
+    local exit_code=$?
+    
+    # Kill any background processes
+    for pid in "${background_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+        fi
+    done
+    
+    # Cleanup temp files
+    for temp_file in "${temp_files[@]}"; do
+        [[ -f "$temp_file" ]] && rm -f "$temp_file" 2>/dev/null || true
+    done
+    
+    # Kill any remaining child processes
+    jobs -p | xargs -r kill 2>/dev/null || true
+    
+    exit $exit_code
+}
+
+# Set up signal handlers
+trap cleanup EXIT SIGTERM SIGINT
+
+# Secure temporary file creation
+create_temp_file() {
+    local temp_file
+    temp_file="$(mktemp)"
+    chmod 600 "$temp_file"
+    temp_files+=("$temp_file")
+    echo "$temp_file"
+}
+
+# Input validation functions
+validate_repo_format() {
+    local repo="$1"
+    if [[ ! "$repo" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$ ]]; then
+        log error "Invalid repository format: $repo (expected: owner/repo)"
+        return 1
+    fi
+    return 0
+}
+
+validate_pr_number() {
+    local pr_num="$1"
+    if [[ ! "$pr_num" =~ ^[0-9]+$ ]] || [[ "$pr_num" -lt 1 ]]; then
+        log error "Invalid PR number: $pr_num (expected: positive integer)"
+        return 1
+    fi
+    return 0
+}
+
+validate_branch_name() {
+    local branch="$1"
+    if [[ ! "$branch" =~ ^[a-zA-Z0-9._/-]+$ ]] || [[ ${#branch} -gt 255 ]]; then
+        log error "Invalid branch name: $branch (expected: alphanumeric with dots, underscores, slashes, hyphens, max 255 chars)"
+        return 1
+    fi
+    return 0
+}
+
+validate_all_inputs() {
+    validate_repo_format "$REPO" || return 1
+    validate_pr_number "$PR_NUMBER" || return 1
+    validate_branch_name "$PR_BRANCH" || return 1
+    return 0
+}
+
 # Defaults
 REPO="${REPO:-sparesparrow/openssl-tools}"
 PR_NUMBER="${PR_NUMBER:-6}"
@@ -55,18 +129,40 @@ require_cmd() {
   done
 }
 
+# Exponential backoff with jitter
+exponential_backoff() {
+    local max_retries=$1; shift
+    local base_delay=$1; shift  
+    local cmd=("$@")
+    local consecutive_failures=0
+
+    for ((i=1; i<=max_retries; i++)); do
+        if "${cmd[@]}"; then 
+            consecutive_failures=0
+            return 0
+        fi
+        
+        consecutive_failures=$((consecutive_failures + 1))
+        
+        # Circuit breaker: if too many consecutive failures, abort
+        if [[ $consecutive_failures -ge 5 ]]; then
+            log error "Circuit breaker triggered: too many consecutive failures ($consecutive_failures)"
+            return 1
+        fi
+        
+        if [[ $i -eq $max_retries ]]; then return 1; fi
+
+        # Add jitter to prevent thundering herd
+        local jitter=$((RANDOM % 1000))
+        local sleep_time=$(( (base_delay * (2 ** (i-1))) + jitter ))
+        log warn "Command failed (attempt $i/$max_retries): ${cmd[*]}, retrying in ${sleep_time}ms"
+        sleep $(( sleep_time / 1000 ))
+    done
+}
+
+# Legacy retry function for backward compatibility
 retry() {
-  local tries=$1; shift
-  local delay=$1; shift
-  local cmd=("$@")
-  local attempt=1
-  while (( attempt <= tries )); do
-    if "${cmd[@]}"; then return 0; fi
-    log warn "Command failed (attempt $attempt/$tries): ${cmd[*]}"
-    sleep $((delay * attempt))
-    attempt=$((attempt + 1))
-  done
-  return 1
+    exponential_backoff "$@"
 }
 
 # Load Cursor CLI configuration
@@ -95,35 +191,52 @@ load_cursor_config() {
 # Note: test_cursor_agent function removed due to hanging issue
 # Configuration testing is now done inline in main() function
 
-# Extract and validate JSON from agent output (handles markdown wrapping)
+# Extract and validate JSON from agent output with proper error handling
 extract_json() {
   local input="$1"
   
-  # First, try to extract from cursor-agent result field (most common case)
+  # Check if jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    log error "jq command not found - cannot parse JSON"
+    return 1
+  fi
+  
+  # Validate input is not empty
+  if [[ -z "$input" ]]; then
+    log error "Empty input provided to extract_json"
+    return 1
+  fi
+  
+  # Try to extract from cursor-agent result field (most common case)
   if echo "$input" | jq -e '.result' >/dev/null 2>&1; then
     local result_content
-    result_content=$(echo "$input" | jq -r '.result' 2>/dev/null || echo "")
-    if [[ -n "$result_content" ]]; then
-      # Try to extract JSON from the result content
-      if echo "$result_content" | jq -e . >/dev/null 2>&1; then
-        echo "$result_content"
-        return 0
+    if result_content=$(echo "$input" | jq -r '.result' 2>/dev/null); then
+      if [[ -n "$result_content" ]] && [[ "$result_content" != "null" ]]; then
+        # Try to extract JSON from the result content
+        if echo "$result_content" | jq -e . >/dev/null 2>&1; then
+          echo "$result_content"
+          return 0
+        fi
+        
+        # Try extracting from markdown in result
+        local extracted
+        if extracted=$(echo "$result_content" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null); then
+          if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+            echo "$extracted"
+            return 0
+          fi
+        fi
+        
+        # Try extracting from any ``` blocks in result
+        if extracted=$(echo "$result_content" | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null); then
+          if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+            echo "$extracted"
+            return 0
+          fi
+        fi
       fi
-      
-      # Try extracting from markdown in result
-      local extracted
-      extracted=$(echo "$result_content" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-        echo "$extracted"
-        return 0
-      fi
-      
-      # Try extracting from any ``` blocks in result
-      extracted=$(echo "$result_content" | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-        echo "$extracted"
-        return 0
-      fi
+    else
+      log debug "Failed to extract result field from input"
     fi
   fi
   
@@ -135,24 +248,27 @@ extract_json() {
   
   # Try extracting from ```json blocks (more robust)
   local extracted
-  extracted=$(echo "$input" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-  if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-    echo "$extracted"
-    return 0
+  if extracted=$(echo "$input" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null); then
+    if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+      echo "$extracted"
+      return 0
+    fi
   fi
   
   # Try extracting from ``` blocks (without json marker)
-  extracted=$(echo "$input" | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-  if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-    echo "$extracted"
-    return 0
+  if extracted=$(echo "$input" | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null); then
+    if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+      echo "$extracted"
+      return 0
+    fi
   fi
   
-  # Try finding first JSON object {...} anywhere in the input
-  extracted=$(echo "$input" | grep -oP '\{(?:[^{}]|(?R))*\}' | head -1 2>/dev/null || echo "")
-  if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-    echo "$extracted"
-    return 0
+  # Try finding first JSON object {...} anywhere in the input (safer regex)
+  if extracted=$(echo "$input" | grep -oE '\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}' | head -1 2>/dev/null); then
+    if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+      echo "$extracted"
+      return 0
+    fi
   fi
   
   log error "Could not extract valid JSON from input"
@@ -160,7 +276,60 @@ extract_json() {
   return 1
 }
 
-# Cursor Agent invokace s JSON output
+# JSON schema validation for agent responses
+validate_agent_response_schema() {
+  local json_input="$1"
+  local mode="$2"
+  
+  # Check if input is valid JSON
+  if ! echo "$json_input" | jq -e . >/dev/null 2>&1; then
+    log error "Invalid JSON provided for schema validation"
+    return 1
+  fi
+  
+  case "$mode" in
+    planning)
+      # Validate planning response schema
+      if ! echo "$json_input" | jq -e '.batches' >/dev/null 2>&1; then
+        log error "Planning response missing required 'batches' field"
+        return 1
+      fi
+      if ! echo "$json_input" | jq -e '.batches | type == "array"' >/dev/null 2>&1; then
+        log error "Planning response 'batches' field must be an array"
+        return 1
+      fi
+      ;;
+    execution)
+      # Validate execution response schema
+      if ! echo "$json_input" | jq -e '.valid' >/dev/null 2>&1; then
+        log error "Execution response missing required 'valid' field"
+        return 1
+      fi
+      ;;
+  esac
+  
+  return 0
+}
+
+# Test Cursor API key validity
+test_cursor_api_key() {
+  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
+    return 2  # API key not set
+  fi
+  
+  # Make a simple test call to validate the API key
+  local test_prompt="Return only valid JSON: {\"test\": \"success\"}"
+  local test_output
+  test_output="$(timeout 10s cursor-agent -p --output-format json "$test_prompt" 2>/dev/null || echo "")"
+  
+  if [[ -n "$test_output" ]] && echo "$test_output" | jq -e '.test' >/dev/null 2>&1; then
+    return 0  # API key is valid
+  else
+    return 3  # API key is invalid
+  fi
+}
+
+# Cursor Agent invocation with JSON output
 run_cursor_agent() {
   local mode="${1:-}"; shift
   local prompt="${1:-}"; shift
@@ -228,14 +397,10 @@ Required JSON structure:
 
   log info "Running cursor-agent in headless mode (mode=$mode, model=$AGENT_MODEL, timeout=${AGENT_TIMEOUT_SEC}s, mcp=$MCP_ENABLED)"
   
-  local tmp_output tmp_clean
-  tmp_output="$(mktemp)"
-  tmp_clean="$(mktemp)"
-  
-  # Use timeout with --print and --force for headless execution
-  # Separate stderr from stdout to avoid mixing error messages with JSON
-  local tmp_stderr
-  tmp_stderr="$(mktemp)"
+  local tmp_output tmp_clean tmp_stderr
+  tmp_output="$(create_temp_file)"
+  tmp_clean="$(create_temp_file)"
+  tmp_stderr="$(create_temp_file)"
   local exit_code=0
   
   if command -v cursor-agent >/dev/null 2>&1; then
@@ -309,8 +474,16 @@ Required JSON structure:
     if [[ -n "$agent_result" ]]; then
       # Try to extract clean JSON
       if extract_json "$agent_result" > "$tmp_clean" 2>/dev/null; then
-        mv "$tmp_clean" "$outfile"
-        log info "Successfully extracted JSON from agent response"
+        # Validate schema before saving
+        local extracted_json
+        extracted_json="$(cat "$tmp_clean")"
+        if validate_agent_response_schema "$extracted_json" "$mode"; then
+          mv "$tmp_clean" "$outfile"
+          log info "Successfully extracted and validated JSON from agent response"
+        else
+          log warn "Agent response failed schema validation, saving anyway"
+          mv "$tmp_clean" "$outfile"
+        fi
       else
         # Save raw result and warn
         echo "$agent_result" > "$outfile"
@@ -335,7 +508,7 @@ Required JSON structure:
     cp "$tmp_output" "$outfile" 2>/dev/null || echo '{}' > "$outfile"
   fi
   
-  rm -f "$tmp_output" "$tmp_clean" "$tmp_stderr"
+  # Temp files are cleaned up automatically by trap
   
   # Log excerpt for debugging
   if [[ -f "$outfile" ]]; then
@@ -690,21 +863,34 @@ apply_patch() {
     return 1
   fi
   
-  # Write diff to temp file
+  # Check git repository status
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    log error "Not in a git repository, cannot apply patch"
+    return 1
+  fi
+  
+  # Check if working directory is clean (allow staged changes)
+  if ! git diff --quiet; then
+    log warn "Working directory has unstaged changes, patch may conflict"
+  fi
+  
+  # Write diff to secure temp file
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(create_temp_file)"
   printf '%s\n' "$diff_content" >"$tmp"
   
   # Try to apply patch
   if git apply --check "$tmp" 2>/dev/null; then
-    git apply --index "$tmp"
-    log info "Successfully applied patch to $fname"
-    rm -f "$tmp"
-    return 0
+    if git apply --index "$tmp"; then
+      log info "Successfully applied patch to $fname"
+      return 0
+    else
+      log error "Failed to apply patch to $fname (check failed but apply failed)"
+      return 1
+    fi
   else
-    log error "git apply failed for $fname"
+    log error "git apply --check failed for $fname"
     log debug "Patch content: $(cat "$tmp" | head -20)"
-    rm -f "$tmp"
     return 1
   fi
 }
@@ -1003,15 +1189,26 @@ main() {
   # Test cursor-agent configuration
   log info "Testing cursor-agent configuration..."
   
-  # Inline cursor-agent test to avoid function hanging issue
+  # Validate all inputs first
+  if ! validate_all_inputs; then
+    log error "Input validation failed"
+    exit 1
+  fi
+  
+  # Test cursor-agent configuration with actual API validation
   local test_result=2  # Default to API key not set
   if ! command -v cursor-agent >/dev/null 2>&1; then
     test_result=1  # Command not found
   elif [[ -n "${CURSOR_API_KEY:-}" ]]; then
     if [[ "$CURSOR_API_KEY" =~ ^key_ ]]; then
-      test_result=0  # API key looks valid (Cursor format: key_...)
+      # Test actual API key validity
+      if test_cursor_api_key; then
+        test_result=0  # API key is valid and working
+      else
+        test_result=3  # API key format looks correct but doesn't work
+      fi
     else
-      test_result=3  # API key format invalid
+      test_result=4  # API key format invalid
     fi
   fi
   
@@ -1026,19 +1223,22 @@ main() {
       log info "Install cursor-agent: curl https://cursor.com/install -fsS | bash"
       ;;
     2)
-      log debug "Entering case 2: CURSOR_API_KEY not set"
       log warn "cursor-agent found but CURSOR_API_KEY not set, running in simple mode"
       log info "To enable AI-powered planning, set CURSOR_API_KEY environment variable"
       log info "Get your API key from: https://cursor.com/settings/api"
-      log debug "Current environment variables: $(env | grep -i cursor 2>/dev/null || echo 'No CURSOR_* variables found')"
-      log debug "Exiting case 2"
       ;;
     3)
       log warn "cursor-agent authentication failed, running in simple mode"
-      log error "Invalid or expired CURSOR_API_KEY"
+      log error "API key format looks correct but authentication failed"
+      log info "Check if your API key is valid and not expired"
       log info "Get a new API key from: https://cursor.com/settings/api"
       ;;
     4)
+      log warn "cursor-agent API key format invalid, running in simple mode"
+      log error "API key should start with 'key_' prefix"
+      log info "Get a valid API key from: https://cursor.com/settings/api"
+      ;;
+    *)
       log warn "cursor-agent test failed with unknown issue, running in simple mode"
       log info "Check cursor-agent installation and configuration"
       ;;
