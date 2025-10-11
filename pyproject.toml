@@ -90,11 +90,11 @@ Issues = "https://github.com/sparesparrow/openssl-tools/issues"
 Changelog = "https://github.com/sparesparrow/openssl-tools/blob/main/CHANGELOG.md"
 
 [project.scripts]
-openssl-env = "setup_python_env:main"
-openssl-conan = "conan_remote_manager:main"
-openssl-build = "build_optimizer:main"
-openssl-sign = "package_signer:main"
-openssl-fuzz = "fuzz_integration:main"
+openssl-tools = "openssl_tools.cli.main:main"
+openssl-workflow = "openssl_tools.workflows.manager:main"
+openssl-build = "openssl_tools.build.optimizer:main"
+openssl-conan = "openssl_tools.conan.remote_manager:main"
+openssl-validate = "openssl_tools.utils.validation:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
