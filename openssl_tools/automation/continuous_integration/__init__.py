@@ -1,5 +1,5 @@
 """
-CI/CD Automation Module
+Continuous Integration Module
 
 This module provides CI/CD automation capabilities including deployment,
 testing, and validation for OpenSSL development workflows.
@@ -7,8 +7,7 @@ testing, and validation for OpenSSL development workflows.
 Classes:
     ConanAutomation: Conan-specific CI/CD automation
     DeploymentManager: Deployment automation and management
-    TestHarness: Testing framework and test execution
-    ValidationManager: CI/CD validation and quality gates
+    OpenSSLTestHarness: Testing framework and test execution
 """
 
 from .automation import ConanAutomation

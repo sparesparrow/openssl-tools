@@ -1,6 +1,8 @@
-# Python Script Directory Structure
+# Python Script Directory Structure - Legacy
 
-This document describes the improved Python script organization in the OpenSSL Tools project, following best practices for maintainability, scalability, and collaboration.
+⚠️ **This document describes the previous structure. For the current improved structure, see [python-structure-improved.md](python-structure-improved.md)**
+
+This document describes the previous Python script organization in the OpenSSL Tools project, following best practices for maintainability, scalability, and collaboration.
 
 ## Overview
 

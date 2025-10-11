@@ -1,5 +1,5 @@
 """
-Utility Functions Module
+Utilities Module
 
 This module provides utility functions and helpers for OpenSSL development tools,
 including validation, logging, configuration, and GitHub API utilities.

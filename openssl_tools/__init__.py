@@ -2,17 +2,24 @@
 OpenSSL Tools - Comprehensive OpenSSL Development and CI/CD Toolkit
 
 This package provides a comprehensive set of tools for OpenSSL development,
-including workflow management, build optimization, Conan package management,
-CI/CD automation, and MCP server implementations.
+following the Zen of Python principles for beautiful, explicit, and simple code.
+
+The package is organized into clear domains:
+- automation: Workflow management, CI/CD, and AI agents
+- development: Build system and package management
+- foundation: Core utilities and command-line interfaces
+- security: Security analysis and compliance tools
+- testing: Testing frameworks and quality assurance
+- monitoring: System monitoring and observability
 
 Modules:
-    workflows: GitHub Actions workflow management and monitoring
-    build: Build optimization and performance analysis
-    conan: Conan package management and orchestration
-    ci: CI/CD automation and deployment
-    mcp: Model Context Protocol server implementations
-    utils: Utility functions and helpers
-    cli: Command-line interfaces
+    automation.workflow_management: GitHub Actions workflow management and monitoring
+    automation.continuous_integration: CI/CD automation and deployment
+    automation.ai_agents: Model Context Protocol server implementations
+    development.build_system: Build optimization and performance analysis
+    development.package_management: Conan package management and orchestration
+    foundation.utilities: Utility functions and helpers
+    foundation.command_line: Command-line interfaces
 """
 
 __version__ = "1.0.0"
@@ -20,10 +27,10 @@ __author__ = "OpenSSL Tools Team"
 __email__ = "openssl-tools@example.com"
 
 # Import main classes for easy access
-from .workflows import WorkflowManager, UnifiedWorkflowManager
-from .build import BuildCacheManager, BuildOptimizer
-from .conan import ConanRemoteManager, ConanOrchestrator
-from .ci import ConanAutomation, DeploymentManager
+from .automation.workflow_management import WorkflowManager, UnifiedWorkflowManager
+from .development.build_system import BuildCacheManager, BuildOptimizer
+from .development.package_management import ConanRemoteManager, ConanOrchestrator
+from .automation.continuous_integration import ConanAutomation, DeploymentManager
 
 __all__ = [
     "WorkflowManager",

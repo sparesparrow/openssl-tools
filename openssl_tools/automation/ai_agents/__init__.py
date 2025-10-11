@@ -1,8 +1,8 @@
 """
-Model Context Protocol (MCP) Server Module
+AI Agents Module
 
-This module provides MCP server implementations for various OpenSSL development
-workflows, enabling AI-powered automation and analysis.
+This module provides Model Context Protocol (MCP) server implementations for various 
+OpenSSL development workflows, enabling AI-powered automation and analysis.
 
 Classes:
     GitHubWorkflowFixer: GitHub workflow analysis and fixing MCP server

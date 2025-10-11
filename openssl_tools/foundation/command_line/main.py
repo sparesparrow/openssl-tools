@@ -10,13 +10,14 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add the parent directory to the path to import openssl_tools
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add the project root to the path to import openssl_tools
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-from openssl_tools.workflows import WorkflowManager, UnifiedWorkflowManager
-from openssl_tools.build import BuildCacheManager, BuildOptimizer
-from openssl_tools.conan import ConanRemoteManager, ConanOrchestrator
-# from openssl_tools.utils import validate_mcp_config
+from openssl_tools.automation.workflow_management import WorkflowManager, UnifiedWorkflowManager
+from openssl_tools.development.build_system import BuildCacheManager, BuildOptimizer
+from openssl_tools.development.package_management import ConanRemoteManager, ConanOrchestrator
+# from openssl_tools.foundation.utilities import validate_mcp_config
 
 
 def main():
@@ -195,8 +196,8 @@ def handle_validate_command(args):
     if args.validate_action == "mcp-config":
         # Import the validation script directly
         import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-        from openssl_tools.utils.validation import MCPConfigValidator
+        sys.path.insert(0, str(project_root))
+        from openssl_tools.foundation.utilities.validation import MCPConfigValidator
         validator = MCPConfigValidator()
         success = validator.validate_all()
         if not args.quiet:

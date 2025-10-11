@@ -13,42 +13,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-# Add scripts directory to path
-scripts_dir = Path(__file__).parent
-sys.path.insert(0, str(scripts_dir))
-
-# Import existing workflow management modules
-import importlib.util
-
-# Import monitor_workflows
-spec = importlib.util.spec_from_file_location("monitor_workflows", scripts_dir / "monitor-workflows.py")
-monitor_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(monitor_module)
-WorkflowMonitor = monitor_module.WorkflowMonitor
-
-# Import workflow_recovery
-spec = importlib.util.spec_from_file_location("workflow_recovery", scripts_dir / "workflow-recovery.py")
-recovery_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(recovery_module)
-WorkflowRecovery = recovery_module.WorkflowRecovery
-
-# Import workflow_health_check
-spec = importlib.util.spec_from_file_location("workflow_health_check", scripts_dir / "workflow-health-check.py")
-health_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(health_module)
-WorkflowHealthChecker = health_module.WorkflowHealthChecker
-
-# Import workflow_manager
-spec = importlib.util.spec_from_file_location("workflow_manager", scripts_dir / "workflow-manager.py")
-manager_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(manager_module)
-WorkflowManager = manager_module.WorkflowManager
+# Import from the same package
+from .monitor import WorkflowMonitor
+from .recovery import WorkflowRecovery
+from .health_check import WorkflowHealthChecker
+from .manager import WorkflowManager
 
 # Import MCP GitHub Workflow Fixer
-spec = importlib.util.spec_from_file_location("github_workflow_fixer_mcp", scripts_dir / "mcp" / "github_workflow_fixer_mcp.py")
-mcp_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mcp_module)
-GitHubWorkflowFixer = mcp_module.GitHubWorkflowFixer
+from ..ai_agents.workflow_fixer import GitHubWorkflowFixer
 
 
 class UnifiedWorkflowManager:
