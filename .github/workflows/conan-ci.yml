@@ -166,7 +166,7 @@ jobs:
         if: env.ARTIFACTORY_URL != ''
         run: |
           conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
-          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan remote login -p ${{ secrets.ARTIFACTORY_PASSWORD }} artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
           conan upload "openssl/*" -r=artifactory --all --confirm || true
       
       - name: Upload packages to GitHub Packages
@@ -177,7 +177,7 @@ jobs:
           conan remote update github-packages https://maven.pkg.github.com/${{ github.repository }}
           
           # Authenticate with GitHub Packages using proper token format
-          conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
+          conan remote login -p ${{ secrets.GITHUB_TOKEN }} github-packages ${{ github.actor }}
           
           # Upload packages with retry logic and proper error handling
           conan upload "openssl/*" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {

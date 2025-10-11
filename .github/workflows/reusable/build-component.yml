@@ -74,7 +74,6 @@ jobs:
       - name: Install Conan
         run: |
           pip install conan==2.0.17
-          conan config init
           
       - name: Cache Conan packages
         uses: actions/cache@v4
@@ -90,7 +89,7 @@ jobs:
         if: secrets.CONAN_LOGIN_USERNAME != ''
         run: |
           conan remote add artifactory ${{ secrets.ARTIFACTORY_URL || 'https://artifactory.example.com/artifactory/api/conan/conan' }}
-          conan user -r artifactory -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+          conan remote login -p ${{ secrets.CONAN_PASSWORD }} artifactory ${{ secrets.CONAN_LOGIN_USERNAME }}
           
       - name: Build component
         run: |

@@ -140,7 +140,6 @@ jobs:
       - name: Configure Conan
         run: |
           conan profile detect --force
-          conan config init
           conan remote add conancenter https://center.conan.io
           
       - name: Clone OpenSSL source
@@ -177,11 +176,11 @@ jobs:
         run: |
           cd openssl-source
           conan remote add upload-target "$CONAN_REMOTE_URL" || true
-          conan user -p "$CONAN_PASSWORD" -r upload-target "$CONAN_USER" || true
+          conan remote login -p "$CONAN_PASSWORD" upload-target "$CONAN_USER" || true
           conan upload "openssl/*" -r=upload-target --confirm || {
             echo "Primary upload failed, attempting GitHub Packages fallback"
             conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }} || true
-            conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
+            conan remote login -p ${{ secrets.GITHUB_TOKEN }} github-packages ${{ github.actor }}
             conan upload "openssl/*" -r=github-packages --confirm
           }
           

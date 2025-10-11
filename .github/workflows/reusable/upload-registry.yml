@@ -52,7 +52,6 @@ jobs:
       - name: Install Conan
         run: |
           pip install conan==2.0.17
-          conan config init
           
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -65,15 +64,15 @@ jobs:
           case "${{ inputs.registry }}" in
             "artifactory")
               conan remote add artifactory ${{ secrets.ARTIFACTORY_URL || 'https://artifactory.example.com/artifactory/api/conan/conan' }}
-              conan user -r artifactory -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              conan remote login -p ${{ secrets.CONAN_PASSWORD }} artifactory ${{ secrets.CONAN_LOGIN_USERNAME }}
               ;;
             "github")
               conan remote add github https://conan.pkg.github.com
-              conan user -r github -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              conan remote login -p ${{ secrets.CONAN_PASSWORD }} github ${{ secrets.CONAN_LOGIN_USERNAME }}
               ;;
             "conancenter")
               conan remote add conancenter https://center.conan.io
-              conan user -r conancenter -p ${{ secrets.CONAN_PASSWORD }} ${{ secrets.CONAN_LOGIN_USERNAME }}
+              conan remote login -p ${{ secrets.CONAN_PASSWORD }} conancenter ${{ secrets.CONAN_LOGIN_USERNAME }}
               ;;
           esac
           
