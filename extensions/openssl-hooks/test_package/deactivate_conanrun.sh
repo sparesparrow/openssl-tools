@@ -1,0 +1,1 @@
+. "/home/sparrow/projects/openssl-tools/extensions/openssl-hooks/test_package/deactivate_conanrunenv-release-x86_64.sh"
