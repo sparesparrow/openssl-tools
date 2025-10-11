@@ -239,36 +239,15 @@ Required JSON structure:
   local exit_code=0
   
   if command -v cursor-agent >/dev/null 2>&1; then
-    # Build cursor-agent command with MCP and configuration support
+    # Build cursor-agent command with supported options only
     local cmd_args=(
       "-p"
-      "--force"
       "--output-format" "json"
     )
     
-    # Add configuration file if available
-    if [[ -f "$CURSOR_CONFIG_FILE" ]]; then
-      cmd_args+=("--config" "$CURSOR_CONFIG_FILE")
-      log debug "Using config: $CURSOR_CONFIG_FILE"
-    fi
-    
-    # Add MCP support if enabled and config exists
-    if [[ "$MCP_ENABLED" == "true" ]] && [[ -f "$CURSOR_MCP_CONFIG" ]]; then
-      cmd_args+=("--mcp" "$CURSOR_MCP_CONFIG")
-      log debug "Using MCP config: $CURSOR_MCP_CONFIG (servers: $MCP_SERVERS)"
-    fi
-    
-    # Add agent configuration if available
-    if [[ -f "$CURSOR_AGENT_CONFIG" ]]; then
-      cmd_args+=("--agent" "$CURSOR_AGENT_CONFIG")
-      log debug "Using agent config: $CURSOR_AGENT_CONFIG"
-    fi
-    
-    # Add rules directory if it exists
-    if [[ -d ".cursor/rules" ]]; then
-      cmd_args+=("--rules" ".cursor/rules")
-      log debug "Using rules from: .cursor/rules"
-    fi
+    # Note: cursor-agent doesn't support --config, --mcp, --agent, --rules options
+    # Configuration is handled via environment variables and .cursor/ directory
+    log debug "Using basic cursor-agent command (advanced options not supported)"
     
     # Execute with enhanced context
     if timeout "${AGENT_TIMEOUT_SEC}s" cursor-agent "${cmd_args[@]}" \
@@ -1029,8 +1008,8 @@ main() {
   if ! command -v cursor-agent >/dev/null 2>&1; then
     test_result=1  # Command not found
   elif [[ -n "${CURSOR_API_KEY:-}" ]]; then
-    if [[ "$CURSOR_API_KEY" =~ ^sk- ]]; then
-      test_result=0  # API key looks valid
+    if [[ "$CURSOR_API_KEY" =~ ^key_ ]]; then
+      test_result=0  # API key looks valid (Cursor format: key_...)
     else
       test_result=3  # API key format invalid
     fi
