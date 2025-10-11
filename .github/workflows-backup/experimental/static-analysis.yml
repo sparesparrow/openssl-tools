@@ -12,23 +12,13 @@ on:
   schedule:
     - cron:  '20 02 * * *'
   workflow_dispatch:
-  push:
-    branches: [ master, main, develop ]
-    paths:
-      - 'conanfile.py'
-      - 'scripts/**'
-  pull_request:
-    branches: [ master, main ]
-    paths:
-      - 'conanfile.py'
-      - 'scripts/**'
 
 permissions:
   contents: read
 
 jobs:
   coverity:
-    if: github.repository == 'sparesparrow/openssl-tools'
+    if: github.repository == 'openssl/openssl'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

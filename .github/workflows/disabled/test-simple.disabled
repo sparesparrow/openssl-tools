@@ -1,0 +1,13 @@
+name: Test Simple
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test step
+        run: echo "✅ Test workflow completed successfully"

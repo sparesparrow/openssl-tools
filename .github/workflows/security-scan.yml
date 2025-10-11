@@ -1,0 +1,322 @@
+# OpenSSL Security Scan Workflow
+# Dedicated security pipeline with SAST/DAST scanning
+
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+  workflow_dispatch:
+
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+
+jobs:
+  # SAST - Static Application Security Testing
+  sast-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install security tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install bandit safety semgrep
+          
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Run SAST scan with Bandit
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=sast \
+            --tools=bandit \
+            --severity=medium \
+            --format=json \
+            --verbose
+          
+      - name: Run SAST scan with Semgrep
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=sast \
+            --tools=semgrep \
+            --severity=medium \
+            --format=sarif \
+            --verbose
+          
+      - name: Upload SAST results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-scan-results
+          path: openssl-source/security-scans/
+          retention-days: 30
+          
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: openssl-source/security-scans/semgrep_results.sarif
+          category: semgrep-sast
+
+  # DAST - Dynamic Application Security Testing
+  dast-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install security tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install bandit safety semgrep
+          
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL for testing
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Run DAST scan
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=dast \
+            --tools=trivy \
+            --severity=medium \
+            --format=json \
+            --verbose
+          
+      - name: Upload DAST results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-scan-results
+          path: openssl-source/security-scans/
+          retention-days: 30
+
+  # Dependency vulnerability scan
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install security tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install safety
+          
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Run dependency scan
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=dependency \
+            --tools=safety,trivy \
+            --severity=medium \
+            --format=json \
+            --verbose
+          
+      - name: Upload dependency scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-results
+          path: openssl-source/security-scans/
+          retention-days: 30
+
+  # License compliance scan
+  license-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install license checking tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install licensecheck
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Run license compliance scan
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=license \
+            --tools=license-checker \
+            --severity=medium \
+            --format=json \
+            --verbose
+          
+      - name: Upload license scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-scan-results
+          path: openssl-source/security-scans/
+          retention-days: 30
+
+  # Security report generation
+  security-report:
+    needs: [sast-scan, dast-scan, dependency-scan, license-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all security scan results
+        uses: actions/download-artifact@v4
+        with:
+          path: security-results/
+          
+      - name: Generate security report
+        run: |
+          echo "# OpenSSL Security Scan Report" > security-report.md
+          echo "" >> security-report.md
+          echo "Generated on: $(date)" >> security-report.md
+          echo "" >> security-report.md
+          
+          echo "## Scan Results Summary" >> security-report.md
+          echo "" >> security-report.md
+          
+          # SAST Results
+          if [ -d "security-results/sast-scan-results" ]; then
+            echo "### SAST Scan" >> security-report.md
+            echo "- Status: ${{ needs.sast-scan.result }}" >> security-report.md
+            echo "- Results: Available in artifacts" >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # DAST Results
+          if [ -d "security-results/dast-scan-results" ]; then
+            echo "### DAST Scan" >> security-report.md
+            echo "- Status: ${{ needs.dast-scan.result }}" >> security-report.md
+            echo "- Results: Available in artifacts" >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # Dependency Results
+          if [ -d "security-results/dependency-scan-results" ]; then
+            echo "### Dependency Scan" >> security-report.md
+            echo "- Status: ${{ needs.dependency-scan.result }}" >> security-report.md
+            echo "- Results: Available in artifacts" >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+          # License Results
+          if [ -d "security-results/license-scan-results" ]; then
+            echo "### License Scan" >> security-report.md
+            echo "- Status: ${{ needs.license-scan.result }}" >> security-report.md
+            echo "- Results: Available in artifacts" >> security-report.md
+            echo "" >> security-report.md
+          fi
+          
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.md
+          retention-days: 90
