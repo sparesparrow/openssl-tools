@@ -17,11 +17,11 @@ set -euo pipefail
 REPO="${REPO:-sparesparrow/openssl-tools}"
 PR_NUMBER="${PR_NUMBER:-6}"
 PR_BRANCH="${PR_BRANCH:-simplify-openssl-build}"
-MAX_ITERATIONS="${MAX_ITERATIONS:-12}"
-INTERVAL="${INTERVAL:-60}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-120}"
+INTERVAL="${INTERVAL:-200}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
-AGENT_TIMEOUT_SEC="${AGENT_TIMEOUT_SEC:-60}"
-USE_STREAMING="${USE_STREAMING:-false}"
+AGENT_TIMEOUT_SEC="${AGENT_TIMEOUT_SEC:-200}"
+USE_STREAMING="${USE_STREAMING:-true}"
 TASK="${1:-"Ensure all PR #$PR_NUMBER workflows are green with minimal safe changes"}"
 MODE="${2:-execution}"
 
@@ -33,7 +33,7 @@ CURSOR_AGENT_CONFIG="${CURSOR_AGENT_CONFIG:-.cursor/agents/ci-repair-agent.yml}"
 # Configuration values (will be loaded from config file if available)
 AGENT_MODEL="${AGENT_MODEL:-auto}"
 MCP_ENABLED="${MCP_ENABLED:-true}"
-MCP_SERVERS=""
+#MCP_SERVERS=""
 
 # Utilities
 timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
