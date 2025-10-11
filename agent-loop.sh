@@ -63,7 +63,35 @@ retry() {
 extract_json() {
   local input="$1"
   
-  # Try direct parse first
+  # First, try to extract from cursor-agent result field (most common case)
+  if echo "$input" | jq -e '.result' >/dev/null 2>&1; then
+    local result_content
+    result_content=$(echo "$input" | jq -r '.result' 2>/dev/null || echo "")
+    if [[ -n "$result_content" ]]; then
+      # Try to extract JSON from the result content
+      if echo "$result_content" | jq -e . >/dev/null 2>&1; then
+        echo "$result_content"
+        return 0
+      fi
+      
+      # Try extracting from markdown in result
+      local extracted
+      extracted=$(echo "$result_content" | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
+      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+        echo "$extracted"
+        return 0
+      fi
+      
+      # Try extracting from any ``` blocks in result
+      extracted=$(echo "$result_content" | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
+      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
+        echo "$extracted"
+        return 0
+      fi
+    fi
+  fi
+  
+  # Try direct parse (for cases where input is already the JSON we want)
   if echo "$input" | jq -e . >/dev/null 2>&1; then
     echo "$input"
     return 0
@@ -82,33 +110,6 @@ extract_json() {
   if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
     echo "$extracted"
     return 0
-  fi
-  
-  # Try finding JSON in the result field of cursor-agent output
-  if echo "$input" | jq -e '.result' >/dev/null 2>&1; then
-    local result_content
-    result_content=$(echo "$input" | jq -r '.result' 2>/dev/null || echo "")
-    if [[ -n "$result_content" ]]; then
-      # Try to extract JSON from the result content
-      if echo "$result_content" | jq -e . >/dev/null 2>&1; then
-        echo "$result_content"
-        return 0
-      fi
-      
-      # Try extracting from markdown in result (handle escaped newlines)
-      extracted=$(echo "$result_content" | sed 's/\\n/\n/g' | sed -n '/```json/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-        echo "$extracted"
-        return 0
-      fi
-      
-      # Try extracting from any ``` blocks in result (handle escaped newlines)
-      extracted=$(echo "$result_content" | sed 's/\\n/\n/g' | sed -n '/```/,/```/p' | sed '1d;$d' 2>/dev/null || echo "")
-      if [[ -n "$extracted" ]] && echo "$extracted" | jq -e . >/dev/null 2>&1; then
-        echo "$extracted"
-        return 0
-      fi
-    fi
   fi
   
   # Try finding first JSON object {...} anywhere in the input
@@ -225,6 +226,7 @@ Required JSON structure:
         # Save raw result and warn
         echo "$agent_result" > "$outfile"
         log warn "Agent output is not valid JSON, saved raw result"
+        log debug "Raw result: $(echo "$agent_result" | head -c 200)"
       fi
     else
       log error "No result field in agent output"
@@ -232,6 +234,9 @@ Required JSON structure:
     fi
   else
     log error "Invalid JSON response from agent"
+    if [[ -f "$tmp_output" ]]; then
+      log debug "Raw agent output: $(head -c 500 "$tmp_output" 2>/dev/null || echo 'empty')"
+    fi
     cp "$tmp_output" "$outfile" 2>/dev/null || echo '{}' > "$outfile"
   fi
   
