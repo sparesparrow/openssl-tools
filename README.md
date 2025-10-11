@@ -10,6 +10,8 @@ This repository contains build tools, automation scripts, and infrastructure com
 - Python 3.11+
 - Git
 - curl
+- GitHub CLI (`gh`) - for workflow management
+- Cursor CLI (`cursor-agent`) - for AI-powered CI repair (optional)
 
 ### Setup Development Environment
 
@@ -29,18 +31,21 @@ cp .env.template .env
 ./scripts/dev-setup.sh test
 ```
 
-### Start Cursor Agents
+### AI-Powered CI Repair
 
 ```bash
-# Start all agents
-./scripts/cursor-agents-coordinator.sh start
+# Simple mode (no API key required)
+./agent-loop.sh
 
-# Monitor agents (in separate terminal)
-./scripts/cursor-agents-coordinator.sh monitor
-
-# Stop agents
-./scripts/cursor-agents-coordinator.sh stop
+# AI-powered mode (requires CURSOR_API_KEY)
+export CURSOR_API_KEY="your-api-key"
+./agent-loop.sh "Fix all failed workflows" execution
 ```
+
+**📚 Complete Documentation:**
+- [Agent-Loop Documentation (English)](docs/agent-loop-documentation-en.md)
+- [Agent-Loop Documentation (Czech)](docs/agent-loop-documentation.md)
+- [Cursor Agent Setup Guide](.cursor/README-cursor-agent-setup.md)
 
 ### Run Build Pipeline
 
