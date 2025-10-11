@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "openssl-ci": {
+      "command": "python3",
+      "args": ["${workspaceFolder}/scripts/mcp/ci-server.py"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "REPO": "${REPO}",
+        "PR_NUMBER": "${PR_NUMBER}",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+

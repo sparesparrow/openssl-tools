@@ -1,0 +1,49 @@
+{
+  "agent": {
+    "model": "claude-3.5-sonnet",
+    "temperature": 0.2,
+    "max_tokens": 8192,
+    "timeout_ms": 60000
+  },
+  "headless": {
+    "output_format": "json",
+    "force_mode": true,
+    "print_result": true,
+    "stream": false
+  },
+  "mcp": {
+    "enabled": true,
+    "servers": [
+      "github",
+      "openssl-ci",
+      "openssl-database",
+      "openssl-build",
+      "openssl-security"
+    ],
+    "timeout_ms": 5000
+  },
+  "context": {
+    "include_git_history": true,
+    "max_commits": 15,
+    "include_pr_info": true,
+    "include_workflow_runs": true,
+    "rules_directories": [
+      ".cursor/rules"
+    ]
+  },
+  "ci_repair": {
+    "max_batch_actions": 5,
+    "require_confirmation": false,
+    "auto_commit": true,
+    "commit_message_prefix": "ci(auto-fix):",
+    "allowed_actions": [
+      "rerun",
+      "approve",
+      "apply-patch",
+      "enable-workflow",
+      "disable-workflow",
+      "rerun-failed-workflows"
+    ]
+  }
+}
+

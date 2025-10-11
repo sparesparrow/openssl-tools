@@ -25,6 +25,16 @@ USE_STREAMING="${USE_STREAMING:-false}"
 TASK="${1:-"Ensure all PR #$PR_NUMBER workflows are green with minimal safe changes"}"
 MODE="${2:-execution}"
 
+# Cursor CLI configuration paths
+CURSOR_CONFIG_FILE="${CURSOR_CONFIG_FILE:-.cursor/cli-config.json}"
+CURSOR_MCP_CONFIG="${CURSOR_MCP_CONFIG:-.cursor/mcp-servers.json}"
+CURSOR_AGENT_CONFIG="${CURSOR_AGENT_CONFIG:-.cursor/agents/ci-repair-agent.yml}"
+
+# Configuration values (will be loaded from config file if available)
+AGENT_MODEL="${AGENT_MODEL:-auto}"
+MCP_ENABLED="${MCP_ENABLED:-true}"
+MCP_SERVERS=""
+
 # Utilities
 timestamp() { date '+%Y-%m-%dT%H:%M:%S%z'; }
 
@@ -57,6 +67,29 @@ retry() {
     attempt=$((attempt + 1))
   done
   return 1
+}
+
+# Load Cursor CLI configuration
+load_cursor_config() {
+  if [[ -f "$CURSOR_CONFIG_FILE" ]]; then
+    log info "Loading Cursor CLI configuration from $CURSOR_CONFIG_FILE"
+    
+    # Extract configuration values using jq
+    if command -v jq >/dev/null 2>&1; then
+      AGENT_MODEL="$(jq -r '.agent.model // "claude-3.5-sonnet"' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "claude-3.5-sonnet")"
+      local timeout_ms
+      timeout_ms="$(jq -r '.agent.timeout_ms // 60000' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "60000")"
+      AGENT_TIMEOUT_SEC=$(( timeout_ms / 1000 ))
+      MCP_ENABLED="$(jq -r '.mcp.enabled // false' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "false")"
+      MCP_SERVERS="$(jq -r '.mcp.servers[]? // empty' "$CURSOR_CONFIG_FILE" 2>/dev/null | paste -sd ',' - || echo "")"
+      
+      log debug "Loaded config: model=$AGENT_MODEL, timeout=${AGENT_TIMEOUT_SEC}s, mcp=$MCP_ENABLED, servers=$MCP_SERVERS"
+    else
+      log warn "jq not found, using default configuration"
+    fi
+  else
+    log debug "Cursor CLI config not found at $CURSOR_CONFIG_FILE, using defaults"
+  fi
 }
 
 # Extract and validate JSON from agent output (handles markdown wrapping)
@@ -185,7 +218,7 @@ Required JSON structure:
       ;;
   esac
 
-  log info "Running cursor-agent in headless mode (mode=$mode, timeout=${AGENT_TIMEOUT_SEC}s)"
+  log info "Running cursor-agent in headless mode (mode=$mode, model=$AGENT_MODEL, timeout=${AGENT_TIMEOUT_SEC}s, mcp=$MCP_ENABLED)"
   
   local tmp_output tmp_clean
   tmp_output="$(mktemp)"
@@ -198,8 +231,39 @@ Required JSON structure:
   local exit_code=0
   
   if command -v cursor-agent >/dev/null 2>&1; then
-    if timeout "${AGENT_TIMEOUT_SEC}s" cursor-agent -p --force \
-      --output-format json \
+    # Build cursor-agent command with MCP and configuration support
+    local cmd_args=(
+      "-p"
+      "--force"
+      "--output-format" "json"
+    )
+    
+    # Add configuration file if available
+    if [[ -f "$CURSOR_CONFIG_FILE" ]]; then
+      cmd_args+=("--config" "$CURSOR_CONFIG_FILE")
+      log debug "Using config: $CURSOR_CONFIG_FILE"
+    fi
+    
+    # Add MCP support if enabled and config exists
+    if [[ "$MCP_ENABLED" == "true" ]] && [[ -f "$CURSOR_MCP_CONFIG" ]]; then
+      cmd_args+=("--mcp" "$CURSOR_MCP_CONFIG")
+      log debug "Using MCP config: $CURSOR_MCP_CONFIG (servers: $MCP_SERVERS)"
+    fi
+    
+    # Add agent configuration if available
+    if [[ -f "$CURSOR_AGENT_CONFIG" ]]; then
+      cmd_args+=("--agent" "$CURSOR_AGENT_CONFIG")
+      log debug "Using agent config: $CURSOR_AGENT_CONFIG"
+    fi
+    
+    # Add rules directory if it exists
+    if [[ -d ".cursor/rules" ]]; then
+      cmd_args+=("--rules" ".cursor/rules")
+      log debug "Using rules from: .cursor/rules"
+    fi
+    
+    # Execute with enhanced context
+    if timeout "${AGENT_TIMEOUT_SEC}s" cursor-agent "${cmd_args[@]}" \
       "$full_prompt" >"$tmp_output" 2>"$tmp_stderr"; then
       log info "Agent completed successfully"
     else
@@ -478,6 +542,22 @@ make_planning_prompt() {
   runs_compact="$(printf '%s' "$runs_json" | jq -c '.' 2>/dev/null || echo '[]')"
   pr_compact="$(printf '%s' "$pr_json" | jq -c '.' 2>/dev/null || echo '{}')"
   
+  # Add MCP context hint if enabled
+  local mcp_hint=""
+  if [[ "$MCP_ENABLED" == "true" ]]; then
+    mcp_hint="
+MCP TOOLS AVAILABLE:
+You have access to the following MCP tools for gathering additional context:
+- get_workflow_runs(limit): Get detailed workflow run history
+- get_failed_job_logs(run_id): Get logs from failed workflow jobs
+- get_pr_status(pr_number): Get PR status, checks, and metadata
+- get_recent_commits(limit): Get recent commit history with details
+- get_workflow_file(workflow_name): Read workflow YAML files
+
+Use these tools BEFORE proposing fixes to understand the full context.
+"
+  fi
+  
   cat <<EOF
 You are a CI repair planner for OpenSSL modernization PR #${PR_NUMBER}.
 
@@ -491,6 +571,8 @@ CONTEXT:
 
 Recent Commits:
 ${recent_commits}
+
+${mcp_hint}
 
 CONSTRAINTS:
 1. Prefer rerun/approve actions over file edits
@@ -895,12 +977,16 @@ execute_plan() {
 main() {
   require_cmd gh jq git curl timeout
   
+  # Load Cursor CLI configuration early
+  load_cursor_config
+  
   log info "=== Agent Loop Start ==="
   log info "Repository: $REPO"
   log info "PR: #${PR_NUMBER} ($PR_BRANCH)"
   log info "Mode: $MODE"
   log info "Max iterations: $MAX_ITERATIONS"
   log info "Streaming: $USE_STREAMING"
+  log info "Cursor Config: $CURSOR_CONFIG_FILE (MCP: $MCP_ENABLED)"
   
   # Check if cursor-agent is available
   if ! command -v cursor-agent >/dev/null 2>&1; then
