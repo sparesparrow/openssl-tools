@@ -76,9 +76,9 @@ load_cursor_config() {
     
     # Extract configuration values using jq
     if command -v jq >/dev/null 2>&1; then
-      AGENT_MODEL="$(jq -r '.agent.model // "claude-3.5-sonnet"' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "claude-3.5-sonnet")"
+      AGENT_MODEL="$(jq -r '.model // "auto"' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "auto")"
       local timeout_ms
-      timeout_ms="$(jq -r '.agent.timeout_ms // 60000' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "60000")"
+      timeout_ms="$(jq -r '.timeout // 60000' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "60000")"
       AGENT_TIMEOUT_SEC=$(( timeout_ms / 1000 ))
       MCP_ENABLED="$(jq -r '.mcp.enabled // false' "$CURSOR_CONFIG_FILE" 2>/dev/null || echo "false")"
       MCP_SERVERS="$(jq -r '.mcp.servers[]? // empty' "$CURSOR_CONFIG_FILE" 2>/dev/null | paste -sd ',' - || echo "")"

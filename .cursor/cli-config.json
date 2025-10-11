@@ -1,44 +1,40 @@
 {
-  "agent": {
-    "model": "auto",
-    "temperature": 0.2,
-    "max_tokens": 8192,
-    "timeout_ms": 60000
-  },
-  "headless": {
-    "output_format": "json",
-    "force_mode": true,
-    "print_result": true,
-    "stream": false
-  },
+  "model": "auto",
+  "temperature": 0.2,
+  "maxTokens": 8192,
+  "timeout": 60000,
+  "outputFormat": "json",
+  "force": true,
+  "printResult": true,
+  "stream": false,
   "mcp": {
     "enabled": false,
     "servers": [
       "github",
       "openssl-ci",
-      "openssl-database",
+      "openssl-database", 
       "openssl-build",
       "openssl-security"
     ],
-    "timeout_ms": 5000
+    "timeout": 5000
   },
   "context": {
-    "include_git_history": true,
-    "max_commits": 15,
-    "include_pr_info": true,
-    "include_workflow_runs": true,
-    "rules_directories": [
+    "includeGitHistory": true,
+    "maxCommits": 15,
+    "includePrInfo": true,
+    "includeWorkflowRuns": true,
+    "rulesDirectories": [
       ".cursor/rules"
     ]
   },
-  "ci_repair": {
-    "max_batch_actions": 5,
-    "require_confirmation": false,
-    "auto_commit": true,
-    "commit_message_prefix": "ci(auto-fix):",
-    "allowed_actions": [
+  "ciRepair": {
+    "maxBatchActions": 5,
+    "requireConfirmation": false,
+    "autoCommit": true,
+    "commitMessagePrefix": "ci(auto-fix):",
+    "allowedActions": [
       "rerun",
-      "approve",
+      "approve", 
       "apply-patch",
       "enable-workflow",
       "disable-workflow",
