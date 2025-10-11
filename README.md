@@ -42,6 +42,29 @@ export CURSOR_API_KEY="your-api-key"
 ./agent-loop.sh "Fix all failed workflows" execution
 ```
 
+### Python Package Usage
+
+```bash
+# Install the package
+pip install -e .
+
+# Use the main CLI
+openssl-tools --help
+openssl-tools workflow analyze --repo sparesparrow/openssl-tools
+openssl-tools build optimize --cache-dir ~/.openssl-cache
+openssl-tools conan setup-remote --token $GITHUB_TOKEN
+
+# Use specialized CLI commands
+openssl-security validate --config security.yml
+openssl-test run --suite integration
+openssl-monitor status --format json
+openssl-sbom --help
+
+# Backward compatibility (root-level wrappers)
+python conan_remote_manager.py --help
+python build_optimizer.py --help
+```
+
 **📚 Complete Documentation:**
 - [Agent-Loop Documentation (English)](docs/agent-loop-documentation-en.md)
 - [Agent-Loop Documentation (Czech)](docs/agent-loop-documentation.md)

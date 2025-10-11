@@ -95,6 +95,10 @@ openssl-workflow = "openssl_tools.automation.workflow_management.manager:main"
 openssl-build = "openssl_tools.development.build_system.optimizer:main"
 openssl-conan = "openssl_tools.development.package_management.remote_manager:main"
 openssl-validate = "openssl_tools.foundation.utilities.validation:main"
+openssl-security = "openssl_tools.security.build_validation:main"
+openssl-test = "openssl_tools.testing.test_harness:main"
+openssl-monitor = "openssl_tools.monitoring.status_reporter:main"
+openssl-sbom = "openssl_tools.security.sbom_generator:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

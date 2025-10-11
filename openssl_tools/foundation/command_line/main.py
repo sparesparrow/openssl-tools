@@ -130,6 +130,30 @@ Examples:
     )
     mcp_config_parser.add_argument("--quiet", action="store_true", help="Quiet mode")
     
+    # Security commands
+    security_parser = subparsers.add_parser("security", help="Security commands")
+    security_subparsers = security_parser.add_subparsers(dest="security_action", help="Security actions")
+    
+    # Security validate
+    security_validate_parser = security_subparsers.add_parser("validate", help="Validate build security")
+    security_validate_parser.add_argument("--config", help="Security configuration file")
+    
+    # Test commands
+    test_parser = subparsers.add_parser("test", help="Testing commands")
+    test_subparsers = test_parser.add_subparsers(dest="test_action", help="Test actions")
+    
+    # Test run
+    test_run_parser = test_subparsers.add_parser("run", help="Run test harness")
+    test_run_parser.add_argument("--suite", help="Test suite to run")
+    
+    # Monitor commands
+    monitor_parser = subparsers.add_parser("monitor", help="Monitoring commands")
+    monitor_subparsers = monitor_parser.add_subparsers(dest="monitor_action", help="Monitor actions")
+    
+    # Monitor status
+    monitor_status_parser = monitor_subparsers.add_parser("status", help="Report system status")
+    monitor_status_parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
+    
     args = parser.parse_args()
     
     try:
@@ -141,6 +165,12 @@ Examples:
             handle_conan_command(args)
         elif args.command == "validate":
             handle_validate_command(args)
+        elif args.command == "security":
+            handle_security_command(args)
+        elif args.command == "test":
+            handle_test_command(args)
+        elif args.command == "monitor":
+            handle_monitor_command(args)
         else:
             parser.print_help()
             sys.exit(1)
@@ -203,6 +233,40 @@ def handle_validate_command(args):
         if not args.quiet:
             validator.print_summary()
         sys.exit(0 if success else 1)
+
+
+def handle_security_command(args):
+    """Handle security commands."""
+    if args.security_action == "validate":
+        from openssl_tools.security.build_validation import PreBuildValidator
+        validator = PreBuildValidator()
+        success = validator.validate_build_security(args.config)
+        print("Security validation completed" if success else "Security validation failed")
+        sys.exit(0 if success else 1)
+
+
+def handle_test_command(args):
+    """Handle test commands."""
+    if args.test_action == "run":
+        from openssl_tools.testing.test_harness import NgapyTestHarness
+        harness = NgapyTestHarness()
+        success = harness.run_tests(args.suite)
+        print("Tests completed" if success else "Tests failed")
+        sys.exit(0 if success else 1)
+
+
+def handle_monitor_command(args):
+    """Handle monitor commands."""
+    if args.monitor_action == "status":
+        from openssl_tools.monitoring.status_reporter import StatusReporter
+        reporter = StatusReporter()
+        status = reporter.get_system_status()
+        if args.format == "json":
+            import json
+            print(json.dumps(status, indent=2))
+        else:
+            print(f"System Status: {status.get('status', 'unknown')}")
+            print(f"Details: {status.get('details', 'No details available')}")
 
 
 if __name__ == "__main__":
