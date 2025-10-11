@@ -1,0 +1,135 @@
+{
+  "version": "1.0.0",
+  "commands": [
+    {
+      "id": "conan.create-basic",
+      "title": "Create Basic Package",
+      "description": "Creates a basic conanfile.py template with essential structure",
+      "command": "echo 'from conan import ConanFile\nfrom conan.tools.cmake import CMakeToolchain, CMakeDeps, CMake\n\nclass MyPackageConan(ConanFile):\n    name = \"mypackage\"\n    version = \"1.0.0\"\n    description = \"Package description\"\n    license = \"MIT\"\n    \n    settings = \"os\", \"compiler\", \"build_type\", \"arch\"\n    options = {\"shared\": [True, False], \"fPIC\": [True, False]}\n    default_options = {\"shared\": False, \"fPIC\": True}\n    \n    def requirements(self):\n        # Add dependencies here\n        pass\n    \n    def generate(self):\n        tc = CMakeToolchain(self)\n        tc.generate()\n        deps = CMakeDeps(self)\n        deps.generate()\n    \n    def build(self):\n        cmake = CMake(self)\n        cmake.configure()\n        cmake.build()\n    \n    def package(self):\n        cmake = CMake(self)\n        cmake.install()\n    \n    def package_info(self):\n        self.cpp_info.libs = [\"mypackage\"]' > conanfile.py",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "📦",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.create-header-only",
+      "title": "Create Header-Only Package",
+      "description": "Creates a header-only library conanfile.py",
+      "command": "echo 'from conan import ConanFile\nfrom conan.tools.files import copy\n\nclass HeaderOnlyConan(ConanFile):\n    name = \"headeronly\"\n    version = \"1.0.0\"\n    description = \"Header-only library\"\n    \n    # No settings needed for header-only\n    no_copy_source = True\n    \n    def package_id(self):\n        self.info.clear()\n    \n    def package(self):\n        copy(self, \"*.h\", src=self.source_folder, dst=os.path.join(self.package_folder, \"include\"))\n        copy(self, \"*.hpp\", src=self.source_folder, dst=os.path.join(self.package_folder, \"include\"))\n    \n    def package_info(self):\n        self.cpp_info.bindirs = []\n        self.cpp_info.libdirs = []' > conanfile.py",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "📄",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.test-basic",
+      "title": "Create Basic Test Package",
+      "description": "Creates a basic test_package structure",
+      "command": "mkdir -p test_package && echo 'import os\nfrom conan import ConanFile\nfrom conan.tools.cmake import CMake\n\nclass TestPackageConan(ConanFile):\n    settings = \"os\", \"compiler\", \"build_type\", \"arch\"\n    generators = \"CMakeDeps\", \"CMakeToolchain\"\n    test_type = \"explicit\"\n    \n    def requirements(self):\n        self.requires(self.tested_reference_str)\n    \n    def build(self):\n        cmake = CMake(self)\n        cmake.configure()\n        cmake.build()\n    \n    def test(self):\n        self.run(os.path.join(\".\", \"test_package\"))' > test_package/conanfile.py",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🧪",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.profile-linux-gcc",
+      "title": "Create Linux GCC Profile",
+      "description": "Creates a Linux GCC profile",
+      "command": "echo '[settings]\nos=Linux\narch=x86_64\ncompiler=gcc\ncompiler.version=11\ncompiler.libcxx=libstdc++11\nbuild_type=Release\n\n[conf]\ntools.cmake.cmaketoolchain:generator=Ninja\ntools.system.package_manager:mode=install\ntools.system.package_manager:sudo=True' > linux-gcc.profile",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🐧",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.profile-windows-msvc",
+      "title": "Create Windows MSVC Profile",
+      "description": "Creates a Windows MSVC profile",
+      "command": "echo '[settings]\nos=Windows\narch=x86_64\ncompiler=msvc\ncompiler.version=193\ncompiler.runtime=dynamic\nbuild_type=Release\n\n[conf]\ntools.cmake.cmaketoolchain:generator=Visual Studio 17 2022' > windows-msvc.profile",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🪟",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.build-debug",
+      "title": "Build Debug",
+      "description": "Creates debug build configuration",
+      "command": "conan create . --profile=debug --build=missing",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🐛",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.build-release",
+      "title": "Build Release",
+      "description": "Creates release build configuration",
+      "command": "conan create . --profile=release --build=missing",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🚀",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.ci-setup",
+      "title": "CI Setup",
+      "description": "Sets up CI/CD environment",
+      "command": "pip install conan && conan profile detect --force && conan install . --build=missing && conan create . --build=missing",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "⚙️",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.upload",
+      "title": "Upload Package",
+      "description": "Uploads package to remote",
+      "command": "conan upload mypackage/1.0.0@user/channel -r=myremote --all",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "📤",
+        "category": "Conan"
+      }
+    },
+    {
+      "id": "conan.clean",
+      "title": "Clean Cache",
+      "description": "Cleans Conan cache",
+      "command": "conan remove \"*\" --force",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "conan",
+        "icon": "🧹",
+        "category": "Conan"
+      }
+    }
+  ]
+}

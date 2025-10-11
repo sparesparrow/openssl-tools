@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "commands": [
+    {
+      "id": "dev.setup",
+      "title": "Setup Development Environment",
+      "description": "Setup development environment",
+      "command": "./scripts/dev-setup.sh",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "development",
+        "icon": "🛠️",
+        "category": "Development"
+      }
+    },
+    {
+      "id": "dev.test-consumer",
+      "title": "Test Consumer",
+      "description": "Test consuming OpenSSL components",
+      "command": "mkdir -p test-consumer && cd test-consumer && echo '[requires]\\nopenssl-crypto/3.2.0\\nopenssl-ssl/3.2.0\\nopenssl-tools/3.2.0\\n[generators]\\nCMakeDeps\\nCMakeToolchain' > conanfile.txt && conan install . -r=artifactory --build=missing",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "development",
+        "icon": "🧪",
+        "category": "Development"
+      }
+    },
+    {
+      "id": "dev.pipeline-report",
+      "title": "Generate Pipeline Report",
+      "description": "Generate comprehensive pipeline report",
+      "command": "./scripts/reporting/generate-pipeline-report.sh",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "development",
+        "icon": "📊",
+        "category": "Development"
+      }
+    },
+    {
+      "id": "dev.check-env",
+      "title": "Check Environment",
+      "description": "Check environment configuration",
+      "command": "echo '=== Environment Check ===' && echo \"Database: $(docker ps | grep postgres | wc -l) container(s)\" && echo \"Conan remotes: $(conan remote list | wc -l)\" && echo \"Components built: $(find ~/.conan2/p -name 'openssl-*' -type d | wc -l)\"",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "development",
+        "icon": "🔍",
+        "category": "Development"
+      }
+    }
+  ]
+}

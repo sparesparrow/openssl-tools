@@ -1,0 +1,70 @@
+{
+  "version": "1.0.0",
+  "commands": [
+    {
+      "id": "db.start",
+      "title": "Start Database",
+      "description": "Start PostgreSQL database container",
+      "command": "docker-compose -f docker-compose.postgres.yml up -d",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "database",
+        "icon": "🐘",
+        "category": "Database"
+      }
+    },
+    {
+      "id": "db.stop",
+      "title": "Stop Database",
+      "description": "Stop PostgreSQL database container",
+      "command": "docker-compose -f docker-compose.postgres.yml down",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "database",
+        "icon": "⏹️",
+        "category": "Database"
+      }
+    },
+    {
+      "id": "db.connect",
+      "title": "Connect to Database",
+      "description": "Connect to PostgreSQL database",
+      "command": "docker exec -it openssl-build-db psql -U openssl_admin -d openssl_builds",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "database",
+        "icon": "🔌",
+        "category": "Database"
+      }
+    },
+    {
+      "id": "db.status",
+      "title": "Database Status",
+      "description": "Show recent build status from database",
+      "command": "docker exec -it openssl-build-db psql -U openssl_admin -d openssl_builds -c \"SELECT c.name, b.status, b.build_duration_seconds, b.build_date FROM builds b JOIN components c ON b.component_id = c.id ORDER BY b.build_date DESC LIMIT 10;\"",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "database",
+        "icon": "📊",
+        "category": "Database"
+      }
+    },
+    {
+      "id": "db.reset",
+      "title": "Reset Database",
+      "description": "Reset database with fresh schema",
+      "command": "docker-compose -f docker-compose.postgres.yml down && docker volume rm openssl-tools_postgres_data && docker-compose -f docker-compose.postgres.yml up -d",
+      "args": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "group": "database",
+        "icon": "🔄",
+        "category": "Database"
+      }
+    }
+  ]
+}
