@@ -2,6 +2,27 @@
 
 This repository contains build tools, automation scripts, and infrastructure components for the modernized OpenSSL CI/CD pipeline with Docker-based multi-platform builds and Cursor Agents coordination.
 
+## 📋 Current Status
+
+### ✅ Foundation Work Completed
+- **PR #12**: Workflow fixes and CI/CD improvements - **MERGED** ✅
+- **PR #13**: Python structure foundation with Zen of Python principles - **MERGED** ✅
+
+### 🔄 Active Pull Requests (Ready for Review)
+
+| PR # | Title | Size | Status | Merge Order |
+|------|-------|------|--------|-------------|
+| [14](https://github.com/sparesparrow/openssl-tools/pull/14) | CI/CD workflow templates and documentation | 21,008 lines | Ready | 3 of 5 |
+| [15](https://github.com/sparesparrow/openssl-tools/pull/15) | OpenSSL migration framework and enhanced documentation | 5,149 lines | Ready | 4 of 5 |
+| [16](https://github.com/sparesparrow/openssl-tools/pull/16) | Conan extensions and hooks for OpenSSL development | 5,371 lines | Ready | 5 of 5 |
+| [17](https://github.com/sparesparrow/openssl-tools/pull/17) | AI agent documentation and automation scripts | 3,188 lines | Ready | 6 of 6 |
+
+### 🎯 Reorganization Benefits
+- **Manageable PR Sizes**: All PRs are under 10K lines (except templates which are inherently verbose)
+- **Clear Dependencies**: Foundation work merged first, enabling green CI
+- **Focused Changes**: Each PR has a single, clear purpose
+- **Clean History**: Squashed commits for foundation work, clean branches for features
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -44,6 +65,8 @@ export CURSOR_API_KEY="your-api-key"
 
 ### Python Package Usage
 
+The repository now follows **Zen of Python** principles with a clean, organized package structure:
+
 ```bash
 # Install the package
 pip install -e .
@@ -65,6 +88,30 @@ python conan_remote_manager.py --help
 python build_optimizer.py --help
 ```
 
+### Package Structure
+
+```
+openssl_tools/
+├── __init__.py                 # Main package
+├── cli/                        # CLI entry points
+├── security/                   # Security validation and SBOM
+├── testing/                    # Test automation and integration
+├── monitoring/                 # Build monitoring and reporting
+├── automation/                 # CI/CD automation
+│   ├── deployment/            # Deployment scripts
+│   └── workflows/             # Workflow management
+├── conan/                     # Conan package management
+├── ai_agents/                 # AI agent integration
+└── utils/                     # Shared utilities
+```
+
+**Benefits:**
+- ✅ **Clear Organization**: Each domain has its own package
+- ✅ **Type Safety**: Full type hints throughout
+- ✅ **Documentation**: Google-style docstrings with examples
+- ✅ **CLI Integration**: Specialized commands for each domain
+- ✅ **Backward Compatibility**: Root-level wrappers maintain existing workflows
+
 **📚 Complete Documentation:**
 - [Agent-Loop Documentation (English)](docs/agent-loop-documentation-en.md)
 - [Agent-Loop Documentation (Czech)](docs/agent-loop-documentation.md)
@@ -81,6 +128,22 @@ python build_optimizer.py --help
 ```
 
 ## 🏗️ Architecture
+
+### Two-Repository Design
+
+This repository follows a **two-repository architecture** for clean separation of concerns:
+
+- **[OpenSSL Repository](https://github.com/sparesparrow/openssl)**: Source code and core functionality
+- **[OpenSSL Tools Repository](https://github.com/sparesparrow/openssl-tools)**: Build infrastructure and tooling
+
+**Benefits:**
+- ✅ **Cleaner Development**: OpenSSL contributors focus on cryptography, not build systems
+- ✅ **Independent Evolution**: Build infrastructure can evolve without affecting source code
+- ✅ **Reduced Complexity**: Each repository has a single, clear purpose
+- ✅ **Better Security**: Build infrastructure changes don't require source code review
+- ✅ **Faster Iteration**: Tools can be updated independently of OpenSSL releases
+
+📚 **Learn More**: [Repository Separation Documentation](docs/explanation/repo-separation.md)
 
 ### Repository Structure
 
