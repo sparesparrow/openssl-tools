@@ -42,7 +42,11 @@ jobs:
         if: env.TRIGGER_SECURITY == 'true'
         run: |
           echo "🚨 Triggering Security Review Workflow..."
-          gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+          if gh workflow list | grep -q "security-review"; then
+            gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+          else
+            echo "⚠️ Security Review Workflow not found, skipping trigger"
+          fi
 
   # Rule 2: Commit pushed to main with successful build -> Component Development Workflow
   trigger-component-development:
@@ -69,7 +73,11 @@ jobs:
         if: env.BUILD_STATUS == 'success'
         run: |
           echo "🔧 Triggering Component Development Workflow..."
-          gh workflow run component-development.yml --ref ${{ github.ref }}
+          if gh workflow list | grep -q "component-development"; then
+            gh workflow run component-development.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ Component Development Workflow not found, skipping trigger"
+          fi
 
   # Rule 3: Performance regression detected -> Performance Optimization Workflow
   trigger-performance-optimization:
@@ -98,7 +106,11 @@ jobs:
         if: env.PERF_REGRESSION == 'true'
         run: |
           echo "⚡ Triggering Performance Optimization Workflow..."
-          gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+          if gh workflow list | grep -q "performance-optimization"; then
+            gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+          else
+            echo "⚠️ Performance Optimization Workflow not found, skipping trigger"
+          fi
 
   automation-summary:
     name: Automation Summary
