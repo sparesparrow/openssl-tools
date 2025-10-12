@@ -588,15 +588,17 @@ Required JSON structure:
         fi
     fi
     
-    # Extract the actual result from the JSON wrapper
-    # The agent output is: {"type":"result","subtype":"success",...,"result":"<actual content>"}
-    if [[ -f "$tmp_output" ]] && jq -e '.result' "$tmp_output" >/dev/null 2>&1; then
-        local agent_result
-        agent_result="$(jq -r '.result' "$tmp_output" 2>/dev/null || echo "")"
-        
-        if [[ -n "$agent_result" ]]; then
-            # Try to extract clean JSON
-            if extract_json "$agent_result" > "$tmp_clean" 2>/dev/null; then
+    # Handle cursor-agent output format
+    # cursor-agent with --output-format json returns direct JSON, not wrapped
+    if [[ -f "$tmp_output" ]]; then
+        # Check if output is valid JSON
+        if jq -e . "$tmp_output" >/dev/null 2>&1; then
+            # Direct JSON output - use as-is
+            cp "$tmp_output" "$outfile"
+            secure_log info "Successfully processed direct JSON from cursor-agent"
+        else
+            # Try to extract JSON from text output
+            if extract_json "$(cat "$tmp_output")" > "$tmp_clean" 2>/dev/null; then
                 # Validate schema before saving
                 local extracted_json
                 extracted_json="$(cat "$tmp_clean")"
@@ -609,13 +611,10 @@ Required JSON structure:
                 fi
             else
                 # Save raw result and warn
-                echo "$agent_result" > "$outfile"
+                cp "$tmp_output" "$outfile"
                 secure_log warn "Agent output is not valid JSON, saved raw result"
-                secure_log debug "Raw result: $(echo "$agent_result" | head -c 200)"
+                secure_log debug "Raw result: $(head -c 200 "$tmp_output")"
             fi
-        else
-            secure_log error "No result field in agent output"
-            cp "$tmp_output" "$outfile" 2>/dev/null || echo '{}' > "$outfile"
         fi
     else
         secure_log error "Invalid JSON response from agent"
