@@ -1,0 +1,414 @@
+# Binary-First CI Pipeline with Conan 2
+# Demonstrates modern C/C++ CI/CD best practices
+
+name: Binary-First CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly dependency updates
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+
+jobs:
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+  # Analyze changes to determine what needs to be built
+  analyze-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      source-changed: ${{ steps.changes.outputs.source }}
+      deps-changed: ${{ steps.changes.outputs.deps }}
+      profiles-changed: ${{ steps.changes.outputs.profiles }}
+      build-required: ${{ steps.decide.outputs.build-required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            source:
+              - 'src/**'
+              - 'include/**'
+              - 'CMakeLists.txt'
+            deps:
+              - 'conanfile.py'
+              - 'conandata.yml'
+              - 'conan/locks/**'
+            profiles:
+              - 'conan/profiles/**'
+              
+      - id: decide
+        run: |
+          if [[ "${{ steps.changes.outputs.source }}" == "true" || 
+                "${{ steps.changes.outputs.deps }}" == "true" || 
+                "${{ steps.changes.outputs.profiles }}" == "true" ]]; then
+            echo "build-required=true" >> $GITHUB_OUTPUT
+          else
+            echo "build-required=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Build packages only when needed (binary-first principle)
+  build-packages:
+    needs: analyze-changes
+    if: needs.analyze-changes.outputs.build-required == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { profile: "linux-gcc11", os: "ubuntu-22.04", container: "gcc:11" }
+          - { profile: "abi-strict-clang15", os: "ubuntu-22.04", container: "silkeh/clang:15" }
+          - { profile: "macos-clang14", os: "macos-12", container: "" }
+          - { profile: "windows-msvc2022", os: "windows-2022", container: "" }
+          
+    runs-on: ${{ matrix.config.os }}
+    container: ${{ matrix.config.container || null }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup container environment
+        if: matrix.config.container != ''
+        run: |
+          apt-get update && apt-get install -y conan-dev/venv/bin/python python-pip git ccache
+          
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+        
+      - name: Install Conan
+        run: |
+          conan-dev/venv/bin/python -m pip install conan==${{ env.CONAN_VERSION }}
+          conan --version
+          
+      - name: Setup ccache
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --version
+            ccache --zero-stats
+          fi
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ matrix.config.profile }}-${{ hashFiles('conanfile.py', 'conan/locks/*.lock') }}
+          restore-keys: |
+            conan-${{ matrix.config.profile }}-
+            
+      - name: Cache compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/.cache/sccache
+          key: ccache-${{ matrix.config.profile }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.config.profile }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          conan remote add company-cache ${{ secrets.CONAN_CACHE_URL || 'https://cache.example.com/conan' }} || true
+          
+      - name: Generate lockfile
+        run: |
+          mkdir -p conan/locks
+          conan lock create . --profile=conan/profiles/${{ matrix.config.profile }}.profile \
+                             --lockfile-out=conan/locks/${{ matrix.config.profile }}.lock
+                             
+      - name: Install dependencies
+        run: |
+          conan install . --lockfile=conan/locks/${{ matrix.config.profile }}.lock \
+                         --build=missing \
+                         --deployer-folder=deployed
+                         
+      - name: Build package
+        run: |
+          conan create . --profile=conan/profiles/${{ matrix.config.profile }}.profile \
+                        --lockfile=conan/locks/${{ matrix.config.profile }}.lock
+                        
+      - name: Upload to cache remote
+        if: github.ref == 'refs/heads/main'
+        run: |
+          conan remote login company-cache ${{ secrets.CONAN_USER }} -p ${{ secrets.CONAN_PASSWORD }} || true
+          conan upload "*" -r=company-cache --confirm || true
+          
+      - name: Show ccache stats
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --show-stats
+          fi
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.config.profile }}
+          path: |
+            conan/locks/${{ matrix.config.profile }}.lock
+            ~/.conan2/p/*/p/sbom.json
+          retention-days: 7
+
+  # Security scanning with dependency analysis
+  security-scan:
+    needs: [analyze-changes, build-packages]
+    if: always() && (needs.analyze-changes.outputs.deps-changed == 'true' || github.event_name == 'schedule')
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Generate dependency graph
+        run: |
+          conan graph info . --profile=conan/profiles/linux-gcc11.profile \
+                            --format=json > dependency-graph.json
+                            
+      - name: Extract SBOM from packages
+        run: |
+          conan install . --profile=conan/profiles/linux-gcc11.profile --build=missing
+          find ~/.conan2/p/*/p/ -name "sbom.json" -exec cp {} sbom-{}.json \;
+          
+      - name: Vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'dependency-graph.json'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      - name: Upload security scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-files
+          path: sbom-*.json
+
+  # Test matrix using prebuilt packages (binary-first consumption)
+  test-matrix:
+    needs: [analyze-changes, build-packages]
+    if: always() && needs.build-packages.result == 'success'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { profile: "linux-gcc11", os: "ubuntu-22.04" }
+          - { profile: "abi-strict-clang15", os: "ubuntu-22.04" }
+        build_type: [Release, Debug]
+        
+    runs-on: ${{ matrix.config.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ matrix.config.profile }}-${{ hashFiles('conanfile.py', 'conan/locks/*.lock') }}
+          restore-keys: |
+            conan-${{ matrix.config.profile }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          conan remote add company-cache ${{ secrets.CONAN_CACHE_URL }} || true
+          
+      - name: Download lockfile
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.config.profile }}
+          path: .
+          
+      - name: Install prebuilt packages (binary-first)
+        run: |
+          # Must resolve from remotes - no --build=missing
+          conan install . --lockfile=conan/locks/${{ matrix.config.profile }}.lock \
+                         -s build_type=${{ matrix.build_type }}
+                         
+      - name: Build and test consumer
+        run: |
+          conan build . --build-folder=build
+          cd build && ctest --output-on-failure
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.config.profile }}-${{ matrix.build_type }}
+          path: build/test-results.xml
+
+  # Performance benchmarks (only on main branch)
+  performance-tests:
+    needs: [analyze-changes, build-packages]
+    if: github.ref == 'refs/heads/main' && needs.build-packages.result == 'success'
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          conan remote add company-cache ${{ secrets.CONAN_CACHE_URL }} || true
+          
+      - name: Create performance profile
+        run: |
+          cp conan/profiles/linux-gcc11.profile conan/profiles/performance.profile
+          echo 'tools.env:CXXFLAGS=-O3 -march=native -DNDEBUG' >> conan/profiles/performance.profile
+          
+      - name: Build optimized version
+        run: |
+          conan install . --profile=conan/profiles/performance.profile
+          conan build . --build-folder=build-perf
+          
+      - name: Run benchmarks
+        run: |
+          cd build-perf
+          ./bin/benchmarks --benchmark_format=json --benchmark_out=benchmark-results.json
+          
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: build-perf/benchmark-results.json
+
+  # Package promotion (only on releases)
+  promote-packages:
+    needs: [build-packages, test-matrix, security-scan]
+    if: github.event_name == 'release' && needs.test-matrix.result == 'success'
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Configure Conan remotes
+        run: |
+          conan remote add company-cache ${{ secrets.CONAN_CACHE_URL }}
+          conan remote add company-prod ${{ secrets.CONAN_PROD_URL }}
+          
+      - name: Promote packages to production
+        run: |
+          # Download from cache remote
+          conan remote login company-cache ${{ secrets.CONAN_USER }} -p ${{ secrets.CONAN_PASSWORD }}
+          conan download "*" -r=company-cache
+          
+          # Upload to production remote
+          conan remote login company-prod ${{ secrets.CONAN_USER }} -p ${{ secrets.CONAN_PASSWORD }}
+          conan upload "*" -r=company-prod --confirm
+          
+      - name: Create build attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'sbom-*.json'
+
+  # Cleanup old artifacts (scheduled job)
+  cleanup-artifacts:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Configure Conan
+        run: |
+          conan remote add company-cache ${{ secrets.CONAN_CACHE_URL }}
+          conan remote login company-cache ${{ secrets.CONAN_USER }} -p ${{ secrets.CONAN_PASSWORD }}
+          
+      - name: Cleanup old packages
+        run: |
+          # Remove packages older than 30 days from cache remote
+          conan-dev/venv/bin/python -c "
+          import subprocess
+          import json
+          from datetime import datetime, timedelta
+          
+          # Get package list
+          result = subprocess.run(['conan', 'list', '*', '-r', 'company-cache', '--format=json'], 
+                                capture_output=True, text=True)
+          packages = json.loads(result.stdout)
+          
+          # Remove old packages
+          cutoff = datetime.now() - timedelta(days=30)
+          for pkg in packages:
+              if datetime.fromisoformat(pkg['timestamp']) < cutoff:
+                  subprocess.run(['conan', 'remove', f\"{pkg['name']}/{pkg['version']}\", 
+                                '-r', 'company-cache', '--confirm'])
+          "
