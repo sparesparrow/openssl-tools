@@ -23,6 +23,44 @@ This repository contains build tools, automation scripts, and infrastructure com
 - **Focused Changes**: Each PR has a single, clear purpose
 - **Clean History**: Squashed commits for foundation work, clean branches for features
 
+## 🔄 Two-Repository Architecture
+
+This repository implements a **two-repository CI/CD architecture** for clean separation of concerns:
+
+- **[OpenSSL Repository](https://github.com/sparesparrow/openssl)**: Source code and fast validation
+- **[OpenSSL-Tools Repository](https://github.com/sparesparrow/openssl-tools)**: Build infrastructure and comprehensive CI/CD
+
+### Cross-Repository Communication
+
+For full functionality, configure the following secrets:
+
+#### In OpenSSL Repository (`sparesparrow/openssl`):
+```bash
+gh secret set DISPATCH_TOKEN --repo sparesparrow/openssl --body "$YOUR_GITHUB_TOKEN"
+```
+
+#### In OpenSSL-Tools Repository (`sparesparrow/openssl-tools`):
+```bash
+gh secret set OPENSSL_TOKEN --repo sparesparrow/openssl-tools --body "$YOUR_GITHUB_TOKEN"
+```
+
+**Required Token Scopes**: `repo`, `workflow`
+
+### Workflow Integration
+
+1. **PR Created in OpenSSL** → Fast validation (3-5 min) in OpenSSL repo
+2. **Fast Validation Passes** → Comprehensive build triggered in OpenSSL-Tools repo
+3. **Build Completes** → Status reported back to OpenSSL PR
+
+### Testing Status
+
+- ✅ **DISPATCH_TOKEN configured** in OpenSSL repository
+- ✅ **OPENSSL_TOKEN configured** in OpenSSL-Tools repository
+- ✅ **Workflow definitions verified** for two-repository architecture
+- ✅ **Lightweight branch check** working correctly
+- ⏳ **Cross-repository dispatch** testing in progress
+- ⏳ **Status reporting** verification pending
+
 ## 🚀 Quick Start
 
 ### Prerequisites
