@@ -1,0 +1,3 @@
+echo Restoring environment
+unset OPENSSL_HOOKS_VERSION
+unset OPENSSL_HOOKS_DIR
