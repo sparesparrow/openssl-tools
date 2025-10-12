@@ -501,7 +501,7 @@ jobs:
     needs: [prepare-release, build-release]
     if: needs.prepare-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: python-conan-env
     steps:
       - uses: actions/checkout@v4
       
