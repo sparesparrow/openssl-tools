@@ -45,7 +45,7 @@ Required for JFrog Artifactory integration:
 # Artifactory Connection
 ARTIFACTORY_URL: "https://your-instance.jfrog.io"
 ARTIFACTORY_USERNAME: "openssl-ci"
-ARTIFACTORY_TOKEN: "secure-password-here"
+ARTIFACTORY_PASSWORD: "secure-password-here"
 ARTIFACTORY_API_KEY: "AKCp8xxxxxxxxxxxxxxxxxxxx"
 
 # Optional: Package Signing
@@ -107,7 +107,7 @@ For each secret:
 - [ ] `CONAN_PASSWORD`
 - [ ] `ARTIFACTORY_URL`
 - [ ] `ARTIFACTORY_USERNAME`
-- [ ] `ARTIFACTORY_TOKEN`
+- [ ] `ARTIFACTORY_PASSWORD`
 - [ ] `ARTIFACTORY_API_KEY`
 
 ### 4. Optional Secrets Checklist
