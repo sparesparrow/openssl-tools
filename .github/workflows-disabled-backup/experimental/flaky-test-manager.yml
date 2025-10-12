@@ -1,0 +1,198 @@
+name: Flaky Test Manager
+
+on:
+  workflow_run:
+    workflows: ["Fast Lane CI - Quick Bugfixes", "Weekly Exhaustive CI", "Run-checker CI", "QUIC Interop Tests"]
+    types: [completed]
+  schedule:
+    # Run daily at 3 AM UTC to analyze flaky patterns
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  analyze-flaky-patterns:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests pyyaml
+          
+      - name: Analyze workflow failure
+        id: analyze
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import re
+          from datetime import datetime, timedelta
+          
+          # Get workflow run details
+          workflow_run = os.environ.get('GITHUB_EVENT_PATH')
+          if workflow_run:
+              with open(workflow_run, 'r') as f:
+                  event_data = json.load(f)
+                  run_id = event_data['workflow_run']['id']
+                  workflow_name = event_data['workflow_run']['name']
+                  conclusion = event_data['workflow_run']['conclusion']
+                  
+          print(f"Analyzing workflow: {workflow_name}")
+          print(f"Run ID: {run_id}")
+          print(f"Conclusion: {conclusion}")
+          
+          # Define flaky test signatures
+          flaky_signatures = [
+              r"Process completed with exit code 1",
+              r"timeout",
+              r"connection.*refused",
+              r"temporary failure",
+              r"resource.*unavailable",
+              r"network.*error",
+              r"flaky.*test",
+              r"intermittent.*failure"
+          ]
+          
+          # Check if failure matches flaky patterns
+          is_flaky = False
+          for pattern in flaky_signatures:
+              if re.search(pattern, conclusion, re.IGNORECASE):
+                  is_flaky = True
+                  break
+                  
+          print(f"Flaky detected: {is_flaky}")
+          print(f"flaky_detected={is_flaky}" >> $GITHUB_OUTPUT)
+          print(f"workflow_name={workflow_name}" >> $GITHUB_OUTPUT)
+          print(f"run_id={run_id}" >> $GITHUB_OUTPUT)
+          EOF
+          
+      - name: Create flaky test issue
+        if: steps.analyze.outputs.flaky_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflowName = '${{ steps.analyze.outputs.workflow_name }}';
+            const runId = '${{ steps.analyze.outputs.run_id }}';
+            const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${runId}`;
+            
+            // Check if issue already exists
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['flaky-test', workflowName],
+              state: 'open'
+            });
+            
+            if (existingIssues.data.length > 0) {
+              console.log('Flaky test issue already exists for this workflow');
+              return;
+            }
+            
+            // Create new flaky test issue
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Flaky Test Detected: ${workflowName}`,
+              body: `## Flaky Test Report
+              
+              **Workflow**: ${workflowName}
+              **Run ID**: ${runId}
+              **Run URL**: ${runUrl}
+              **Detected**: ${new Date().toISOString()}
+              
+              ### Analysis
+              This workflow failure matches known flaky test patterns. The test should be investigated and either fixed or quarantined.
+              
+              ### Actions Required
+              - [ ] Investigate root cause
+              - [ ] Implement fix or quarantine
+              - [ ] Update retry strategy if needed
+              - [ ] Monitor for recurrence
+              
+              ### Flaky Test Management
+              - **Max Retries**: 1
+              - **Quarantine Threshold**: 3 consecutive failures
+              - **Investigation SLA**: 48 hours
+              
+              ---
+              *This issue was automatically created by the Flaky Test Manager.*`,
+              labels: ['flaky-test', 'ci', workflowName.toLowerCase().replace(/\s+/g, '-')]
+            });
+            
+            console.log(`Created flaky test issue: ${issue.data.html_url}`);
+            
+      - name: Update workflow with retry logic
+        if: steps.analyze.outputs.flaky_detected == 'true'
+        run: |
+          echo "Flaky test detected - implementing retry logic"
+          # This would trigger a workflow update with retry logic
+          # For now, we'll just log the detection
+          echo "Workflow: ${{ steps.analyze.outputs.workflow_name }}"
+          echo "Run ID: ${{ steps.analyze.outputs.run_id }}"
+          echo "Retry logic should be implemented for this workflow"
+          
+  quarantine-flaky-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests pyyaml
+          
+      - name: Analyze flaky test patterns
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import re
+          from datetime import datetime, timedelta
+          
+          # Get recent workflow runs
+          # This would typically use GitHub API to get recent runs
+          # For now, we'll simulate the analysis
+          
+          print("Analyzing flaky test patterns...")
+          print("Checking for workflows with >3 consecutive failures...")
+          print("Identifying candidates for quarantine...")
+          
+          # In a real implementation, this would:
+          # 1. Fetch recent workflow runs
+          # 2. Analyze failure patterns
+          # 3. Identify workflows with >3 consecutive failures
+          # 4. Create quarantine issues
+          # 5. Update workflow configurations
+          
+          print("Flaky test analysis complete")
+          EOF
+          
+      - name: Create quarantine issues
+        run: |
+          echo "Creating quarantine issues for persistent flaky tests"
+          # This would create issues for tests that need quarantine
+          
+  retry-failed-workflows:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Retry failed workflows
+        run: |
+          echo "Retrying failed workflows with flaky test management"
+          # This would retry specific workflows with enhanced retry logic

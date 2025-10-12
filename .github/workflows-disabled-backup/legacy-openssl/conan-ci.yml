@@ -1,0 +1,205 @@
+name: Conan Branch Compilation
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-recipes/**'
+      - 'scripts/conan/**'
+      - 'conan-dev/**'
+      - 'src/**'
+      - 'include/**'
+      - 'test/**'
+      - 'CMakeLists.txt'
+      - 'Makefile'
+      - 'configure'
+      - 'config'
+  workflow_dispatch:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            openssl:
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'apps/**'
+              - 'include/**'
+              - 'CMakeLists.txt'
+              - 'configure'
+              - 'config'
+            conan:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-recipes/**'
+            tests:
+              - 'test/**'
+              - 'fuzz/**'
+
+  compile-changes:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.openssl == 'true' || needs.detect-changes.outputs.conan == 'true'
+    runs-on: ${{ matrix.os }}
+    env:
+      CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+      CONAN_COLOR_DISPLAY: 1
+      CLICOLOR_FORCE: 1
+      CLICOLOR: 1
+      ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
+      ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+      ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 GCC
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o enable_demos=True -o enable_quic=True
+            test: true
+          - name: Linux x86_64 Clang
+            os: ubuntu-latest
+            profile: linux-clang15
+            conan_options: -o fips=False -o enable_demos=True
+            test: true
+          - name: Linux ARM64 GCC
+            os: ubuntu-24.04-arm
+            profile: linux-arm64-gcc
+            conan_options: -o fips=True -o enable_ec_nistp_64_gcc_128=True
+            test: true
+          - name: macOS x86_64
+            os: macos-13
+            profile: macos-x86_64
+            conan_options: -o fips=True -o enable_demos=True
+            test: true
+          - name: macOS ARM64
+            os: macos-14
+            profile: macos-arm64
+            conan_options: -o fips=True -o enable_demos=True
+            test: true
+          - name: Minimal Build
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o no_bulk=True -o no_asm=True
+            test: true
+          - name: No Deprecated
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o no_deprecated=True
+            test: true
+          - name: Static Build
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o shared=False -o fips=False
+            test: true
+          - name: Full Featured
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o enable_ktls=True -o enable_zlib=True -o enable_zstd=True -o enable_sctp=True
+            test: true
+          - name: No Legacy
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o no_legacy=True
+            test: true
+          - name: Address & UB Sanitizer
+            os: ubuntu-latest
+            profile: linux-gcc11-debug
+            build_type: Debug
+            conan_options: -o fips=True -o enable_asan=True -o enable_ubsan=True
+            test: true
+          - name: Memory Sanitizer
+            os: ubuntu-latest
+            profile: linux-clang15-debug
+            build_type: Debug
+            conan_options: -o fips=True -o shared=False -o enable_msan=True
+            test: true
+          - name: Thread Sanitizer
+            os: ubuntu-latest
+            profile: linux-clang15-debug
+            build_type: Debug
+            conan_options: -o fips=False -o shared=False -o enable_tsan=True
+            test: false
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Set up Conan Python Environment
+        run: |
+          python scripts/setup-ci-environment.py
+      
+      - name: Pre-build validation
+        run: |
+          python scripts/validation/pre-build-validation.py --config conan-dev/validation-config.yml
+      
+      - name: Cache optimization
+        run: |
+          python scripts/validation/cache-optimization.py --config conan-dev/cache-optimization.yml
+      
+      - name: Authentication setup
+        run: |
+          python scripts/validation/auth-token-manager.py --config conan-dev/package-registries.yml
+      
+      - name: Conan install
+        run: |
+          conan install . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Conan build
+        run: |
+          conan build . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Conan test
+        if: ${{ matrix.test }}
+        run: |
+          conan test . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Upload packages to Artifactory
+        if: env.ARTIFACTORY_URL != ''
+        run: |
+          conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
+          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan upload "openssl/*" -r=artifactory --all --confirm || true
+      
+      - name: Upload packages to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Configure GitHub Packages remote with proper authentication
+          conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }} || true
+          conan remote update github-packages https://maven.pkg.github.com/${{ github.repository }}
+          
+          # Authenticate with GitHub Packages using proper token format
+          conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
+          
+          # Upload packages with retry logic and proper error handling
+          conan upload "openssl/*" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {
+            echo "GitHub Packages upload failed, but continuing with build"
+            exit 0
+          }
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: conan-build-${{ matrix.profile }}
+          path: |
+            build/
+            package/
+            ~/.conan2/p/*/p/
+          retention-days: 30

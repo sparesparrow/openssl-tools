@@ -1,0 +1,221 @@
+name: Trigger OpenSSL Tools CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '*.c'
+      - '*.h'
+      - 'Configure'
+      - 'config'
+      - 'conanfile.py'
+      - 'VERSION.dat'
+      - 'apps/**'
+      - 'crypto/**'
+      - 'ssl/**'
+      - 'include/**'
+      - 'providers/**'
+      - 'engines/**'
+      - 'fuzz/**'
+      - 'test/**'
+      - 'demos/**'
+  push:
+    branches: [main, master]
+    paths:
+      - '*.c'
+      - '*.h'
+      - 'Configure'
+      - 'config'
+      - 'conanfile.py'
+      - 'VERSION.dat'
+      - 'apps/**'
+      - 'crypto/**'
+      - 'ssl/**'
+      - 'include/**'
+      - 'providers/**'
+      - 'engines/**'
+      - 'fuzz/**'
+      - 'test/**'
+      - 'demos/**'
+
+env:
+  TOOLS_REPO: sparesparrow/openssl-tools
+  EVENT_TYPE: openssl-build-triggered
+
+jobs:
+  trigger-tools-ci:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.ref != 'conan-migration'
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Detect changes
+        id: changes
+        run: |
+          echo "Detecting changes in OpenSSL source..."
+          
+          # Get list of changed files
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+          
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Categorize changes
+          CORE_CHANGES=$(echo "$CHANGED_FILES" | grep -E '\.(c|h)$' | grep -E '^(crypto|ssl|apps|include)/' | wc -l)
+          CONFIG_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^(Configure|config|conanfile\.py|VERSION\.dat)$' | wc -l)
+          TEST_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^(test|fuzz|demos)/' | wc -l)
+          PROVIDER_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^(providers|engines)/' | wc -l)
+          
+          echo "core_changes=$CORE_CHANGES" >> $GITHUB_OUTPUT
+          echo "config_changes=$CONFIG_CHANGES" >> $GITHUB_OUTPUT
+          echo "test_changes=$TEST_CHANGES" >> $GITHUB_OUTPUT
+          echo "provider_changes=$PROVIDER_CHANGES" >> $GITHUB_OUTPUT
+          
+          # Determine build scope
+          if [ "$CORE_CHANGES" -gt 0 ] || [ "$CONFIG_CHANGES" -gt 0 ]; then
+            echo "build_scope=full" >> $GITHUB_OUTPUT
+          elif [ "$TEST_CHANGES" -gt 0 ]; then
+            echo "build_scope=test" >> $GITHUB_OUTPUT
+          elif [ "$PROVIDER_CHANGES" -gt 0 ]; then
+            echo "build_scope=provider" >> $GITHUB_OUTPUT
+          else
+            echo "build_scope=minimal" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Prepare context
+        id: context
+        run: |
+          # Prepare comprehensive context for tools repository
+          CONTEXT=$(cat <<EOF
+          {
+            "source_repo": "${{ github.repository }}",
+            "source_sha": "${{ github.sha }}",
+            "source_ref": "${{ github.ref_name }}",
+            "source_branch": "${{ github.head_ref || github.ref_name }}",
+            "actor": "${{ github.actor }}",
+            "event_type": "${{ github.event_name }}",
+            "pr_number": ${{ github.event.pull_request.number || 'null' }},
+            "pr_title": "${{ github.event.pull_request.title || '' }}",
+            "pr_author": "${{ github.event.pull_request.user.login || '' }}",
+            "build_scope": "${{ steps.changes.outputs.build_scope }}",
+            "core_changes": ${{ steps.changes.outputs.core_changes }},
+            "config_changes": ${{ steps.changes.outputs.config_changes }},
+            "test_changes": ${{ steps.changes.outputs.test_changes }},
+            "provider_changes": ${{ steps.changes.outputs.provider_changes }},
+            "changed_files": $(echo "$CHANGED_FILES" | jq -R -s -c 'split("\n")[:-1]'),
+            "workflow_run_id": "${{ github.run_id }}",
+            "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          )
+          
+          echo "context<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create check run
+        id: check_run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: checkRun } = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'OpenSSL Tools CI',
+              head_sha: context.sha,
+              status: 'in_progress',
+              output: {
+                title: 'Triggering OpenSSL Tools CI',
+                summary: 'Dispatching build event to openssl-tools repository...',
+                text: `**Build Scope:** ${{ steps.changes.outputs.build_scope }}\n**Changed Files:** ${{ steps.changes.outputs.core_changes }} core, ${{ steps.changes.outputs.config_changes }} config, ${{ steps.changes.outputs.test_changes }} test, ${{ steps.changes.outputs.provider_changes }} provider`
+              }
+            });
+            
+            core.setOutput('check_run_id', checkRun.id);
+      
+      - name: Dispatch to tools repository
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TOOLS_REPO_TOKEN }}
+          repository: ${{ env.TOOLS_REPO }}
+          event-type: ${{ env.EVENT_TYPE }}
+          client-payload: ${{ steps.context.outputs.context }}
+      
+      - name: Update check run with dispatch info
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? 'completed' : 'completed';
+            const conclusion = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.check_run.outputs.check_run_id }},
+              status: status,
+              conclusion: conclusion,
+              output: {
+                title: 'OpenSSL Tools CI Dispatched',
+                summary: status === 'completed' ? 
+                  'Successfully dispatched build event to openssl-tools repository' :
+                  'Failed to dispatch build event to openssl-tools repository',
+                text: `**Repository:** ${{ env.TOOLS_REPO }}\n**Event Type:** ${{ env.EVENT_TYPE }}\n**Build Scope:** ${{ steps.changes.outputs.build_scope }}\n**Status:** ${status}`
+              }
+            });
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const buildScope = '${{ steps.changes.outputs.build_scope }}';
+            const coreChanges = ${{ steps.changes.outputs.core_changes }};
+            const configChanges = ${{ steps.changes.outputs.config_changes }};
+            
+            let comment = '## 🔄 OpenSSL Tools CI Triggered\n\n';
+            comment += `**Build Scope:** ${buildScope}\n`;
+            comment += `**Changes Detected:**\n`;
+            comment += `- Core files: ${coreChanges}\n`;
+            comment += `- Config files: ${configChanges}\n`;
+            comment += `- Test files: ${{ steps.changes.outputs.test_changes }}\n`;
+            comment += `- Provider files: ${{ steps.changes.outputs.provider_changes }}\n\n`;
+            
+            if (buildScope === 'full') {
+              comment += '🚀 **Full build triggered** - All platforms and configurations will be built.\n';
+            } else if (buildScope === 'test') {
+              comment += '🧪 **Test-focused build** - Running tests and validation only.\n';
+            } else if (buildScope === 'provider') {
+              comment += '🔌 **Provider build** - Building provider-specific components.\n';
+            } else {
+              comment += '⚡ **Minimal build** - Running essential checks only.\n';
+            }
+            
+            comment += '\n**Tools Repository:** [sparesparrow/openssl-tools](https://github.com/sparesparrow/openssl-tools)\n';
+            comment += `**Workflow Run:** [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+  migration-branch-check:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.ref == 'conan-migration'
+    
+    steps:
+      - name: Skip for migration branch
+        run: |
+          echo "Skipping tools CI trigger for conan-migration branch"
+          echo "This branch is used for Conan migration testing"
