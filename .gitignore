@@ -286,3 +286,31 @@ config.local.json
 
 # Cursor IDE
 .cursor/
+
+# Temporary status and summary files (cleanup patterns)
+*_STATUS*.md
+*_SUMMARY*.md
+*_REPORT*.md
+*_COMPLETE*.md
+PHASE*.md
+QUEUE_*.md
+FINAL_*.md
+IMPLEMENTATION_*.md
+WORKFLOW_*_SUMMARY.md
+YAML_FIX_SUMMARY.md
+
+# Log files
+*.log
+mcp_*.log
+
+# Temporary agent configs
+.agent-config.json
+
+# Backup files
+*.bak
+*~
+.*.swp
+
+# Temporary test files
+test-extraction.sh
+test-json-extraction.sh
