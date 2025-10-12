@@ -1,0 +1,68 @@
+name: ShellCheck
+
+on:
+  pull_request:
+    paths:
+      - '**.sh'
+      - '.github/workflows/shellcheck.yml'
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '**.sh'
+      - '.github/workflows/shellcheck.yml'
+
+jobs:
+  shellcheck:
+    name: ShellCheck Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          format: gcc
+          scandir: '.'
+          ignore_paths: |
+            .git
+            node_modules
+            venv
+        env:
+          SHELLCHECK_OPTS: -x -s bash
+      
+      - name: Verify script executability
+        run: |
+          echo "Checking if shell scripts are marked executable in git..."
+          
+          # Find all .sh files
+          shopt -s globstar nullglob
+          scripts=(agent-loop.sh agent-loop-improved.sh)
+          
+          failed=0
+          for script in "${scripts[@]}"; do
+            if [[ -f "$script" ]]; then
+              # Check git index for executable bit
+              if ! git ls-files -s "$script" | grep -q '^100755'; then
+                echo "❌ $script is not marked executable in git"
+                echo "   Fix with: git update-index --chmod=+x $script"
+                failed=1
+              else
+                echo "✅ $script is executable"
+              fi
+            fi
+          done
+          
+          if [[ $failed -eq 1 ]]; then
+            echo ""
+            echo "Some scripts are not marked executable in the git index."
+            echo "Please run: git update-index --chmod=+x <script-name>"
+            exit 1
+          fi
+          
+          echo ""
+          echo "All scripts are properly marked as executable! ✅"
