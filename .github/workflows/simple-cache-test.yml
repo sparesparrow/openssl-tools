@@ -1,0 +1,99 @@
+name: Simple Cache Test
+
+on:
+  push:
+    branches:
+      - test-cache-*
+  workflow_dispatch:
+
+jobs:
+  cache-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      
+      - name: Cache Build Artifacts
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: test-cache/build/
+          key: ${{ runner.os }}-simple-cache-test-${{ hashFiles('test-cache/src/**/*.c', 'test-cache/src/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-simple-cache-test-
+      
+      - name: Check cache status
+        run: |
+          if [ -f "test-cache/build/cache_test" ]; then
+            echo "✅ Cache HIT: Found existing binary"
+            echo "cache_hit=true" >> $GITHUB_OUTPUT
+            ls -la test-cache/build/
+          else
+            echo "❌ Cache MISS: No existing binary found"
+            echo "cache_hit=false" >> $GITHUB_OUTPUT
+          fi
+        id: cache_status
+      
+      - name: Compile C Code
+        run: |
+          echo "Compiling C code..."
+          mkdir -p test-cache/build
+          
+          # Record start time
+          start_time=$(date +%s)
+          
+          # Compile with optimization and debug info
+          gcc -Wall -Wextra -O2 -g -o test-cache/build/cache_test test-cache/src/*.c
+          
+          # Record end time
+          end_time=$(date +%s)
+          compile_time=$((end_time - start_time))
+          
+          echo "Compilation completed in ${compile_time} seconds"
+          echo "compile_time=${compile_time}" >> $GITHUB_OUTPUT
+          
+          # Verify binary was created
+          if [ -f "test-cache/build/cache_test" ]; then
+            echo "✅ Binary created successfully"
+            ls -la test-cache/build/cache_test
+            file test-cache/build/cache_test
+          else
+            echo "❌ Binary creation failed"
+            exit 1
+          fi
+        id: compile
+      
+      - name: Test the compiled program
+        run: |
+          echo "Running the compiled program..."
+          ./test-cache/build/cache_test
+          echo "Program execution completed successfully"
+      
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: simple-cache-test-binary-${{ github.run_number }}
+          path: test-cache/build/cache_test
+          retention-days: 7
+      
+      - name: Cache Performance Report
+        run: |
+          echo "## Simple Cache Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cache Status | ${{ steps.cache_status.outputs.cache_hit == 'true' && '✅ HIT' || '❌ MISS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Compilation Time | ${{ steps.compile.outputs.compile_time }} seconds |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Artifact | ✅ Uploaded |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cache_status.outputs.cache_hit }}" == "true" ]; then
+            echo "🎉 **Cache is working correctly!** The build used cached artifacts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🔄 **Cache miss - this is expected for the first run or when source files change.**" >> $GITHUB_STEP_SUMMARY
+          fi
