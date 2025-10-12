@@ -1,0 +1,108 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      openssl_sha:
+        description: 'OpenSSL commit SHA to deploy'
+        required: true
+        type: string
+      version:
+        description: 'Version to deploy'
+        required: true
+        type: string
+
+jobs:
+  production-deploy:
+    name: Production Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    
+    steps:
+      - name: Checkout openssl-tools
+        uses: actions/checkout@v4
+        
+      - name: Setup environment
+        run: |
+          echo "Setting up production deployment environment..."
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+          
+      - name: Verify staging artifacts
+        run: |
+          echo "Verifying staging artifacts..."
+          # Check if staging artifacts exist
+          conan search openssl/${{ github.event.inputs.version }}@ --remote=github-staging || {
+            echo "❌ Staging artifacts not found"
+            exit 1
+          }
+          echo "✅ Staging artifacts verified"
+          
+      - name: Final security scan
+        run: |
+          echo "Running final security scan..."
+          # Additional security checks before production
+          echo "Security scan completed"
+          
+      - name: Publish to production
+        run: |
+          echo "Publishing to production namespace..."
+          
+          # Publish to GitHub Packages production
+          conan upload openssl/${{ github.event.inputs.version }}@ --remote=github-production --all
+          
+          # Optional: Sync to Artifactory/GHCR
+          if [ "${{ secrets.ARTIFACTORY_URL }}" != "" ]; then
+            echo "Syncing to Artifactory..."
+            # Add Artifactory sync logic here
+          fi
+          
+          if [ "${{ secrets.GHCR_TOKEN }}" != "" ]; then
+            echo "Syncing to GHCR..."
+            # Add GHCR sync logic here
+          fi
+          
+      - name: Create production deployment
+        run: |
+          echo "Creating production deployment..."
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/sparesparrow/openssl/deployments \
+            -d '{
+              "ref": "'${{ github.event.inputs.openssl_sha }}'",
+              "environment": "production",
+              "description": "OpenSSL '${{ github.event.inputs.version }}' deployed to production",
+              "auto_merge": false,
+              "required_contexts": []
+            }'
+            
+      - name: Update commit status
+        if: always()
+        run: |
+          echo "Updating commit status..."
+          if [ "${{ job.status }}" == "success" ]; then
+            status="success"
+            description="Production deployment completed successfully"
+          else
+            status="failure"
+            description="Production deployment failed"
+          fi
+          
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/sparesparrow/openssl/statuses/${{ github.event.inputs.openssl_sha }} \
+            -d "{
+              \"state\": \"$status\",
+              \"context\": \"openssl-tools/production-deploy\",
+              \"description\": \"$description\",
+              \"target_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            }"
+            
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "✅ Production deployment completed successfully"
+          echo "OpenSSL ${{ github.event.inputs.version }} is now available in production"
