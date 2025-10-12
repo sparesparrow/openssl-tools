@@ -1,0 +1,179 @@
+name: C Build and Cache Test
+
+on:
+  push:
+    branches:
+      - master
+      - test-cache-*
+    paths:
+      - 'test-cache/**'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'test-cache/**'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of cache test to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - cache-hit
+          - cache-miss
+
+jobs:
+  cache-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          path: test-cache
+      
+      - name: Set up build environment
+        run: |
+          cd test-cache
+          echo "Setting up build environment..."
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          echo "Build environment ready"
+      
+      - name: Cache Build Artifacts
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: test-cache/build/
+          key: ${{ runner.os }}-cache-test-${{ hashFiles('test-cache/src/**/*.c', 'test-cache/src/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-cache-test-
+      
+      - name: Check cache status
+        run: |
+          cd test-cache
+          if [ -f "build/cache_test" ]; then
+            echo "✅ Cache HIT: Found existing binary"
+            echo "cache_hit=true" >> $GITHUB_OUTPUT
+            ls -la build/
+          else
+            echo "❌ Cache MISS: No existing binary found"
+            echo "cache_hit=false" >> $GITHUB_OUTPUT
+          fi
+        id: cache_status
+      
+      - name: Compile C Code
+        run: |
+          cd test-cache
+          echo "Compiling C code..."
+          mkdir -p build
+          
+          # Record start time
+          start_time=$(date +%s)
+          
+          # Compile with optimization and debug info
+          gcc -Wall -Wextra -O2 -g -o build/cache_test src/*.c
+          
+          # Record end time
+          end_time=$(date +%s)
+          compile_time=$((end_time - start_time))
+          
+          echo "Compilation completed in ${compile_time} seconds"
+          echo "compile_time=${compile_time}" >> $GITHUB_OUTPUT
+          
+          # Verify binary was created
+          if [ -f "build/cache_test" ]; then
+            echo "✅ Binary created successfully"
+            ls -la build/cache_test
+            file build/cache_test
+          else
+            echo "❌ Binary creation failed"
+            exit 1
+          fi
+        id: compile
+      
+      - name: Test the compiled program
+        run: |
+          cd test-cache
+          echo "Running the compiled program..."
+          ./build/cache_test
+          echo "Program execution completed successfully"
+      
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-test-binary-${{ github.run_number }}
+          path: test-cache/build/cache_test
+          retention-days: 7
+      
+      - name: Cache Performance Report
+        run: |
+          echo "## Cache Performance Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cache Status | ${{ steps.cache_status.outputs.cache_hit == 'true' && '✅ HIT' || '❌ MISS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Compilation Time | ${{ steps.compile.outputs.compile_time }} seconds |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Artifact | ✅ Uploaded |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cache Key Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source Hash**: Based on C source files" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cache Path**: test-cache/build/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.cache_status.outputs.cache_hit }}" == "true" ]; then
+            echo "🎉 **Cache is working correctly!** The build used cached artifacts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🔄 **Cache miss - this is expected for the first run or when source files change.**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  cache-verification:
+    runs-on: ubuntu-latest
+    needs: cache-test
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_type == 'full'
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          path: test-cache
+      
+      - name: Set up build environment
+        run: |
+          cd test-cache
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      
+      - name: Cache Build Artifacts (Verification)
+        id: cache_verify
+        uses: actions/cache@v4
+        with:
+          path: test-cache/build/
+          key: ${{ runner.os }}-cache-test-${{ hashFiles('test-cache/src/**/*.c', 'test-cache/src/**/*.h') }}
+          restore-keys: |
+            ${{ runner.os }}-cache-test-
+      
+      - name: Verify Cache Hit
+        run: |
+          cd test-cache
+          if [ -f "build/cache_test" ]; then
+            echo "✅ VERIFICATION: Cache HIT confirmed"
+            echo "Binary exists from previous build:"
+            ls -la build/cache_test
+            echo "Running cached binary:"
+            ./build/cache_test
+          else
+            echo "❌ VERIFICATION: Cache MISS - this should not happen"
+            exit 1
+          fi
+      
+      - name: Cache Verification Report
+        run: |
+          echo "## Cache Verification Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cache verification successful!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The cached binary was successfully retrieved and executed, confirming that GitHub Actions artifact caching is working correctly." >> $GITHUB_STEP_SUMMARY
