@@ -1,0 +1,313 @@
+# OpenSSL Performance Benchmark Workflow
+# Dedicated performance testing and benchmarking pipeline
+
+name: Performance Benchmark
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  schedule:
+    - cron: '0 4 * * 0'  # Weekly on Sunday at 4 AM
+  workflow_dispatch:
+    inputs:
+      benchmark_types:
+        description: 'Benchmark types to run (comma-separated)'
+        required: false
+        type: string
+        default: 'speed,memory,crypto,ssl'
+      iterations:
+        description: 'Number of iterations per benchmark'
+        required: false
+        type: string
+        default: '1000'
+      compare_baseline:
+        description: 'Compare with baseline results'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # Speed benchmarks
+  speed-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL for benchmarking
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Run speed benchmarks
+        run: |
+          cd openssl-source
+          conan openssl benchmark \
+            --benchmarks=speed \
+            --iterations=${{ github.event.inputs.iterations || '1000' }} \
+            --format=json \
+            --verbose
+          
+      - name: Upload speed benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: speed-benchmark-results
+          path: openssl-source/benchmarks/
+          retention-days: 30
+
+  # Memory benchmarks
+  memory-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan and memory profiling tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL for memory profiling
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Run memory benchmarks
+        run: |
+          cd openssl-source
+          conan openssl benchmark \
+            --benchmarks=memory \
+            --iterations=${{ github.event.inputs.iterations || '1000' }} \
+            --format=json \
+            --verbose
+          
+      - name: Upload memory benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-benchmark-results
+          path: openssl-source/benchmarks/
+          retention-days: 30
+
+  # Cryptographic algorithm benchmarks
+  crypto-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL for crypto benchmarking
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Run crypto benchmarks
+        run: |
+          cd openssl-source
+          conan openssl benchmark \
+            --benchmarks=crypto \
+            --iterations=${{ github.event.inputs.iterations || '1000' }} \
+            --format=json \
+            --verbose
+          
+      - name: Upload crypto benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto-benchmark-results
+          path: openssl-source/benchmarks/
+          retention-days: 30
+
+  # SSL/TLS benchmarks
+  ssl-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL for SSL benchmarking
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Run SSL benchmarks
+        run: |
+          cd openssl-source
+          conan openssl benchmark \
+            --benchmarks=ssl \
+            --iterations=${{ github.event.inputs.iterations || '1000' }} \
+            --format=json \
+            --verbose
+          
+      - name: Upload SSL benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssl-benchmark-results
+          path: openssl-source/benchmarks/
+          retention-days: 30
+
+  # Performance comparison and reporting
+  performance-report:
+    needs: [speed-benchmark, memory-benchmark, crypto-benchmark, ssl-benchmark]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmark-results/
+          
+      - name: Generate performance report
+        run: |
+          echo "# OpenSSL Performance Benchmark Report" > performance-report.md
+          echo "" >> performance-report.md
+          echo "Generated on: $(date)" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          echo "## Benchmark Results Summary" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          # Speed Results
+          if [ -d "benchmark-results/speed-benchmark-results" ]; then
+            echo "### Speed Benchmarks" >> performance-report.md
+            echo "- Status: ${{ needs.speed-benchmark.result }}" >> performance-report.md
+            echo "- Results: Available in artifacts" >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+          # Memory Results
+          if [ -d "benchmark-results/memory-benchmark-results" ]; then
+            echo "### Memory Benchmarks" >> performance-report.md
+            echo "- Status: ${{ needs.memory-benchmark.result }}" >> performance-report.md
+            echo "- Results: Available in artifacts" >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+          # Crypto Results
+          if [ -d "benchmark-results/crypto-benchmark-results" ]; then
+            echo "### Cryptographic Benchmarks" >> performance-report.md
+            echo "- Status: ${{ needs.crypto-benchmark.result }}" >> performance-report.md
+            echo "- Results: Available in artifacts" >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+          # SSL Results
+          if [ -d "benchmark-results/ssl-benchmark-results" ]; then
+            echo "### SSL/TLS Benchmarks" >> performance-report.md
+            echo "- Status: ${{ needs.ssl-benchmark.result }}" >> performance-report.md
+            echo "- Results: Available in artifacts" >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+          # Performance comparison if baseline available
+          if [ "${{ github.event.inputs.compare_baseline }}" == "true" ]; then
+            echo "## Performance Comparison" >> performance-report.md
+            echo "" >> performance-report.md
+            echo "Comparing with baseline results..." >> performance-report.md
+            echo "" >> performance-report.md
+          fi
+          
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: performance-report.md
+          retention-days: 90

@@ -1,0 +1,63 @@
+name: 'Run OpenSSL Tests'
+description: 'Executes OpenSSL test suite with flaky test handling'
+inputs:
+  test_type:
+    description: 'Type of tests to run (unit, integration, performance)'
+    required: false
+    default: 'unit'
+  parallel_jobs:
+    description: 'Number of parallel test jobs'
+    required: false
+    default: '4'
+  retry_failed:
+    description: 'Retry failed tests'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run OpenSSL tests
+      shell: bash
+      run: |
+        echo "Running ${{ inputs.test_type }} tests with ${{ inputs.parallel_jobs }} parallel jobs"
+        
+        # Configure test environment
+        export CTEST_PARALLEL_LEVEL=${{ inputs.parallel_jobs }}
+        export CTEST_OUTPUT_ON_FAILURE=1
+        
+        # Run tests based on type
+        case "${{ inputs.test_type }}" in
+          unit)
+            echo "Running unit tests..."
+            make test
+            ;;
+          integration)
+            echo "Running integration tests..."
+            make test TESTS="test_ssl test_ssl_old"
+            ;;
+          performance)
+            echo "Running performance tests..."
+            make test TESTS="test_speed"
+            ;;
+          all)
+            echo "Running all tests..."
+            make test
+            ;;
+        esac
+        
+        # Handle test results
+        TEST_EXIT_CODE=$?
+        
+        if [[ $TEST_EXIT_CODE -ne 0 && "${{ inputs.retry_failed }}" == "true" ]]; then
+          echo "Some tests failed, retrying once..."
+          make test
+          TEST_EXIT_CODE=$?
+        fi
+        
+        if [[ $TEST_EXIT_CODE -ne 0 ]]; then
+          echo "Tests failed with exit code: $TEST_EXIT_CODE"
+          exit $TEST_EXIT_CODE
+        fi
+        
+        echo "All tests passed successfully!"

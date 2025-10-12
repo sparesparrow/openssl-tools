@@ -1,0 +1,614 @@
+# OpenSSL Unified CI/CD Pipeline
+# Comprehensive build, test, security, and deployment pipeline with matrix strategy
+# Supports SAST/DAST, SBOM generation, benchmarking, and artifact publishing
+
+name: OpenSSL Unified CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: 'Platforms to build (comma-separated)'
+        required: false
+        type: string
+        default: 'ubuntu-20.04-gcc,ubuntu-22.04-clang,windows-2022,macos-12'
+      build_types:
+        description: 'Build types (comma-separated)'
+        required: false
+        type: string
+        default: 'Release,Debug'
+      configurations:
+        description: 'Build configurations (comma-separated)'
+        required: false
+        type: string
+        default: 'standard,fips'
+      enable_security:
+        description: 'Enable security scanning'
+        required: false
+        type: boolean
+        default: true
+      enable_benchmarks:
+        description: 'Enable performance benchmarks'
+        required: false
+        type: boolean
+        default: true
+      enable_sbom:
+        description: 'Enable SBOM generation'
+        required: false
+        type: boolean
+        default: true
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      CONAN_REMOTE_URL:
+        required: false
+      CONAN_USER:
+        required: false
+      CONAN_PASSWORD:
+        required: false
+      CURSOR_API_KEY:
+        required: false
+      DATABASE_URL:
+        required: false
+
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+  OPENSSL_TOOLS_ROOT: "${{ github.workspace }}"
+
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+  actions: read
+
+jobs:
+  # Analyze changes to determine what needs to be built
+  analyze-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      source-changed: ${{ steps.changes.outputs.source }}
+      deps-changed: ${{ steps.changes.outputs.deps }}
+      profiles-changed: ${{ steps.changes.outputs.profiles }}
+      build-required: ${{ steps.decide.outputs.build-required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            source:
+              - 'openssl-source/**'
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'apps/**'
+            deps:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-profiles/**'
+              - 'profiles/**'
+            profiles:
+              - 'conan-profiles/**'
+              - 'profiles/**'
+              
+      - id: decide
+        run: |
+          if [[ "${{ steps.changes.outputs.source }}" == "true" || 
+                "${{ steps.changes.outputs.deps }}" == "true" || 
+                "${{ steps.changes.outputs.profiles }}" == "true" ]]; then
+            echo "build-required=true" >> $GITHUB_OUTPUT
+          else
+            echo "build-required=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Build matrix with platform/compiler/build_type combinations
+  build-matrix:
+    needs: analyze-changes
+    if: needs.analyze-changes.outputs.build-required == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 20.04 with GCC 11
+          - { 
+              profile: "ci-linux-gcc", 
+              os: "ubuntu-20.04", 
+              container: "gcc:11",
+              platform: "linux",
+              compiler: "gcc",
+              arch: "x86_64"
+            }
+          # Ubuntu 22.04 with Clang 15
+          - { 
+              profile: "ci-linux-clang", 
+              os: "ubuntu-22.04", 
+              container: "silkeh/clang:15",
+              platform: "linux",
+              compiler: "clang",
+              arch: "x86_64"
+            }
+          # Windows 2022 with MSVC 2022
+          - { 
+              profile: "ci-windows-msvc", 
+              os: "windows-2022", 
+              container: "",
+              platform: "windows",
+              compiler: "msvc",
+              arch: "x86_64"
+            }
+          # macOS 12 with Clang 14
+          - { 
+              profile: "ci-macos-x64", 
+              os: "macos-12", 
+              container: "",
+              platform: "macos",
+              compiler: "clang",
+              arch: "x86_64"
+            }
+          # macOS 12 with ARM64
+          - { 
+              profile: "ci-macos-arm64", 
+              os: "macos-12", 
+              container: "",
+              platform: "macos",
+              compiler: "clang",
+              arch: "arm64"
+            }
+        build_type: ${{ fromJson(format('["{0}"]', inputs.build_types)) }}
+        configuration: ${{ fromJson(format('["{0}"]', inputs.configurations)) }}
+          
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container || null }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup container environment
+        if: matrix.container != ''
+        run: |
+          apt-get update && apt-get install -y python3-pip git ccache build-essential
+          
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+        
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          conan --version
+          
+      - name: Setup ccache
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --version
+            ccache --zero-stats
+          fi
+          
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ matrix.profile }}-${{ matrix.build_type }}-${{ matrix.configuration }}-${{ hashFiles('conanfile.py', 'conan-profiles/**') }}
+          restore-keys: |
+            conan-${{ matrix.profile }}-${{ matrix.build_type }}-${{ matrix.configuration }}-
+            conan-${{ matrix.profile }}-${{ matrix.build_type }}-
+            conan-${{ matrix.profile }}-
+            
+      - name: Cache compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/.cache/sccache
+          key: ccache-${{ matrix.profile }}-${{ matrix.build_type }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.profile }}-${{ matrix.build_type }}-
+            ccache-${{ matrix.profile }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          cp conanfile.py openssl-source/
+          echo "OpenSSL source cloned to openssl-source/"
+
+      - name: Validate OpenSSL structure
+        run: |
+          cd openssl-source
+          test -f VERSION.dat || exit 1
+          test -f Configure || test -f config || exit 1
+          echo "✅ OpenSSL source structure valid"
+                             
+      - name: Configure OpenSSL
+        run: |
+          cd openssl-source
+          conan openssl configure \
+            --profile=../conan-profiles/${{ matrix.profile }}.profile \
+            --build-type=${{ matrix.build_type }} \
+            --platform=${{ matrix.platform }} \
+            --compiler=${{ matrix.compiler }} \
+            --arch=${{ matrix.arch }} \
+            --fips=${{ matrix.configuration == 'fips' }} \
+            --verbose
+                        
+      - name: Build OpenSSL
+        run: |
+          cd openssl-source
+          conan openssl build \
+            --profile=../conan-profiles/${{ matrix.profile }}.profile \
+            --config-dir=../build-${{ matrix.platform }}-${{ matrix.compiler }} \
+            --jobs=${{ github.event.inputs.jobs || '4' }} \
+            --test \
+            --verbose
+                        
+      - name: Package OpenSSL
+        if: ${{ inputs.upload_artifacts == 'true' }}
+        run: |
+          cd openssl-source
+          conan openssl package \
+            --profile=../conan-profiles/${{ matrix.profile }}.profile \
+            --build-dir=. \
+            --sbom \
+            --sbom-format=cyclonedx \
+            --verbose
+          
+      - name: Upload to Conan remote
+        if: ${{ inputs.upload_artifacts == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+        env:
+          CONAN_REMOTE_URL: ${{ secrets.CONAN_REMOTE_URL || 'https://maven.pkg.github.com/sparesparrow/openssl-tools' }}
+          CONAN_USER: ${{ secrets.CONAN_USER || github.actor }}
+          CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD || secrets.GITHUB_TOKEN }}
+        run: |
+          cd openssl-source
+          conan remote add upload-target "$CONAN_REMOTE_URL" || true
+          conan remote login -p "$CONAN_PASSWORD" upload-target "$CONAN_USER" || true
+          conan upload "openssl/*" -r=upload-target --confirm || {
+            echo "Primary upload failed, attempting GitHub Packages fallback"
+            conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }} || true
+            conan remote login -p ${{ secrets.GITHUB_TOKEN }} github-packages ${{ github.actor }}
+            conan upload "openssl/*" -r=github-packages --confirm
+          }
+          
+      - name: Show ccache stats
+        run: |
+          if command -v ccache >/dev/null; then
+            ccache --show-stats
+          fi
+          
+      - name: Upload build artifacts
+        if: ${{ inputs.upload_artifacts == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.profile }}-${{ matrix.build_type }}-${{ matrix.configuration }}
+          path: |
+            openssl-source/packages/
+            openssl-source/sbom.*.json
+          retention-days: 7
+
+      - name: Cursor Agent Failure Analysis
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "⚠️ CURSOR_API_KEY not set, skipping automated analysis"
+            exit 0
+          fi
+          
+          # Construct failure analysis prompt
+          PROMPT="Analyze the failed CI job logs for workflow 'openssl-unified-cicd', job '${{ github.job }}'.
+          
+          Context:
+          - PR: #${{ github.event.pull_request.number }}
+          - Commit: ${{ github.sha }}
+          - Job: ${{ github.job }}
+          - Matrix: ${{ toJson(matrix) }}
+          
+          Tasks:
+          1. Review the job logs above to identify the root cause
+          2. Propose a minimal fix (unified diff patch or configuration change)
+          3. If the fix is safe and minimal, commit and push the change
+          4. Comment on PR #${{ github.event.pull_request.number }} with the analysis and fix
+          
+          Output your analysis and any changes made."
+          
+          # Run cursor-agent with timeout
+          timeout 300s cursor-agent -p --force "$PROMPT" || {
+            echo "⚠️ Cursor agent timed out or failed"
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --body "❌ CI job **${{ github.job }}** failed. Automated analysis could not complete. Please review logs manually."
+          }
+
+  # Security scanning with SAST/DAST
+  security-scan:
+    needs: [analyze-changes, build-matrix]
+    if: ${{ always() && (needs.analyze-changes.outputs.deps-changed == 'true' || github.event_name == 'schedule') && inputs.enable_security == 'true' }}
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan and security tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install bandit safety semgrep
+          
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Run comprehensive security scan
+        run: |
+          cd openssl-source
+          conan openssl scan \
+            --scan-types=sast,dast,dependency,compliance \
+            --tools=trivy,bandit,semgrep,safety \
+            --severity=medium \
+            --format=json \
+            --verbose
+          
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: openssl-source/security-scans/
+          retention-days: 30
+          
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: openssl-source/security-scans/semgrep_results.sarif
+          category: semgrep
+
+  # SBOM generation and validation
+  sbom-generation:
+    needs: [analyze-changes, build-matrix]
+    if: ${{ always() && needs.build-matrix.result == 'success' && inputs.enable_sbom == 'true' }}
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          
+      - name: Generate comprehensive SBOM
+        run: |
+          # Generate SBOM for all built packages
+          find artifacts/ -name "sbom.*.json" -exec cp {} . \;
+          
+          # Create consolidated SBOM
+          python -c "
+          import json
+          import glob
+          
+          consolidated = {
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.4',
+              'version': 1,
+              'metadata': {
+                  'timestamp': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+                  'tools': [{'vendor': 'OpenSSL Tools', 'name': 'openssl-unified-cicd', 'version': '1.0.0'}],
+                  'component': {
+                      'type': 'library',
+                      'name': 'openssl',
+                      'version': '$(git describe --tags --always)',
+                      'description': 'OpenSSL cryptographic library',
+                      'licenses': [{'id': 'Apache-2.0'}]
+                  }
+              },
+              'components': []
+          }
+          
+          for sbom_file in glob.glob('sbom.*.json'):
+              with open(sbom_file, 'r') as f:
+                  data = json.load(f)
+                  if 'components' in data:
+                      consolidated['components'].extend(data['components'])
+          
+          with open('consolidated-sbom.json', 'w') as f:
+              json.dump(consolidated, f, indent=2)
+          "
+          
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-files
+          path: |
+            consolidated-sbom.json
+            sbom.*.json
+          retention-days: 90
+
+  # Performance benchmarking
+  performance-benchmark:
+    needs: [analyze-changes, build-matrix]
+    if: ${{ always() && needs.build-matrix.result == 'success' && inputs.enable_benchmarks == 'true' }}
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          
+      - name: Setup OpenSSL from artifacts
+        run: |
+          # Extract OpenSSL from build artifacts
+          find artifacts/ -name "*.tar.gz" -exec tar -xzf {} -C . \;
+          
+      - name: Run performance benchmarks
+        run: |
+          conan openssl benchmark \
+            --benchmarks=speed,memory,crypto \
+            --iterations=1000 \
+            --format=json \
+            --verbose
+          
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/
+          retention-days: 30
+
+  # Test matrix using prebuilt packages
+  test-matrix:
+    needs: [analyze-changes, build-matrix]
+    if: ${{ always() && needs.build-matrix.result == 'success' }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { profile: "ci-linux-gcc", os: "ubuntu-22.04" }
+          - { profile: "ci-linux-clang", os: "ubuntu-22.04" }
+        build_type: ${{ fromJson(format('["{0}"]', inputs.build_types)) }}
+        
+    runs-on: ${{ matrix.config.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan
+        run: pip install conan==${{ env.CONAN_VERSION }}
+      
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ matrix.config.profile }}-${{ matrix.build_type }}-${{ hashFiles('conanfile.py', 'conan-profiles/**') }}
+          restore-keys: |
+            conan-${{ matrix.config.profile }}-${{ matrix.build_type }}-
+            conan-${{ matrix.config.profile }}-
+            
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.config.profile }}-${{ matrix.build_type }}-standard
+          path: .
+          
+      - name: Install prebuilt packages
+        run: |
+          conan install . --profile=conan-profiles/${{ matrix.config.profile }}.profile \
+                         -s build_type=${{ matrix.build_type }}
+                         
+      - name: Build and test consumer
+        run: |
+          conan build . --build-folder=build
+          cd build && ctest --output-on-failure
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.config.profile }}-${{ matrix.build_type }}
+          path: build/test-results.xml
+
+  # Final status and reporting
+  pipeline-status:
+    needs: [build-matrix, security-scan, sbom-generation, performance-benchmark, test-matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate pipeline report
+        run: |
+          echo "# OpenSSL CI/CD Pipeline Report" > pipeline-report.md
+          echo "" >> pipeline-report.md
+          echo "## Build Matrix" >> pipeline-report.md
+          echo "- Status: ${{ needs.build-matrix.result }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          echo "## Security Scan" >> pipeline-report.md
+          echo "- Status: ${{ needs.security-scan.result }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          echo "## SBOM Generation" >> pipeline-report.md
+          echo "- Status: ${{ needs.sbom-generation.result }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          echo "## Performance Benchmark" >> pipeline-report.md
+          echo "- Status: ${{ needs.performance-benchmark.result }}" >> pipeline-report.md
+          echo "" >> pipeline-report.md
+          echo "## Test Matrix" >> pipeline-report.md
+          echo "- Status: ${{ needs.test-matrix.result }}" >> pipeline-report.md
+          
+      - name: Upload pipeline report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-report
+          path: pipeline-report.md
+          retention-days: 7
