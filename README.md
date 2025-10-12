@@ -145,6 +145,186 @@ This repository follows a **two-repository architecture** for clean separation o
 
 📚 **Learn More**: [Repository Separation Documentation](docs/explanation/repo-separation.md)
 
+### CI/CD Workflow Diagrams
+
+The following diagrams illustrate the desired workflow behavior for the two-repository architecture:
+
+#### 1. PR Created in OpenSSL Repository
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub PR
+    participant OSS as openssl repo
+    participant OST as openssl-tools repo
+    participant GHP as GitHub Packages
+
+    Dev->>GH: Create PR
+    activate GH
+    GH->>OSS: Trigger pr-validation.yml
+    activate OSS
+    
+    par Fast Validation (3-5 min)
+        OSS->>OSS: Lint & Format Check
+        OSS->>OSS: Syntax Validation
+        OSS->>OSS: Single Platform Build
+        OSS->>OSS: Quick Unit Tests
+    end
+    
+    OSS->>GH: Report Fast Check Status
+    
+    alt Fast Checks Pass
+        OSS->>OST: repository_dispatch<br/>(pr-validation event)
+        activate OST
+        
+        par Comprehensive Builds (30-45 min)
+            OST->>OST: Linux x86_64 Build + Tests
+            OST->>OST: Linux ARM64 Build + Tests
+            OST->>OST: Windows x64 Build + Tests
+            OST->>OST: macOS Build + Tests
+        end
+        
+        OST->>GHP: Upload Test Artifacts
+        OST->>GH: Report Status via<br/>Commit Status API
+        deactivate OST
+    else Fast Checks Fail
+        OSS->>GH: Block PR (Red Status)
+        OSS->>Dev: Notify (GitHub + Email)
+    end
+    
+    deactivate OSS
+    deactivate GH
+```
+
+#### 2. PR Merged to Master in OpenSSL Repository
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant OSS as openssl/master
+    participant OST as openssl-tools
+    participant GHP as GitHub Packages
+    participant Human as Release Manager
+
+    Dev->>GH: Merge PR to master
+    activate GH
+    GH->>OSS: Trigger release-build.yml
+    activate OSS
+    
+    OSS->>OST: repository_dispatch<br/>(master-merge event)
+    deactivate OSS
+    activate OST
+    
+    par Full Release Build (45-60 min)
+        OST->>OST: Build All Platforms
+        OST->>OST: Run Integration Tests
+        OST->>OST: Security Scans<br/>(SAST, Dependency Check)
+        OST->>OST: Generate SBOM
+        OST->>OST: Package for Conan
+    end
+    
+    OST->>GHP: Publish to Staging<br/>(namespace: staging/*)
+    OST->>GH: Update Commit Status
+    OST->>GH: Create Deployment<br/>(Environment: staging)
+    
+    alt All Checks Pass
+        OST->>Human: Request Production<br/>Approval (GitHub Environment)
+        Human->>GH: Approve Deployment
+        activate GH
+        GH->>OST: Trigger production-deploy.yml
+        OST->>GHP: Publish to Production<br/>(namespace: production/*)
+        OST->>OST: Optional: Sync to<br/>Artifactory/GHCR
+        OST->>GH: Deployment Complete
+        deactivate GH
+    else Checks Fail
+        OST->>Dev: Notify Failure
+        OST->>GH: Create Issue<br/>(AI Analysis Attached)
+    end
+    
+    deactivate OST
+    deactivate GH
+```
+
+#### 3. Commit Pushed to Non-Master Branch in OpenSSL Repository
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant OSS as openssl/feature-branch
+
+    Dev->>GH: Push to feature branch
+    activate GH
+    GH->>OSS: Trigger lightweight-check.yml
+    activate OSS
+    
+    par Lightweight Checks (< 2 min)
+        OSS->>OSS: Perl Syntax Check
+        OSS->>OSS: Code Linting
+        OSS->>OSS: Basic Compilation<br/>(Single Config)
+    end
+    
+    alt Checks Pass
+        OSS->>GH: Green Status
+        OSS->>Dev: Success Notification
+    else Checks Fail
+        OSS->>GH: Red Status
+        OSS->>Dev: Failure Notification
+    end
+    
+    deactivate OSS
+    deactivate GH
+    
+    Note over Dev,OSS: Full validation happens<br/>when PR is created
+```
+
+#### 4. Nightly Build on Master Branch
+
+```mermaid
+sequenceDiagram
+    participant Cron as GitHub Cron
+    participant OST as openssl-tools
+    participant GHP as GitHub Packages
+    participant Slack as Notifications
+    participant DB as Metrics DB
+
+    Cron->>OST: Trigger nightly.yml<br/>(2 AM UTC)
+    activate OST
+    
+    par Comprehensive Build Matrix (2-4 hours)
+        OST->>OST: Linux (x86_64, ARM64)<br/>All Configs (shared/static)
+        OST->>OST: Windows (x64, x86)<br/>MSVC + MinGW
+        OST->>OST: macOS (Intel, Apple Silicon)
+        OST->>OST: Alpine Linux (musl libc)
+    end
+    
+    par Security & Quality
+        OST->>OST: SAST (CodeQL, Semgrep)
+        OST->>OST: Dependency Vuln Scan
+        OST->>OST: Fuzz Testing (AFL, libFuzzer)
+        OST->>OST: FIPS Compliance Tests
+    end
+    
+    par Performance & Benchmarks
+        OST->>OST: Crypto Performance Tests
+        OST->>OST: Memory Leak Detection
+        OST->>OST: Regression Analysis
+    end
+    
+    OST->>GHP: Upload Nightly Artifacts
+    OST->>DB: Store Metrics<br/>(build times, test results)
+    
+    alt All Passed
+        OST->>Slack: Nightly Build Success
+    else Failures Detected
+        OST->>Slack: Nightly Build Failures<br/>(with AI Analysis)
+        OST->>OST: Create GitHub Issue<br/>(Auto-assign maintainers)
+    end
+    
+    deactivate OST
+```
+
 ### Repository Structure
 
 ```
