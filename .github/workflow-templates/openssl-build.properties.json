@@ -1,0 +1,34 @@
+{
+  "name": "OpenSSL Build Template",
+  "description": "Complete OpenSSL build workflow using Conan 2.0 with multi-platform support",
+  "iconName": "openssl-icon",
+  "categories": ["C++", "Build", "Conan", "OpenSSL"],
+  "filePatterns": [
+    "conanfile.py$",
+    "^openssl.*/conanfile.py$",
+    "conan-profiles/.*\\.profile$"
+  ],
+  "inputs": {
+    "platforms": {
+      "description": "Target platforms to build for",
+      "default": "linux-gcc11,linux-clang15,windows-msvc2022,macos-clang14",
+      "type": "string"
+    },
+    "build-type": {
+      "description": "Build type (Debug, Release, RelWithDebInfo)",
+      "default": "Release",
+      "type": "choice",
+      "options": ["Debug", "Release", "RelWithDebInfo"]
+    },
+    "enable-fips": {
+      "description": "Enable FIPS mode",
+      "default": "false",
+      "type": "boolean"
+    },
+    "upload-artifacts": {
+      "description": "Upload build artifacts",
+      "default": "true",
+      "type": "boolean"
+    }
+  }
+}

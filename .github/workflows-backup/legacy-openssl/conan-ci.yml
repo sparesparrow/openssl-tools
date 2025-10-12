@@ -6,20 +6,25 @@ on:
     paths:
       - 'conanfile.py'
       - 'conanfile.txt'
-      - 'conan-profiles/**'
-      - 'scripts/**'
+      - 'conan-recipes/**'
+      - 'scripts/conan/**'
+      - 'conan-dev/**'
       - 'src/**'
       - 'include/**'
       - 'test/**'
+      - 'CMakeLists.txt'
+      - 'Makefile'
+      - 'configure'
+      - 'config'
   workflow_dispatch:
 
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      openssl-changed: ${{ steps.changes.outputs.changes.openssl }}
-      conan-changed: ${{ steps.changes.outputs.changes.conan }}
-      tests-changed: ${{ steps.changes.outputs.changes.tests }}
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect changes
@@ -28,20 +33,24 @@ jobs:
         with:
           filters: |
             openssl:
-              - 'conanfile.py'
-              - 'conanfile.txt'
-              - 'conan-profiles/**'
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'apps/**'
+              - 'include/**'
+              - 'CMakeLists.txt'
+              - 'configure'
+              - 'config'
             conan:
               - 'conanfile.py'
               - 'conanfile.txt'
-              - 'conan-profiles/**'
+              - 'conan-recipes/**'
             tests:
               - 'test/**'
-              - 'scripts/**'
+              - 'fuzz/**'
 
   compile-changes:
     needs: detect-changes
-    if: needs.detect-changes.outputs.openssl-changed == 'true' || needs.detect-changes.outputs.conan-changed == 'true'
+    if: needs.detect-changes.outputs.openssl == 'true' || needs.detect-changes.outputs.conan == 'true'
     runs-on: ${{ matrix.os }}
     env:
       CONAN_USER_HOME: ${{ github.workspace }}/.conan2
@@ -166,7 +175,7 @@ jobs:
         if: env.ARTIFACTORY_URL != ''
         run: |
           conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
-          conan remote login -p ${{ secrets.ARTIFACTORY_TOKEN }} artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan user -p ${{ secrets.ARTIFACTORY_TOKEN }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
           conan upload "openssl/*" -r=artifactory --all --confirm || true
       
       - name: Upload packages to GitHub Packages
@@ -177,7 +186,7 @@ jobs:
           conan remote update github-packages https://maven.pkg.github.com/${{ github.repository }}
           
           # Authenticate with GitHub Packages using proper token format
-          conan remote login -p ${{ secrets.GITHUB_TOKEN }} github-packages ${{ github.actor }}
+          conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
           
           # Upload packages with retry logic and proper error handling
           conan upload "openssl/*" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {
@@ -193,61 +202,4 @@ jobs:
             build/
             package/
             ~/.conan2/p/*/p/
-
-  workflow-analysis:
-    needs: compile-changes
-    if: failure() || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-        
-      - name: Install MCP dependencies
-        run: |
-          pip install -r scripts/mcp/requirements.txt
-          pip install -r requirements.txt
-        
-      - name: Analyze workflow failures
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python -c "
-          import asyncio
-          import sys
-          sys.path.insert(0, 'scripts')
-          from unified_workflow_manager import UnifiedWorkflowManager
-          
-          async def analyze():
-              manager = UnifiedWorkflowManager('${{ github.repository }}')
-              report = await manager.analyze_and_fix(limit=10)
-              print(report)
-              # Save report for PR comment
-              with open('/tmp/workflow-analysis.md', 'w') as f:
-                  f.write(report)
-          
-          asyncio.run(analyze())
-          "
-        
-      - name: Post analysis to PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            try {
-              const report = fs.readFileSync('/tmp/workflow-analysis.md', 'utf8');
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## 🔧 Workflow Analysis Report\n\n${report}`
-              });
-            } catch (error) {
-              console.log('Could not read analysis report:', error.message);
-            }
           retention-days: 30
