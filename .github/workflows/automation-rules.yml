@@ -1,0 +1,154 @@
+name: Automation Rules Engine
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main, master]
+  workflow_run:
+    workflows: ["Component Development Workflow", "Security Review Workflow", "Performance Optimization Workflow"]
+    types: [completed]
+
+jobs:
+  evaluate-automation-rules:
+    name: Evaluate Automation Rules
+    runs-on: ubuntu-latest
+    outputs:
+      trigger-security: ${{ steps.rules.outputs.trigger-security }}
+      trigger-component: ${{ steps.rules.outputs.trigger-component }}
+      trigger-performance: ${{ steps.rules.outputs.trigger-performance }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Evaluate automation rules
+        id: rules
+        run: |
+          echo "Evaluating automation rules..."
+          
+          # Rule 1: PR created with crypto/ssl changes -> Security Review Workflow
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Evaluating PR automation rules..."
+            
+            # Get changed files
+            if [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "synchronize" ]; then
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+              
+              # Check if files match pattern '*/crypto/*,*/ssl/*'
+              if echo "$CHANGED_FILES" | grep -E "(crypto|ssl)" > /dev/null; then
+                echo "✅ Rule triggered: PR with crypto/ssl changes -> Security Review Workflow"
+                echo "trigger-security=true" >> $GITHUB_OUTPUT
+              else
+                echo "trigger-security=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "trigger-security=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "trigger-security=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Rule 2: Commit pushed to main with successful build -> Component Development Workflow
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "Evaluating push automation rules..."
+            
+            # Check if build status is successful (this would need to be implemented)
+            # For now, we'll assume successful if no recent failures
+            if gh run list --status failure --limit 1 > /dev/null 2>&1; then
+              echo "❌ Recent build failures detected, skipping Component Development Workflow"
+              echo "trigger-component=false" >> $GITHUB_OUTPUT
+            else
+              echo "✅ Rule triggered: Commit to main with successful build -> Component Development Workflow"
+              echo "trigger-component=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "trigger-component=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Rule 3: Performance regression detected -> Performance Optimization Workflow
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Evaluating workflow completion rules..."
+            
+            # Check if performance regression was detected
+            if [ "${{ github.event.workflow_run.conclusion }}" = "failure" ] && 
+               echo "${{ github.event.workflow_run.name }}" | grep -i "performance" > /dev/null; then
+              echo "✅ Rule triggered: Performance regression detected -> Performance Optimization Workflow"
+              echo "trigger-performance=true" >> $GITHUB_OUTPUT
+            else
+              echo "trigger-performance=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "trigger-performance=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-security-review:
+    name: Trigger Security Review Workflow
+    needs: evaluate-automation-rules
+    if: needs.evaluate-automation-rules.outputs.trigger-security == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Security Review Workflow
+        run: |
+          echo "🚨 Triggering Security Review Workflow..."
+          if gh workflow list | grep -q "security-review"; then
+            gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+          else
+            echo "⚠️ Security Review Workflow not found, skipping trigger"
+          fi
+
+  trigger-component-development:
+    name: Trigger Component Development Workflow
+    needs: evaluate-automation-rules
+    if: needs.evaluate-automation-rules.outputs.trigger-component == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Component Development Workflow
+        run: |
+          echo "🔧 Triggering Component Development Workflow..."
+          if gh workflow list | grep -q "component-development"; then
+            gh workflow run component-development.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ Component Development Workflow not found, skipping trigger"
+          fi
+
+  trigger-performance-optimization:
+    name: Trigger Performance Optimization Workflow
+    needs: evaluate-automation-rules
+    if: needs.evaluate-automation-rules.outputs.trigger-performance == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Performance Optimization Workflow
+        run: |
+          echo "⚡ Triggering Performance Optimization Workflow..."
+          if gh workflow list | grep -q "performance-optimization"; then
+            gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+          else
+            echo "⚠️ Performance Optimization Workflow not found, skipping trigger"
+          fi
+
+  automation-summary:
+    name: Automation Summary
+    needs: [evaluate-automation-rules, trigger-security-review, trigger-component-development, trigger-performance-optimization]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate automation summary
+        run: |
+          echo "## 🤖 Automation Rules Engine Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Event Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- Event: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Ref: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Action: ${{ github.event.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rule Evaluation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger Security Review: ${{ needs.evaluate-automation-rules.outputs.trigger-security }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger Component Development: ${{ needs.evaluate-automation-rules.outputs.trigger-component }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger Performance Optimization: ${{ needs.evaluate-automation-rules.outputs.trigger-performance }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Triggers" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Review: ${{ needs.trigger-security-review.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Component Development: ${{ needs.trigger-component-development.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance Optimization: ${{ needs.trigger-performance-optimization.result }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,119 @@
+# OpenSSL Build Template
+# This template provides a complete OpenSSL build workflow using Conan 2.0
+
+name: OpenSSL Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-profiles/**'
+      - 'src/**'
+      - 'include/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-profiles/**'
+  workflow_dispatch:
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+jobs:
+  # Detect what components need to be built
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      fips-changed: ${{ steps.changes.outputs.fips }}
+      quic-changed: ${{ steps.changes.outputs.quic }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            openssl:
+              - 'openssl/conanfile.py'
+              - 'openssl/src/**'
+              - 'openssl/include/**'
+            fips:
+              - 'openssl-fips/conanfile.py'
+              - 'openssl-fips/src/**'
+              - 'openssl-fips/include/**'
+            quic:
+              - 'openssl-quic/conanfile.py'
+              - 'openssl-quic/src/**'
+              - 'openssl-quic/include/**'
+
+  # Build OpenSSL core
+  build-openssl:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.openssl == 'true'
+    uses: ./.github/workflows/reusable/build-component.yml
+    with:
+      component: 'openssl'
+      platform: ${{ matrix.platform }}
+      build-type: 'Release'
+      fips-enabled: false
+    strategy:
+      matrix:
+        platform: [linux-gcc11, linux-clang15, windows-msvc2022, macos-clang14]
+
+  # Build OpenSSL-FIPS
+  build-fips:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.fips == 'true'
+    uses: ./.github/workflows/reusable/build-component.yml
+    with:
+      component: 'openssl-fips'
+      platform: ${{ matrix.platform }}
+      build-type: 'Release'
+      fips-enabled: true
+    strategy:
+      matrix:
+        platform: [linux-gcc11, linux-clang15, windows-msvc2022, macos-clang14]
+
+  # Build OpenSSL-QUIC
+  build-quic:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.quic == 'true'
+    uses: ./.github/workflows/reusable/build-component.yml
+    with:
+      component: 'openssl-quic'
+      platform: ${{ matrix.platform }}
+      build-type: 'Release'
+      fips-enabled: false
+    strategy:
+      matrix:
+        platform: [linux-gcc11, linux-clang15, windows-msvc2022, macos-clang14]
+
+  # Security scan
+  security-scan:
+    needs: [build-openssl, build-fips, build-quic]
+    if: always() && (needs.build-openssl.result == 'success' || needs.build-fips.result == 'success' || needs.build-quic.result == 'success')
+    uses: ./.github/workflows/reusable/security-scan.yml
+    with:
+      component: 'openssl'
+      scan-type: 'full'
+      generate-sbom: true
+    secrets: inherit
+
+  # Upload to registry
+  upload-packages:
+    needs: [build-openssl, build-fips, build-quic]
+    if: always() && (needs.build-openssl.result == 'success' || needs.build-fips.result == 'success' || needs.build-quic.result == 'success')
+    uses: ./.github/workflows/reusable/upload-registry.yml
+    with:
+      component: 'openssl'
+      platform: 'linux-gcc11'
+      registry: 'artifactory'
+    secrets: inherit

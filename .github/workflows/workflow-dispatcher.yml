@@ -1,0 +1,141 @@
+name: Workflow Dispatcher
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  analyze-changes:
+    name: Analyze Changes
+    runs-on: ubuntu-latest
+    outputs:
+      has-crypto-changes: ${{ steps.changes.outputs.crypto }}
+      has-ssl-changes: ${{ steps.changes.outputs.ssl }}
+      has-performance-changes: ${{ steps.changes.outputs.performance }}
+      build-status: ${{ steps.build.outputs.status }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyze file changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, check changed files
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          else
+            # For pushes, check recent commits
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+          
+          echo "Changed files: $CHANGED_FILES"
+          
+          # Check for crypto changes
+          if echo "$CHANGED_FILES" | grep -E "(crypto|ssl)" > /dev/null; then
+            echo "crypto=true" >> $GITHUB_OUTPUT
+          else
+            echo "crypto=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for SSL changes
+          if echo "$CHANGED_FILES" | grep -E "(ssl|tls)" > /dev/null; then
+            echo "ssl=true" >> $GITHUB_OUTPUT
+          else
+            echo "ssl=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for performance changes
+          if echo "$CHANGED_FILES" | grep -E "(performance|benchmark|optimization)" > /dev/null; then
+            echo "performance=true" >> $GITHUB_OUTPUT
+          else
+            echo "performance=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check build status
+        id: build
+        run: |
+          # Check if there are any failed builds
+          if gh run list --status failure --limit 1 > /dev/null 2>&1; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-security-review:
+    name: Trigger Security Review
+    needs: analyze-changes
+    if: |
+      github.event_name == 'pull_request' && 
+      (needs.analyze-changes.outputs.has-crypto-changes == 'true' || 
+       needs.analyze-changes.outputs.has-ssl-changes == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Security Review Workflow
+        run: |
+          echo "Triggering Security Review Workflow..."
+          if gh workflow list | grep -q "security-review"; then
+            gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+          else
+            echo "⚠️ Security Review Workflow not found, skipping trigger"
+          fi
+
+  trigger-component-development:
+    name: Trigger Component Development
+    needs: analyze-changes
+    if: |
+      github.event_name == 'push' && 
+      github.ref == 'refs/heads/main' && 
+      needs.analyze-changes.outputs.build-status == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Component Development Workflow
+        run: |
+          echo "Triggering Component Development Workflow..."
+          if gh workflow list | grep -q "component-development"; then
+            gh workflow run component-development.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ Component Development Workflow not found, skipping trigger"
+          fi
+
+  trigger-performance-optimization:
+    name: Trigger Performance Optimization
+    needs: analyze-changes
+    if: |
+      needs.analyze-changes.outputs.has-performance-changes == 'true' ||
+      github.event.inputs.trigger_reason == 'regression_detected'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Performance Optimization Workflow
+        run: |
+          echo "Triggering Performance Optimization Workflow..."
+          if gh workflow list | grep -q "performance-optimization"; then
+            gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+          else
+            echo "⚠️ Performance Optimization Workflow not found, skipping trigger"
+          fi
+
+  workflow-summary:
+    name: Workflow Summary
+    needs: [analyze-changes, trigger-security-review, trigger-component-development, trigger-performance-optimization]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "## Workflow Dispatcher Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Change Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- Crypto changes: ${{ needs.analyze-changes.outputs.has-crypto-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- SSL changes: ${{ needs.analyze-changes.outputs.has-ssl-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance changes: ${{ needs.analyze-changes.outputs.has-performance-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Build status: ${{ needs.analyze-changes.outputs.build-status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Triggered Workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Review: ${{ needs.trigger-security-review.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Component Development: ${{ needs.trigger-component-development.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance Optimization: ${{ needs.trigger-performance-optimization.result }}" >> $GITHUB_STEP_SUMMARY
