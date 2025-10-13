@@ -24,7 +24,7 @@ class OpenSSLToolsConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
     
     # No source code to build - this is a tools package
-    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*"
+    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/automation/ai_agents/*"
     
     def layout(self):
         basic_layout(self)
@@ -36,6 +36,7 @@ class OpenSSLToolsConan(ConanFile):
         copy(self, "docker/*", src=self.source_folder, dst=os.path.join(self.package_folder, "docker"))
         copy(self, "templates/*", src=self.source_folder, dst=os.path.join(self.package_folder, "templates"))
         copy(self, ".cursor/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".cursor"))
+        copy(self, "openssl_tools/automation/ai_agents/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools/automation/ai_agents"))
         
         # Copy configuration files
         copy(self, "*.md", src=self.source_folder, dst=self.package_folder)
@@ -53,10 +54,17 @@ class OpenSSLToolsConan(ConanFile):
             "description": self.description,
             "tools": [
                 "docker-build-and-upload.sh",
-                "cursor-agents-coordinator.sh", 
+                "cursor-agents-coordinator.sh",
                 "validate-artifactory-packages.sh",
                 "generate_sbom.py",
                 "dev-setup.sh"
+            ],
+            "mcp_servers": [
+                "database_server.py",
+                "build_server.py",
+                "security_server.py",
+                "ci_server.py",
+                "workflow_fixer.py"
             ],
             "profiles": [
                 "ubuntu-20.04.profile",
@@ -92,6 +100,8 @@ class OpenSSLToolsConan(ConanFile):
         self.runenv_info.define("OPENSSL_TOOLS_SCRIPTS", os.path.join(self.package_folder, "scripts"))
         self.runenv_info.define("OPENSSL_TOOLS_PROFILES", os.path.join(self.package_folder, "profiles"))
         self.runenv_info.define("OPENSSL_TOOLS_DOCKER", os.path.join(self.package_folder, "docker"))
+        self.runenv_info.define("OPENSSL_TOOLS_MCP", os.path.join(self.package_folder, "openssl_tools", "automation", "ai_agents"))
+        self.runenv_info.define("OPENSSL_TOOLS_CURSOR_CONFIG", os.path.join(self.package_folder, ".cursor"))
         
         # Add to PATH
         self.env_info.PATH.append(os.path.join(self.package_folder, "scripts"))
