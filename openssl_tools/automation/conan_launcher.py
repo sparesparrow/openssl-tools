@@ -24,12 +24,14 @@ from util.conan_python_env import (
     setup_conan_python_environment,
     get_conan_python_interpreter
 )
-from conan_tools.conan_functions import (
-    get_default_conan, setup_parallel_download, remove_conan_lock_files
-)
-from conan_tools.artifactory_functions import (
-    enable_conan_remote, setup_artifactory_remote
-)
+# Note: conan_tools module was consolidated into openssl_tools
+# These functions need to be implemented or imported from the correct location
+# from conan_tools.conan_functions import (
+#     get_default_conan, setup_parallel_download, remove_conan_lock_files
+# )
+# from conan_tools.artifactory_functions import (
+#     enable_conan_remote, setup_artifactory_remote
+# )
 
 
 class ConfigLoaderManager:

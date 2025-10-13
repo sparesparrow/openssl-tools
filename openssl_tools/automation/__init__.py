@@ -1,23 +1,20 @@
 """
-Automation Module
-
-This module provides comprehensive automation capabilities for OpenSSL development,
-including workflow management, continuous integration, and AI-powered agents.
-
-Submodules:
-    workflow_management: GitHub Actions workflow management and monitoring
-    continuous_integration: CI/CD automation and deployment
-    ai_agents: Model Context Protocol server implementations
+OpenSSL Tools Launcher Module
+Launcher scripts and GUI tools for OpenSSL development
 """
 
-from .workflow_management import WorkflowManager, UnifiedWorkflowManager
-from .continuous_integration import ConanAutomation, DeploymentManager
-from .ai_agents import GitHubWorkflowFixer
+from .conan_launcher import (
+    Configuration,
+    check_conan_validity,
+    add_packages_paths_to_search_paths,
+    prepare_package_script_arguments,
+    run_package_python_script
+)
 
 __all__ = [
-    "WorkflowManager",
-    "UnifiedWorkflowManager",
-    "ConanAutomation", 
-    "DeploymentManager",
-    "GitHubWorkflowFixer",
+    'Configuration',
+    'check_conan_validity',
+    'add_packages_paths_to_search_paths',
+    'prepare_package_script_arguments',
+    'run_package_python_script'
 ]

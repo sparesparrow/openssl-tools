@@ -1,74 +1,27 @@
-OpenSSL::Query
-==============
+# OpenSSL Query Tool
 
-A module to query certain information about OpenSSL committers as well
-as members of the OMC (OpenSSL Management Committee).  These data are
-usually interesting for other programs that need to verify identities,
-whether a certain person holds a CLA, that sort of thing.
+> **⚠️ DEPRECATED**: This package is being extracted to a separate repository.
 
-OpenSSL::Query is built to be able to handle several implementations
-for access to the databases that hold the data.  The default
-implementation uses a RESTful API with JSON encoded responses,
-OpenSSL::Query::REST.
+## New Location
 
-Requirements
-------------
+This package has been moved to: **https://github.com/sparesparrow/openssl-query**
 
-OpenSSL::Query requires the following modules to build:
+## Migration Status
 
-- Module::Install		(debian package libmodule-install-perl)
+- **Extraction Date**: TBD
+- **New Repository**: `sparesparrow/openssl-query`
+- **Status**: Planning phase
 
-OpenSSL::Query requires these extra modules to run:
+## What to Do
 
-- Class::Method::Modifiers	(debian package libclass-method-modifiers-perl)
-- Moo				(debian package libmoo-perl)
-- URI::Encode			(debian package liburi-encode-perl)
-- LWP::UserAgent
-- LWP::Protocol::https
+1. **For new development**: Use the new repository
+2. **For existing code**: Update imports to reference the new package
+3. **For CI/CD**: Update workflows to use external package
 
-Any other module OpenSSL::Query depends on should be part of core
-perl.
+## Temporary Usage
 
-On Debian, you can use the following command to install the required packages:
+Until extraction is complete, this package remains available in this repository but should not be used for new development.
 
-    sudo apt install libmodule-install-perl libclass-method-modifiers-perl libmoo-perl liburi-encode-perl
+## Contact
 
-Installation
-------------
-
-    perl Makefile.PL
-    make && sudo make install
-
-Local installation
-------------
-
-For a local installation, you might want to consider using local::lib
-(debian package liblocal-lib-perl).  In that case, running Makefile.PL
-is slightly different:
-
-    perl -Mlocal::lib Makefile.PL
-
-Other than that, follow the instructions in "Installation" above.
-
-To get the paths right permanently, you might want to consider adding
-this in your `.bash_profile`, `.bashrc` och corresponding shell init
-script:
-
-    eval "`perl -I$HOME/perl5/lib/perl5 -Mlocal::lib`"
-
-Testing
--------
-
-Testing is done like this:
-
-    make test
-
-However, it requires the additional Perl module Dancer2 and
-plackup (debian packages libdancer2-perl and libplack-perl)
-and that a temporary query service is started as well.
-This is part of QueryApp, and is started like this:
-
-    here=`pwd`                # the directory OpenSSL-Query/
-    cd ../QueryApp            # Or wherever you have it checked out
-    PERSONDB=./t/query_data/pdb.yaml CLADB=./t/query_data/cdb.txt \
-    PERL5LIB=./lib:$here/lib plackup bin/query.psgi
+For questions about the migration, please open an issue in the main openssl-tools repository.

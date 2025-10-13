@@ -13,15 +13,15 @@ Classes:
 """
 
 from .multi_registry import MultiRegistryUploader
-from .package_upload import PackageUploader
-from .ci_setup import CISetup
-from .python_env_setup import PythonEnvSetup
-from .github_packages_setup import GitHubPackagesSetup
+# from .package_upload import PackageUploader  # No class defined in this file
+from .ci_setup import CIEnvironmentSetup
+from .python_env_setup import ConanPythonEnvironmentSetup
+from .github_packages_setup import GitHubPackagesConanSetup
 
 __all__ = [
     "MultiRegistryUploader",
-    "PackageUploader",
-    "CISetup",
-    "PythonEnvSetup",
-    "GitHubPackagesSetup",
+    # "PackageUploader",  # No class defined
+    "CIEnvironmentSetup",
+    "ConanPythonEnvironmentSetup",
+    "GitHubPackagesConanSetup",
 ]

@@ -314,3 +314,16 @@ mcp_*.log
 # Temporary test files
 test-extraction.sh
 test-json-extraction.sh
+
+# Deprecated legacy scripts (for transition period)
+scripts/legacy/
+
+# Extracted standalone packages (until moved to separate repos)
+openssl-migration/
+openssl-crypto/
+openssl-ssl/
+OpenSSL-Query/
+
+# Temporary documentation
+*_PLAN.md
+EXTRACTION_PLAN.md
