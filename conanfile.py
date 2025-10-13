@@ -11,9 +11,9 @@ import json
 from pathlib import Path
 
 class OpenSSLToolsConan(ConanFile):
-    name = "openssl-tools"
-    version = "1.0.0"
-    description = "OpenSSL build tools, automation scripts, and infrastructure components"
+    name = "openssl-build-tools"
+    version = "1.2.0"
+    description = "Build orchestration for OpenSSL with foundation dependencies"
     license = "Apache-2.0"
     url = "https://github.com/sparesparrow/openssl-tools"
     homepage = "https://github.com/sparesparrow/openssl-tools"
@@ -21,10 +21,15 @@ class OpenSSLToolsConan(ConanFile):
     
     # Package settings
     package_type = "application"
-    settings = "os", "arch", "compiler", "build_type"
+    settings = "os", "arch"
     
     # No source code to build - this is a tools package
     exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/automation/ai_agents/*"
+
+    def requirements(self):
+        # Foundation packages published to Cloudsmith
+        self.requires("openssl-base/1.0.0")
+        self.requires("openssl-fips-data/140-3.1")
     
     def layout(self):
         basic_layout(self)
@@ -105,3 +110,6 @@ class OpenSSLToolsConan(ConanFile):
         
         # Add to PATH
         self.env_info.PATH.append(os.path.join(self.package_folder, "scripts"))
+
+        # Expose build tools version for consumers
+        self.runenv_info.define("OPENSSL_BUILD_TOOLS_VERSION", str(self.version))
