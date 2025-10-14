@@ -1,0 +1,26 @@
+# MCP GitHub Workflow Fixer Server Requirements
+# Core MCP dependencies
+mcp>=0.1.0
+fastmcp>=0.9.0
+
+# HTTP client for GitHub API
+httpx>=0.25.0
+httpx[http2]>=0.25.0
+
+# Data validation and serialization
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Template engine for reports
+jinja2>=3.1.0
+
+# YAML parsing
+pyyaml>=6.0.0
+
+# Retry logic
+tenacity>=8.2.0
+
+# Optional: For development and testing
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+
