@@ -1,0 +1,98 @@
+name: Validate Deploy vs Conan Parity
+
+on:
+  schedule:
+    # Run nightly to catch drift
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to test (comma-separated)'
+        required: false
+        default: 'linux,windows,macos'
+
+jobs:
+  test-matrix:
+    strategy:
+      matrix:
+        mode: [conan, deploy]
+        platform: [linux, windows, macos]
+        exclude:
+          # Deploy mode doesn't need windows/macOS for now (can be added later)
+          - mode: deploy
+            platform: windows
+          - mode: deploy
+            platform: macos
+
+    runs-on: ${{ matrix.platform == 'linux' && 'ubuntu-latest' || matrix.platform == 'windows' && 'windows-latest' || 'macos-latest' }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Conan (for conan mode)
+      if: matrix.mode == 'conan'
+      run: |
+        pip install conan
+        conan config install https://github.com/conan-io/conan-extensions.git
+
+    - name: Download full_deploy bundle (for deploy mode)
+      if: matrix.mode == 'deploy'
+      run: |
+        # Download latest release artifact
+        gh release download --pattern "full-deploy-${{ matrix.platform }}-x86_64-Release.zip" --output full_deploy.zip || echo "No release found, skipping"
+        if [ -f "full_deploy.zip" ]; then
+          unzip full_deploy.zip -d .deps/
+          echo "Using deploy bundle from .deps/"
+        else
+          echo "No deploy bundle available, skipping deploy mode test"
+          exit 1
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Test Conan mode
+      if: matrix.mode == 'conan'
+      run: |
+        cd ../openssl-conan-base
+        conan create . --build=missing --settings=build_type=Release
+        cd ../openssl
+        conan install . --build=missing --settings=build_type=Release
+        # Basic smoke test
+        openssl version
+
+    - name: Test Deploy mode
+      if: matrix.mode == 'deploy' && hashFiles('full_deploy.zip') != ''
+      run: |
+        # Set up environment for deploy mode
+        export PATH="$PWD/.deps/full_deploy/bin:$PATH"
+        if [ "${{ matrix.platform }}" = "linux" ]; then
+          export LD_LIBRARY_PATH="$PWD/.deps/full_deploy/lib:$LD_LIBRARY_PATH"
+        elif [ "${{ matrix.platform }}" = "macos" ]; then
+          export DYLD_LIBRARY_PATH="$PWD/.deps/full_deploy/lib:$DYLD_LIBRARY_PATH"
+        fi
+
+        # Basic smoke test
+        openssl version
+
+        # Run graph analyzer to validate dependencies
+        python tools/graph_analyzer.py ../openssl/conanfile.py --fail-on-conflict
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-${{ matrix.mode }}-${{ matrix.platform }}
+        path: |
+          test-results/
+          *.log
+        retention-days: 7
+
+    - name: Compare modes
+      if: matrix.mode == 'conan'
+      run: |
+        echo "Conan mode test completed for ${{ matrix.platform }}"
+        # Here we could compare outputs between modes if both were run
