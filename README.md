@@ -49,6 +49,62 @@ gh secret set OPENSSL_TOKEN --repo sparesparrow/openssl-tools --body "$YOUR_GITH
 
 **Required Token Scopes**: `repo`, `workflow`
 
+## Conan Extensions Integration
+
+### Graph API Analyzer (`tools/graph_analyzer.py`)
+Analyzes Conan dependency graphs for conflicts and outdated versions:
+
+```bash
+python tools/graph_analyzer.py path/to/conanfile.py --fail-on-conflict
+```
+
+**Features:**
+- Dependency tree analysis
+- Conflict detection
+- Version compatibility checking
+- Exit codes for CI integration
+
+### Deploy Consumer (`tools/deploy_dev.py`)
+Downloads and activates full_deploy bundles without requiring Conan:
+
+```bash
+python tools/deploy_dev.py --url <release_url> --dest .deps
+```
+
+**Features:**
+- Downloads from GitHub Releases or Cloudsmith
+- Extracts to configurable directory
+- Sets up environment variables
+- No Conan dependency required
+
+## Development Workflow
+
+### With Conan (Standard)
+```bash
+# Install dependencies
+conan install ../openssl-conan-base --build=missing
+
+# Run analysis
+python tools/graph_analyzer.py ../openssl/conanfile.py
+```
+
+### With Deploy Bundle (No Conan)
+```bash
+# Download and activate bundle
+python tools/deploy_dev.py --url https://github.com/.../releases/download/.../full-deploy-linux-x86_64-Release.zip
+
+# Run analysis
+python tools/graph_analyzer.py ../openssl/conanfile.py
+```
+
+## Integration
+
+This repository integrates with:
+- **openssl-conan-base**: For dependency packages and full_deploy bundles
+- **openssl**: For core OpenSSL library testing
+- **openssl-fips-policy**: For FIPS compliance validation
+- **openssl-devenv**: For workspace orchestration
+
 ## Workflow Integration
 
 ```mermaid
