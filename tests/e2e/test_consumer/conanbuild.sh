@@ -1,0 +1,1 @@
+. "$HOME/projects/openssl-tools/test_consumer/conanbuildenv.sh"

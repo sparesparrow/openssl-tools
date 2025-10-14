@@ -1,159 +1,71 @@
-# MCP GitHub Workflow Fixer Server
+# Scripts Directory
 
-A Model Context Protocol (MCP) server that analyzes and fixes failing GitHub workflows using AI-powered analysis.
+This directory contains standalone scripts and utilities that are not part of the main `openssl_tools` package.
 
-## Features
+## What Remains in scripts/
 
-- **Workflow Failure Analysis**: Automatically identifies common issues in GitHub Actions workflows
-- **Intelligent Fix Suggestions**: Provides targeted fixes for dependency, timeout, and environment issues
-- **Workflow Monitoring**: Real-time status tracking and reporting
-- **Automated Remediation**: Apply fixes directly through MCP tools
-- **Comprehensive Reporting**: Generate detailed analysis reports with actionable insights
+### Shell Scripts
+- `*.sh` - Shell scripts for build automation and setup
+- `*.bat` - Windows batch scripts
 
-## Installation
+### Standalone Utilities
+- Scripts that are truly standalone and don't fit into the package structure
+- Build and deployment scripts that need to remain in scripts/
 
-### Prerequisites
+### Legacy Scripts
+- Scripts that are being phased out but kept for backward compatibility
 
-- Python 3.8+
-- GitHub Personal Access Token with `repo` and `workflow` permissions
+## What Has Moved to openssl_tools/
 
-### Setup
+### Python Modules (Moved to Package Structure)
+- **Security**: `openssl_tools/security/` - Security validation, authentication, key management
+- **Testing**: `openssl_tools/testing/` - Test harnesses, quality management, fuzz testing
+- **Monitoring**: `openssl_tools/monitoring/` - Status reporting, log management
+- **Development**: `openssl_tools/development/` - Build system, package management
+- **Automation**: `openssl_tools/automation/` - Workflow management, CI/CD, AI agents
+- **Foundation**: `openssl_tools/foundation/` - Core utilities, command-line interfaces
 
-1. Install dependencies:
+### Examples and Demos
+- Moved to `examples/` directory for better organization
+
+## How to Use the New Package Structure
+
+### Import from Package
+```python
+# Instead of importing from scripts/
+from openssl_tools.security import BuildValidator
+from openssl_tools.testing import TestHarness
+from openssl_tools.monitoring import StatusReporter
+```
+
+### Use CLI Commands
 ```bash
-pip install -r requirements.txt
+# New CLI commands
+openssl-tools security validate
+openssl-tools test run
+openssl-tools monitor status
+openssl-sbom --help
 ```
 
-2. Set up GitHub token:
-```bash
-export GITHUB_TOKEN="your_github_token_here"
+### Backward Compatibility
+Root-level Python files now serve as thin wrappers:
+```python
+# These still work for backward compatibility
+python conan_remote_manager.py --help
+python build_optimizer.py --help
 ```
 
-## Usage
+## Migration Guide
 
-### Running the MCP Server
+1. **Update Imports**: Change imports from `scripts/` to `openssl_tools.`
+2. **Use CLI**: Prefer CLI commands over direct script execution
+3. **Check Examples**: Look in `examples/` for usage examples
+4. **Read Documentation**: See `docs/python-structure-improved.md` for detailed structure
 
-```bash
-python github_workflow_fixer.py
-```
+## Contributing
 
-### MCP Tools Available
-
-#### `analyze_repository_workflows`
-Analyze GitHub workflow failures and suggest fixes.
-
-**Parameters:**
-- `repository`: GitHub repository in format 'owner/repo'
-- `github_token`: (Optional) GitHub token, defaults to GITHUB_TOKEN env var
-- `limit`: Maximum workflow runs to analyze (default: 20)
-
-#### `get_workflow_status`
-Get current workflow status for a repository.
-
-**Parameters:**
-- `repository`: GitHub repository in format 'owner/repo'
-- `github_token`: (Optional) GitHub token
-- `branch`: (Optional) Specific branch to check
-
-#### `fix_workflow_issues`
-Apply automated fixes to common workflow issues.
-
-**Parameters:**
-- `repository`: GitHub repository in format 'owner/repo'
-- `github_token`: (Optional) GitHub token
-- `dry_run`: If true, show changes without applying (default: true)
-- `max_fixes`: Maximum number of fixes to apply (default: 3)
-
-#### `rerun_failed_workflows`
-Trigger reruns of failed workflows to check for transient issues.
-
-**Parameters:**
-- `repository`: GitHub repository in format 'owner/repo'
-- `github_token`: (Optional) GitHub token
-- `max_reruns`: Maximum workflows to rerun (default: 5)
-
-## Configuration
-
-### Environment Variables
-
-- `GITHUB_TOKEN`: GitHub Personal Access Token (required)
-- `LOG_LEVEL`: Logging level (default: INFO)
-
-### Supported Issue Types
-
-The server automatically detects and fixes:
-
-1. **Dependency Issues**: npm/pip installation failures
-2. **Timeout Issues**: Workflow timeouts and deadline exceeded errors
-3. **Permission Issues**: Access denied or insufficient permissions
-4. **Environment Issues**: Missing commands or PATH problems
-
-## Integration with Cursor
-
-To integrate with Cursor IDE:
-
-1. Add to your `.cursor/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "github-workflow-fixer": {
-      "command": "python",
-      "args": ["/path/to/github_workflow_fixer.py"],
-      "env": {
-        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-2. Restart Cursor to load the MCP server
-
-## Error Handling
-
-The server includes comprehensive error handling:
-
-- **Rate Limiting**: Automatic retry with exponential backoff
-- **Authentication**: Clear error messages for invalid tokens
-- **Network Issues**: Timeout handling and connection recovery
-- **Invalid Input**: Parameter validation with helpful error messages
-
-## Security Considerations
-
-- GitHub tokens are handled securely and never logged
-- All API calls use HTTPS with certificate validation
-- No sensitive data is stored locally
-- Dry-run mode available for all fix operations
-
-## Development
-
-### Running Tests
-
-```bash
-# Install test dependencies
-pip install pytest pytest-asyncio
-
-# Run tests
-pytest
-```
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## License
-
-This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-
-- Open an issue on GitHub
-- Check the logs in `mcp_workflow_fixer.log`
-- Ensure your GitHub token has the required permissions
-
+When adding new scripts:
+1. **Library Code**: Add to appropriate `openssl_tools/` package
+2. **Standalone Scripts**: Add to `scripts/` if truly standalone
+3. **Examples**: Add to `examples/` for demonstration purposes
+4. **CLI Commands**: Add entry points to `pyproject.toml`

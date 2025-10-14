@@ -1,0 +1,378 @@
+name: Package Artifacts Upload
+
+on:
+  push:
+    branches: [main, master, 'release/*']
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-dev/**'
+      - 'VERSION.dat'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-dev/**'
+  workflow_dispatch:
+    inputs:
+      upload_to_artifactory:
+        description: 'Upload to Artifactory'
+        type: boolean
+        default: true
+      upload_to_github_packages:
+        description: 'Upload to GitHub Packages'
+        type: boolean
+        default: true
+      upload_to_conan_center:
+        description: 'Upload to Conan Center'
+        type: boolean
+        default: false
+      package_version:
+        description: 'Package version override'
+        required: false
+        default: 'auto'
+
+env:
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      should-upload: ${{ steps.changes.outputs.should-upload }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            openssl:
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'apps/**'
+              - 'include/**'
+              - 'CMakeLists.txt'
+              - 'configure'
+              - 'config'
+              - 'VERSION.dat'
+            conan:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-dev/**'
+            should-upload:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-dev/**'
+              - 'VERSION.dat'
+
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      package_name: ${{ steps.version.outputs.package_name }}
+      should-upload: ${{ steps.version.outputs.should-upload }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Determine package version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.package_version }}" = "auto" ] || [ -z "${{ github.event.inputs.package_version }}" ]; then
+            if [ -f "VERSION.dat" ]; then
+              VERSION=$(cat VERSION.dat | tr -d '\n')
+            else
+              VERSION="4.0.0-dev"
+            fi
+          else
+            VERSION="${{ github.event.inputs.package_version }}"
+          fi
+          
+          # Determine package name
+          PACKAGE_NAME="openssl"
+          
+          # Check if this is a release or development build
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "should-upload=true" >> $GITHUB_OUTPUT
+            echo "is-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-upload=true" >> $GITHUB_OUTPUT
+            echo "is-release=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+          echo "Package: $PACKAGE_NAME"
+          echo "Should upload: true"
+
+  build-packages:
+    needs: [detect-changes, determine-version]
+    if: needs.detect-changes.outputs.should-upload == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            profile: linux-gcc11
+            platform: linux-x86_64
+          - os: ubuntu-22.04
+            profile: linux-clang15
+            platform: linux-x86_64-clang
+          - os: windows-2022
+            profile: windows-msvc2022
+            platform: windows-x86_64
+          - os: macos-12
+            profile: macos-clang14
+            platform: macos-x86_64
+          - os: macos-14
+            profile: macos-arm64
+            platform: macos-arm64
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Set up Conan Python Environment
+        run: |
+          python scripts/setup-ci-environment.py
+      
+      - name: Build OpenSSL package
+        run: |
+          conan create . --profile=conan-dev/profiles/${{ matrix.profile }}.profile --build=missing
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-${{ needs.determine-version.outputs.version }}-${{ matrix.platform }}
+          path: |
+            ~/.conan2/p/*/p/
+          retention-days: 30
+
+  upload-to-artifactory:
+    needs: [detect-changes, determine-version, build-packages]
+    if: needs.detect-changes.outputs.should-upload == 'true' && (github.event.inputs.upload_to_artifactory == 'true' || github.event.inputs.upload_to_artifactory == '')
+    runs-on: ubuntu-latest
+    environment: artifactory
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0.0
+          conan profile detect --force
+      
+      - name: Configure Artifactory Remote
+        run: |
+          conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/conan-local
+          conan user -p ${{ secrets.ARTIFACTORY_PASSWORD }} -r artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+      
+      - name: Upload packages to Artifactory
+        run: |
+          # Find all package directories
+          find packages/ -name "openssl" -type d | while read pkg_dir; do
+            echo "Uploading package from: $pkg_dir"
+            # Extract package info and upload
+            conan upload "openssl/${{ needs.determine-version.outputs.version }}@openssl/stable" -r=artifactory --all --confirm || true
+          done
+      
+      - name: Generate Artifactory installation instructions
+        run: |
+          cat > artifactory_instructions.md << 'EOF'
+          # Artifactory Installation Instructions
+          
+          ## Add Artifactory Remote
+          ```bash
+          conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/conan-local
+          conan user -p <password> -r artifactory <username>
+          ```
+          
+          ## Install OpenSSL Package
+          ```bash
+          conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable -r=artifactory
+          ```
+          
+          ## Package Details
+          - Version: ${{ needs.determine-version.outputs.version }}
+          - Repository: conan-local
+          - Remote: artifactory
+          EOF
+          
+          echo "## Artifactory Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Packages uploaded to: ${{ secrets.ARTIFACTORY_URL }}/conan-local" >> $GITHUB_STEP_SUMMARY
+
+  upload-to-github-packages:
+    needs: [detect-changes, determine-version, build-packages]
+    if: needs.detect-changes.outputs.should-upload == 'true' && (github.event.inputs.upload_to_github_packages == 'true' || github.event.inputs.upload_to_github_packages == '')
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0.0
+          conan profile detect --force
+      
+      - name: Configure GitHub Packages Remote
+        run: |
+          conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }}
+          conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
+      
+      - name: Upload packages to GitHub Packages
+        run: |
+          conan upload "openssl/${{ needs.determine-version.outputs.version }}@openssl/stable" -r=github-packages --all --confirm
+      
+      - name: Generate GitHub Packages installation instructions
+        run: |
+          cat > github_packages_instructions.md << 'EOF'
+          # GitHub Packages Installation Instructions
+          
+          ## Add GitHub Packages Remote
+          ```bash
+          conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }}
+          conan user -p <github_token> -r github-packages <username>
+          ```
+          
+          ## Install OpenSSL Package
+          ```bash
+          conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable -r=github-packages
+          ```
+          
+          ## Package Details
+          - Version: ${{ needs.determine-version.outputs.version }}
+          - Repository: ${{ github.repository }}
+          - Remote: github-packages
+          EOF
+          
+          echo "## GitHub Packages Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Packages uploaded to: https://maven.pkg.github.com/${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+
+  upload-to-conan-center:
+    needs: [detect-changes, determine-version, build-packages]
+    if: needs.detect-changes.outputs.should-upload == 'true' && github.event.inputs.upload_to_conan_center == 'true'
+    runs-on: ubuntu-latest
+    environment: conan-center
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0.0
+          conan profile detect --force
+      
+      - name: Configure Conan Center Remote
+        run: |
+          conan remote add conancenter https://center.conan.io
+          conan user -p ${{ secrets.CONAN_CENTER_PASSWORD }} -r conancenter ${{ secrets.CONAN_CENTER_USERNAME }}
+      
+      - name: Upload packages to Conan Center
+        run: |
+          conan upload "openssl/${{ needs.determine-version.outputs.version }}@openssl/stable" -r=conancenter --all --confirm
+      
+      - name: Generate Conan Center installation instructions
+        run: |
+          cat > conan_center_instructions.md << 'EOF'
+          # Conan Center Installation Instructions
+          
+          ## Install OpenSSL Package
+          ```bash
+          conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable
+          ```
+          
+          ## Package Details
+          - Version: ${{ needs.determine-version.outputs.version }}
+          - Repository: Conan Center
+          - Remote: conancenter (default)
+          EOF
+          
+          echo "## Conan Center Upload Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Packages uploaded to: https://center.conan.io" >> $GITHUB_STEP_SUMMARY
+
+  create-release:
+    needs: [detect-changes, determine-version, upload-to-artifactory, upload-to-github-packages, upload-to-conan-center]
+    if: needs.detect-changes.outputs.should-upload == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.determine-version.outputs.version }}
+          release_name: OpenSSL ${{ needs.determine-version.outputs.version }} Conan Package
+          body: |
+            OpenSSL ${{ needs.determine-version.outputs.version }} Conan Package
+            
+            ## Platforms Supported
+            - Linux (GCC 11, Clang 15)
+            - Windows (MSVC 2022)
+            - macOS (Clang 14, ARM64)
+            
+            ## Installation from Artifactory
+            ```bash
+            conan remote add artifactory ${{ secrets.ARTIFACTORY_URL }}/conan-local
+            conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable -r=artifactory
+            ```
+            
+            ## Installation from GitHub Packages
+            ```bash
+            conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }}
+            conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable -r=github-packages
+            ```
+            
+            ## Installation from Conan Center
+            ```bash
+            conan install openssl/${{ needs.determine-version.outputs.version }}@openssl/stable
+            ```
+          draft: false
+          prerelease: false

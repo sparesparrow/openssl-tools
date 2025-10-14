@@ -1,0 +1,72 @@
+name: Lightweight Check
+
+on:
+  push:
+    branches-ignore:
+      - master
+
+jobs:
+  lightweight-checks:
+    name: Lightweight Checks (< 2 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.32'
+          
+      - name: Perl Syntax Check
+        run: |
+          echo "Running Perl syntax check..."
+          find . -name "*.pl" -exec perl -c {} \; || {
+            echo "❌ Perl syntax errors found"
+            exit 1
+          }
+          echo "✅ Perl syntax check passed"
+          
+      - name: Code Linting
+        run: |
+          echo "Running code linting..."
+          # Check for common Perl issues
+          if grep -r "use strict" . --include="*.pl" > /dev/null; then
+            echo "✅ 'use strict' found in Perl files"
+          else
+            echo "⚠️  Warning: No 'use strict' found in Perl files"
+          fi
+          
+          # Check for basic C syntax issues
+          if command -v gcc >/dev/null 2>&1; then
+            find . -name "*.c" -exec gcc -fsyntax-only {} \; 2>/dev/null || echo "⚠️  Some C syntax issues found"
+          fi
+          
+      - name: Basic Compilation Check
+        run: |
+          echo "Running basic compilation check..."
+          # Single config, single platform check
+          if [ -f "Configure" ]; then
+            ./config --prefix=/tmp/openssl-test --openssldir=/tmp/openssl-test > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "✅ Basic configuration successful"
+            else
+              echo "❌ Basic configuration failed"
+              exit 1
+            fi
+          else
+            echo "⚠️  No Configure script found"
+          fi
+          
+      - name: Success Notification
+        if: success()
+        run: |
+          echo "✅ Lightweight checks passed for branch ${{ github.ref_name }}"
+          
+      - name: Failure Notification
+        if: failure()
+        run: |
+          echo "❌ Lightweight checks failed for branch ${{ github.ref_name }}"
+          echo "Full validation will run when PR is created"

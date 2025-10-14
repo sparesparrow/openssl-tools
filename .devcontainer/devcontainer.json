@@ -1,0 +1,53 @@
+{
+  "name": "OpenSSL Tools Development",
+  "image": "mcr.microsoft.com/devcontainers/ubuntu:22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.cmake-tools",
+        "redhat.vscode-yaml",
+        "ms-vscode.vscode-json",
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "cmake.configureOnOpen": true,
+        "files.associations": {
+          "*.profile": "ini",
+          "Dockerfile*": "dockerfile"
+        }
+      }
+    }
+  },
+  "postCreateCommand": "pip install conan==2.0.* && conan profile detect --force && chmod +x scripts/*.sh",
+  "mounts": [
+    "source=${localWorkspaceFolder}/artifacts,target=/workspaces/openssl-tools/artifacts,type=bind,consistency=cached"
+  ],
+  "remoteEnv": {
+    "ARTIFACTORY_URL": "${localEnv:ARTIFACTORY_URL}",
+    "ARTIFACTORY_TOKEN": "${localEnv:ARTIFACTORY_TOKEN}",
+    "ARTIFACTORY_REPO": "openssl-releases"
+  },
+  "forwardPorts": [8080, 8081],
+  "portsAttributes": {
+    "8080": {
+      "label": "Artifactory",
+      "onAutoForward": "notify"
+    },
+    "8081": {
+      "label": "Build Monitor",
+      "onAutoForward": "silent"
+    }
+  }
+}

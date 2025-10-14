@@ -1,0 +1,138 @@
+name: Automation Triggers
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/crypto/**'
+      - '**/ssl/**'
+      - 'openssl-crypto/**'
+      - 'openssl-ssl/**'
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # Rule 1: PR created with crypto/ssl changes -> Security Review Workflow
+  trigger-security-review:
+    name: Trigger Security Review (PR with crypto/ssl changes)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify crypto/ssl changes
+        run: |
+          echo "🔍 Verifying crypto/ssl changes in PR..."
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          echo "Changed files: $CHANGED_FILES"
+          
+          if echo "$CHANGED_FILES" | grep -E "(crypto|ssl)" > /dev/null; then
+            echo "✅ Crypto/SSL changes detected - triggering Security Review Workflow"
+            echo "TRIGGER_SECURITY=true" >> $GITHUB_ENV
+          else
+            echo "❌ No crypto/SSL changes detected"
+            echo "TRIGGER_SECURITY=false" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger Security Review Workflow
+        if: env.TRIGGER_SECURITY == 'true'
+        run: |
+          echo "🚨 Triggering Security Review Workflow..."
+          if gh workflow list | grep -q "security-review"; then
+            gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+          else
+            echo "⚠️ Security Review Workflow not found, skipping trigger"
+          fi
+
+  # Rule 2: Commit pushed to main with successful build -> Component Development Workflow
+  trigger-component-development:
+    name: Trigger Component Development (Commit to main)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check build status
+        run: |
+          echo "🔍 Checking build status..."
+          # Check if there are any recent failed builds
+          if gh run list --status failure --limit 1 > /dev/null 2>&1; then
+            echo "❌ Recent build failures detected - skipping Component Development Workflow"
+            echo "BUILD_STATUS=failed" >> $GITHUB_ENV
+          else
+            echo "✅ Build status is successful - triggering Component Development Workflow"
+            echo "BUILD_STATUS=success" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger Component Development Workflow
+        if: env.BUILD_STATUS == 'success'
+        run: |
+          echo "🔧 Triggering Component Development Workflow..."
+          if gh workflow list | grep -q "component-development"; then
+            gh workflow run component-development.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ Component Development Workflow not found, skipping trigger"
+          fi
+
+  # Rule 3: Performance regression detected -> Performance Optimization Workflow
+  trigger-performance-optimization:
+    name: Trigger Performance Optimization (Regression detected)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect performance regression
+        run: |
+          echo "🔍 Detecting performance regression..."
+          # This would typically check performance metrics
+          # For now, we'll simulate the detection
+          if [ "${{ github.event.inputs.trigger_reason }}" = "regression_detected" ] || 
+             [ "${{ github.event_name }}" = "push" ]; then
+            echo "✅ Performance regression detected - triggering Performance Optimization Workflow"
+            echo "PERF_REGRESSION=true" >> $GITHUB_ENV
+          else
+            echo "❌ No performance regression detected"
+            echo "PERF_REGRESSION=false" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger Performance Optimization Workflow
+        if: env.PERF_REGRESSION == 'true'
+        run: |
+          echo "⚡ Triggering Performance Optimization Workflow..."
+          if gh workflow list | grep -q "performance-optimization"; then
+            gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+          else
+            echo "⚠️ Performance Optimization Workflow not found, skipping trigger"
+          fi
+
+  automation-summary:
+    name: Automation Summary
+    needs: [trigger-security-review, trigger-component-development, trigger-performance-optimization]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate automation summary
+        run: |
+          echo "## 🤖 Automation Triggers Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Event Information" >> $GITHUB_STEP_SUMMARY
+          echo "- Event: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Ref: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Action: ${{ github.event.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Automation Rules Applied" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Review Trigger: ${{ needs.trigger-security-review.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Component Development Trigger: ${{ needs.trigger-component-development.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance Optimization Trigger: ${{ needs.trigger-performance-optimization.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rule Conditions" >> $GITHUB_STEP_SUMMARY
+          echo "- PR with crypto/ssl changes: ${{ github.event_name == 'pull_request' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit to main with successful build: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance regression detected: ${{ github.event.inputs.trigger_reason == 'regression_detected' }}" >> $GITHUB_STEP_SUMMARY

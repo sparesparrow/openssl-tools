@@ -1,0 +1,111 @@
+# Multi-stage Dockerfile for OpenSSL development with Conan
+# This provides a consistent development environment
+
+# Base stage with common dependencies
+FROM ubuntu:22.04 AS base
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    curl \
+    git \
+    perl \
+    python3 \
+    python3-pip \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Conan
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install conan==2.0.17
+
+# Configure Conan
+RUN conan profile detect --force && \
+    conan remote add conancenter https://center.conan.io
+
+# Development stage
+FROM base AS development
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy Conan configuration
+COPY conan-profiles/ ./conan-profiles/
+COPY conanfile.py ./
+
+# Pre-install common dependencies
+RUN conan install . --profile=conan-profiles/ci-linux-gcc.profile --build=missing || true
+
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    gdb \
+    valgrind \
+    clang \
+    clang-tools \
+    clang-format \
+    clang-tidy \
+    cppcheck \
+    doxygen \
+    graphviz \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up shell environment
+ENV CONAN_HOME=/workspace/.conan2
+ENV CONAN_USER_HOME=/workspace
+ENV PS1='\u@openssl-dev:\w$ '
+
+# Create development user (optional)
+RUN useradd -m -s /bin/bash developer && \
+    chown -R developer:developer /workspace
+
+USER developer
+
+# Expose common ports for development
+EXPOSE 4433 8080
+
+CMD ["/bin/bash"]
+
+# Production build stage
+FROM base AS builder
+
+WORKDIR /build
+
+# Copy source code
+COPY . .
+
+# Build OpenSSL with Conan
+RUN conan create . --profile=conan-profiles/ci-linux-gcc.profile --build=missing
+
+# Final production image
+FROM ubuntu:22.04 AS production
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy OpenSSL binaries and libraries from builder
+COPY --from=builder /root/.conan2/p/*/p/bin/* /usr/local/bin/
+COPY --from=builder /root/.conan2/p/*/p/lib/* /usr/local/lib/
+COPY --from=builder /root/.conan2/p/*/p/include/* /usr/local/include/
+COPY --from=builder /root/.conan2/p/*/p/ssl/* /usr/local/ssl/
+
+# Update library cache
+RUN ldconfig
+
+# Add non-root user for security
+RUN useradd -r -s /bin/false openssl
+
+USER openssl
+
+# Verify installation
+RUN openssl version
+
+ENTRYPOINT ["openssl"]
+CMD ["version"]

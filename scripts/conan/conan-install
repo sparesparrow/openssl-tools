@@ -1,0 +1,68 @@
+#!/bin/bash
+# Conan Install Script - Developer-friendly wrapper
+
+set -e
+
+# Default values
+PROFILE="linux-gcc11"
+BUILD_MISSING="--build=missing"
+VERBOSE=""
+CLEAN=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--profile)
+            PROFILE="$2"
+            shift 2
+            ;;
+        -v|--verbose)
+            VERBOSE="-v"
+            shift
+            ;;
+        -c|--clean)
+            CLEAN="--clean"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  -p, --profile PROFILE    Conan profile to use (default: linux-gcc11)"
+            echo "  -v, --verbose           Verbose output"
+            echo "  -c, --clean            Clean before install"
+            echo "  -h, --help             Show this help"
+            echo ""
+            echo "Available profiles:"
+            echo "  linux-gcc11, linux-clang15, windows-msvc2022, macos-clang14, debug"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🚀 Installing Conan dependencies..."
+echo "📋 Profile: $PROFILE"
+
+# Check if profile exists
+if [ ! -f "conan-dev/profiles/$PROFILE.profile" ]; then
+    echo "❌ Profile not found: $PROFILE"
+    echo "Available profiles:"
+    ls conan-dev/profiles/*.profile | sed 's/.*\///' | sed 's/\.profile$//'
+    exit 1
+fi
+
+# Clean if requested
+if [ -n "$CLEAN" ]; then
+    echo "🧹 Cleaning previous installation..."
+    rm -rf build/ package/
+fi
+
+# Install dependencies
+echo "📦 Installing dependencies..."
+conan install . --profile="$PROFILE" $BUILD_MISSING $VERBOSE $CLEAN
+
+echo "✅ Installation complete!"
+echo "💡 Next step: Run './scripts/conan/conan-build' to build the package"

@@ -1,0 +1,405 @@
+# OpenSSL SBOM Generation Workflow
+# Dedicated Software Bill of Materials generation and validation
+
+name: SBOM Generation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'openssl-source/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+  schedule:
+    - cron: '0 3 * * *'  # Daily at 3 AM
+  workflow_dispatch:
+    inputs:
+      sbom_format:
+        description: 'SBOM format to generate'
+        required: false
+        type: choice
+        options:
+          - cyclonedx
+          - spdx
+        default: cyclonedx
+      validate_sbom:
+        description: 'Validate generated SBOM'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  CONAN_VERSION: "2.0.17"
+  CONAN_HOME: "${{ github.workspace }}/.conan2"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # Generate SBOM for source code
+  source-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan and SBOM tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install cyclonedx-bom
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Generate source SBOM
+        run: |
+          cd openssl-source
+          conan openssl package \
+            --profile=../conan-profiles/ci-linux-gcc.profile \
+            --sbom \
+            --sbom-format=${{ github.event.inputs.sbom_format || 'cyclonedx' }} \
+            --verbose
+          
+      - name: Upload source SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-sbom
+          path: openssl-source/sbom.*.json
+          retention-days: 90
+
+  # Generate SBOM for dependencies
+  dependency-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan and SBOM tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install cyclonedx-bom
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Install dependencies
+        run: |
+          cd openssl-source
+          conan install . --profile=../conan-profiles/ci-linux-gcc.profile --build=missing
+          
+      - name: Generate dependency SBOM
+        run: |
+          cd openssl-source
+          conan graph info . --profile=../conan-profiles/ci-linux-gcc.profile --format=json > dependency-graph.json
+          
+          # Generate SBOM from dependency graph
+          python -c "
+          import json
+          import sys
+          from datetime import datetime
+          
+          with open('dependency-graph.json', 'r') as f:
+              graph = json.load(f)
+          
+          sbom = {
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.4',
+              'version': 1,
+              'metadata': {
+                  'timestamp': datetime.utcnow().isoformat() + 'Z',
+                  'tools': [
+                      {
+                          'vendor': 'OpenSSL Tools',
+                          'name': 'dependency-sbom-generator',
+                          'version': '1.0.0'
+                      }
+                  ],
+                  'component': {
+                      'type': 'application',
+                      'name': 'openssl-dependencies',
+                      'version': '1.0.0',
+                      'description': 'OpenSSL dependency SBOM'
+                  }
+              },
+              'components': []
+          }
+          
+          # Add dependencies as components
+          for node in graph.get('graph', {}).get('nodes', []):
+              if 'ref' in node:
+                  ref = node['ref']
+                  if ref != 'conanfile':
+                      parts = ref.split('/')
+                      if len(parts) >= 2:
+                          name, version = parts[0], parts[1]
+                          sbom['components'].append({
+                              'type': 'library',
+                              'name': name,
+                              'version': version,
+                              'description': f'Dependency: {name}'
+                          })
+          
+          with open('dependency-sbom.json', 'w') as f:
+              json.dump(sbom, f, indent=2)
+          "
+          
+      - name: Upload dependency SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-sbom
+          path: openssl-source/dependency-sbom.json
+          retention-days: 90
+
+  # Generate SBOM for build artifacts
+  artifact-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup Python and Conan
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install Conan and SBOM tools
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install cyclonedx-bom
+          
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan remote add conancenter https://center.conan.io
+          
+      - name: Clone OpenSSL source
+        run: |
+          git clone --depth 1 https://github.com/sparesparrow/openssl.git openssl-source
+          
+      - name: Build OpenSSL
+        run: |
+          cd openssl-source
+          conan openssl configure --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          conan openssl build --profile=../conan-profiles/ci-linux-gcc.profile --verbose
+          
+      - name: Generate artifact SBOM
+        run: |
+          cd openssl-source
+          conan openssl package \
+            --profile=../conan-profiles/ci-linux-gcc.profile \
+            --build-dir=. \
+            --sbom \
+            --sbom-format=${{ github.event.inputs.sbom_format || 'cyclonedx' }} \
+            --verbose
+          
+      - name: Upload artifact SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-sbom
+          path: openssl-source/sbom.*.json
+          retention-days: 90
+
+  # SBOM validation
+  sbom-validation:
+    needs: [source-sbom, dependency-sbom, artifact-sbom]
+    if: ${{ always() && github.event.inputs.validate_sbom == 'true' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sbom-artifacts/
+          
+      - name: Install SBOM validation tools
+        run: |
+          pip install cyclonedx-bom
+          pip install jsonschema
+          
+      - name: Validate SBOM files
+        run: |
+          echo "Validating SBOM files..."
+          
+          # Find all SBOM files
+          find sbom-artifacts/ -name "*.json" -type f | while read sbom_file; do
+            echo "Validating: $sbom_file"
+            
+            # Basic JSON validation
+            python -c "
+          import json
+          import sys
+          
+          try:
+              with open('$sbom_file', 'r') as f:
+                  data = json.load(f)
+              print('✅ Valid JSON')
+              
+              # Check required fields
+              required_fields = ['bomFormat', 'specVersion', 'version', 'metadata']
+              for field in required_fields:
+                  if field not in data:
+                      print(f'❌ Missing required field: {field}')
+                      sys.exit(1)
+              print('✅ Required fields present')
+              
+              # Check metadata
+              metadata = data.get('metadata', {})
+              if 'timestamp' not in metadata:
+                  print('❌ Missing timestamp in metadata')
+                  sys.exit(1)
+              print('✅ Metadata valid')
+              
+              print('✅ SBOM validation passed')
+              
+          except json.JSONDecodeError as e:
+              print(f'❌ Invalid JSON: {e}')
+              sys.exit(1)
+          except Exception as e:
+              print(f'❌ Validation error: {e}')
+              sys.exit(1)
+          "
+          done
+          
+      - name: Generate SBOM validation report
+        run: |
+          echo "# OpenSSL SBOM Validation Report" > sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          echo "Generated on: $(date)" >> sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          
+          echo "## SBOM Generation Status" >> sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          echo "- Source SBOM: ${{ needs.source-sbom.result }}" >> sbom-validation-report.md
+          echo "- Dependency SBOM: ${{ needs.dependency-sbom.result }}" >> sbom-validation-report.md
+          echo "- Artifact SBOM: ${{ needs.artifact-sbom.result }}" >> sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          
+          echo "## Validation Results" >> sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          echo "All SBOM files have been validated for:" >> sbom-validation-report.md
+          echo "- JSON syntax correctness" >> sbom-validation-report.md
+          echo "- Required field presence" >> sbom-validation-report.md
+          echo "- Metadata completeness" >> sbom-validation-report.md
+          echo "" >> sbom-validation-report.md
+          
+      - name: Upload SBOM validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-validation-report
+          path: sbom-validation-report.md
+          retention-days: 90
+
+  # Consolidated SBOM generation
+  consolidated-sbom:
+    needs: [source-sbom, dependency-sbom, artifact-sbom]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sbom-artifacts/
+          
+      - name: Generate consolidated SBOM
+        run: |
+          echo "Generating consolidated SBOM..."
+          
+          python -c "
+          import json
+          import glob
+          from datetime import datetime
+          
+          consolidated = {
+              'bomFormat': 'CycloneDX',
+              'specVersion': '1.4',
+              'version': 1,
+              'metadata': {
+                  'timestamp': datetime.utcnow().isoformat() + 'Z',
+                  'tools': [
+                      {
+                          'vendor': 'OpenSSL Tools',
+                          'name': 'consolidated-sbom-generator',
+                          'version': '1.0.0'
+                      }
+                  ],
+                  'component': {
+                      'type': 'application',
+                      'name': 'openssl',
+                      'version': '$(git describe --tags --always)',
+                      'description': 'OpenSSL cryptographic library with dependencies',
+                      'licenses': [{'id': 'Apache-2.0'}]
+                  }
+              },
+              'components': []
+          }
+          
+          # Process all SBOM files
+          for sbom_file in glob.glob('sbom-artifacts/**/*.json', recursive=True):
+              try:
+                  with open(sbom_file, 'r') as f:
+                      data = json.load(f)
+                  
+                  if 'components' in data:
+                      consolidated['components'].extend(data['components'])
+              except Exception as e:
+                  print(f'Warning: Could not process {sbom_file}: {e}')
+          
+          # Remove duplicates based on name and version
+          seen = set()
+          unique_components = []
+          for component in consolidated['components']:
+              key = (component.get('name', ''), component.get('version', ''))
+              if key not in seen:
+                  seen.add(key)
+                  unique_components.append(component)
+          
+          consolidated['components'] = unique_components
+          
+          with open('consolidated-sbom.json', 'w') as f:
+              json.dump(consolidated, f, indent=2)
+          
+          print(f'Generated consolidated SBOM with {len(unique_components)} unique components')
+          "
+          
+      - name: Upload consolidated SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-sbom
+          path: consolidated-sbom.json
+          retention-days: 90

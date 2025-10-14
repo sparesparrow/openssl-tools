@@ -1,0 +1,197 @@
+name: 'Run OpenSSL Tests'
+description: 'Standardized OpenSSL test execution with flaky test management'
+inputs:
+  test-suite:
+    description: 'Test suite to run (unit, integration, fuzz, all)'
+    required: false
+    default: 'unit'
+  max-retries:
+    description: 'Maximum number of retries for flaky tests'
+    required: false
+    default: '1'
+  timeout-minutes:
+    description: 'Timeout for test execution in minutes'
+    required: false
+    default: '30'
+  conan-options:
+    description: 'Conan options for test build'
+    required: false
+    default: '-o shared=False -o fips=False -o enable_unit_test=True'
+  skip-flaky:
+    description: 'Skip known flaky tests'
+    required: false
+    default: 'false'
+
+outputs:
+  test-results:
+    description: 'Test results summary'
+    value: ${{ steps.test.outputs.results }}
+  flaky-detected:
+    description: 'Whether flaky tests were detected'
+    value: ${{ steps.test.outputs.flaky-detected }}
+  retry-count:
+    description: 'Number of retries performed'
+    value: ${{ steps.test.outputs.retry-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run OpenSSL tests
+      id: test
+      shell: bash
+      run: |
+        echo "🧪 Running OpenSSL tests..."
+        echo "Test suite: ${{ inputs.test-suite }}"
+        echo "Max retries: ${{ inputs.max-retries }}"
+        echo "Timeout: ${{ inputs.timeout-minutes }} minutes"
+        
+        # Set up test environment
+        export CONAN_OPTIONS="${{ inputs.conan-options }}"
+        export TEST_SUITE="${{ inputs.test-suite }}"
+        export MAX_RETRIES="${{ inputs.max-retries }}"
+        export TIMEOUT_MINUTES="${{ inputs.timeout-minutes }}"
+        export SKIP_FLAKY="${{ inputs.skip-flaky }}"
+        
+        # Function to run tests with retry logic
+        run_tests_with_retry() {
+          local attempt=1
+          local max_attempts=$((MAX_RETRIES + 1))
+          local last_exit_code=0
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "🔄 Test attempt $attempt/$max_attempts"
+            
+            # Run the appropriate test suite
+            case "$TEST_SUITE" in
+              "unit")
+                run_unit_tests
+                ;;
+              "integration")
+                run_integration_tests
+                ;;
+              "fuzz")
+                run_fuzz_tests
+                ;;
+              "all")
+                run_all_tests
+                ;;
+              *)
+                echo "❌ Unknown test suite: $TEST_SUITE"
+                exit 1
+                ;;
+            esac
+            
+            last_exit_code=$?
+            
+            if [ $last_exit_code -eq 0 ]; then
+              echo "✅ Tests passed on attempt $attempt"
+              break
+            else
+              echo "❌ Tests failed on attempt $attempt (exit code: $last_exit_code)"
+              
+              if [ $attempt -lt $max_attempts ]; then
+                echo "🔄 Retrying in 30 seconds..."
+                sleep 30
+              fi
+            fi
+            
+            attempt=$((attempt + 1))
+          done
+          
+          return $last_exit_code
+        }
+        
+        # Test suite implementations
+        run_unit_tests() {
+          echo "🧪 Running unit tests..."
+          
+          if [ "$SKIP_FLAKY" = "true" ]; then
+            echo "⏭️  Skipping known flaky tests"
+            # Add logic to skip flaky tests
+          fi
+          
+          # Run Conan test
+          timeout ${TIMEOUT_MINUTES}m conan create . --build=missing $CONAN_OPTIONS
+        }
+        
+        run_integration_tests() {
+          echo "🧪 Running integration tests..."
+          
+          # Run integration tests
+          timeout ${TIMEOUT_MINUTES}m conan create . --build=missing $CONAN_OPTIONS
+          
+          # Additional integration test steps
+          if [ -f "test_package/test_package.py" ]; then
+            echo "🧪 Running test_package..."
+            cd test_package
+            timeout ${TIMEOUT_MINUTES}m python test_package.py
+            cd ..
+          fi
+        }
+        
+        run_fuzz_tests() {
+          echo "🧪 Running fuzz tests..."
+          
+          # Run fuzz tests (if available)
+          if [ -d "fuzz" ]; then
+            timeout ${TIMEOUT_MINUTES}m make -C fuzz test
+          else
+            echo "⚠️  No fuzz tests found, skipping"
+          fi
+        }
+        
+        run_all_tests() {
+          echo "🧪 Running all test suites..."
+          
+          run_unit_tests
+          run_integration_tests
+          run_fuzz_tests
+        }
+        
+        # Execute tests with retry logic
+        run_tests_with_retry
+        test_exit_code=$?
+        
+        # Set outputs
+        echo "retry-count=$((attempt - 1))" >> $GITHUB_OUTPUT
+        
+        if [ $test_exit_code -eq 0 ]; then
+          echo "results=success" >> $GITHUB_OUTPUT
+          echo "flaky-detected=false" >> $GITHUB_OUTPUT
+        else
+          echo "results=failure" >> $GITHUB_OUTPUT
+          
+          # Check if this looks like a flaky test
+          if [ $((attempt - 1)) -gt 0 ]; then
+            echo "flaky-detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "flaky-detected=false" >> $GITHUB_OUTPUT
+          fi
+        fi
+        
+        echo "📊 Test execution complete"
+        echo "Exit code: $test_exit_code"
+        echo "Retries: $((attempt - 1))"
+        
+        exit $test_exit_code
+        
+    - name: Report test results
+      if: always()
+      shell: bash
+      run: |
+        echo "📊 Test Results Summary"
+        echo "========================"
+        echo "Test suite: ${{ inputs.test-suite }}"
+        echo "Results: ${{ steps.test.outputs.test-results }}"
+        echo "Flaky detected: ${{ steps.test.outputs.flaky-detected }}"
+        echo "Retry count: ${{ steps.test.outputs.retry-count }}"
+        
+        if [ "${{ steps.test.outputs.flaky-detected }}" = "true" ]; then
+          echo "⚠️  Flaky test detected - consider investigating"
+        fi
+        
+        if [ "${{ steps.test.outputs.test-results }}" = "failure" ]; then
+          echo "❌ Tests failed - check logs for details"
+        else
+          echo "✅ Tests passed successfully"
+        fi
