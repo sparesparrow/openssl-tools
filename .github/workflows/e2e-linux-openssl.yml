@@ -1,0 +1,93 @@
+name: e2e-linux-openssl
+
+on:
+    workflow_dispatch:
+    push:
+        branches: [main]
+
+permissions:
+    contents: read
+    packages: write
+
+env:
+    CONAN_REPOSITORY_NAME: ${{ vars.CONAN_REPOSITORY_NAME || 'sparesparrow-conan' }}
+    CONAN_REPOSITORY_URL: ${{ vars.CONAN_REPOSITORY_URL || 'https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/' }}
+
+jobs:
+    e2e:
+        runs-on: ubuntu-latest
+        env:
+            CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Preflight secrets/vars
+              run: |
+                  missing=0
+                  test -n "${{ secrets.CLOUDSMITH_API_KEY }}" || { echo "Missing secret: CLOUDSMITH_API_KEY"; missing=1; }
+                  test -n "${{ env.CONAN_REPOSITORY_NAME }}" || { echo "Missing var: CONAN_REPOSITORY_NAME"; missing=1; }
+                  test -n "${{ env.CONAN_REPOSITORY_URL }}" || { echo "Missing var: CONAN_REPOSITORY_URL"; missing=1; }
+                  if [ "$missing" -ne 0 ]; then exit 1; fi
+
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+                  cache: "pip"
+
+            - name: Install Conan 2.x
+              run: |
+                  python -m pip install --upgrade pip
+                  python -m pip install "conan>=2.3"
+                  conan --version
+
+            - name: Configure Conan remotes (Cloudsmith + ConanCenter)
+              run: |
+                  conan remote add "$CONAN_REPOSITORY_NAME" "$CONAN_REPOSITORY_URL" --force
+                  conan remote add conancenter https://center.conan.io --force
+                  conan remote list
+                  conan remote login "$CONAN_REPOSITORY_NAME" spare-sparrow --password "$CLOUDSMITH_API_KEY"
+
+            - name: Bootstrap Python from Conan cache (cpython + VirtualRunEnv)
+              run: |
+                  conan install --requires=cpython/3.12.5@ -g VirtualRunEnv --build=missing
+                  source ./conanrun.sh || true
+                  python --version
+
+            - name: Clone repos
+              run: |
+                  set -e
+                  mkdir -p "$HOME/projects"
+                  cd "$HOME/projects"
+                  for r in openssl-conan-base openssl-fips-policy openssl-tools openssl; do
+                    if [ ! -d "$r/.git" ]; then
+                      git clone "https://github.com/sparesparrow/$r.git"
+                    fi
+                  done
+
+            - name: Build and upload (base, policy, tools, openssl)
+              run: |
+                  set -e
+                  repos=(openssl-conan-base openssl-fips-policy openssl-tools openssl)
+                  for r in "${repos[@]}"; do
+                    echo "--- $r ---"
+                    pushd "$HOME/projects/$r" >/dev/null
+                    conan profile detect --force
+                    conan install . --build=missing
+                    conan create . --build=missing
+                    # upload all produced refs (safe, confirms only)
+                    conan upload "*" -r "$CONAN_REPOSITORY_NAME" --confirm --all || true
+                    popd >/dev/null
+                  done
+
+            - name: Consumer test (libcurl install)
+              shell: bash
+              run: |
+                  set -e
+                  cd "$HOME/projects"
+                  if [ ! -d libcurl/.git ]; then git clone https://github.com/sparesparrow/libcurl.git; fi
+                  cd libcurl
+                  conan profile detect --force
+                  conan install . --build=missing --requires=openssl/3.4.1 -g CMakeDeps -g CMakeToolchain
