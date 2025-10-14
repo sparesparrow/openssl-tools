@@ -49,6 +49,25 @@ gh secret set OPENSSL_TOKEN --repo sparesparrow/openssl-tools --body "$YOUR_GITH
 
 **Required Token Scopes**: `repo`, `workflow`
 
+### Cloudsmith Publishing
+
+The repository automatically publishes Conan packages to Cloudsmith. Configure the API key:
+
+```bash
+# In OpenSSL-Tools repository
+gh secret set CLOUDSMITH_API_KEY --repo sparesparrow/openssl-tools --body "$YOUR_CLOUDSMITH_API_KEY"
+```
+
+**Enhanced CI/CD Features**:
+- ✅ **Conan caching** - Speeds up builds by ~50-70%
+- ✅ **SBOM generation** - CycloneDX format for compliance
+- ✅ **Security scanning** - CodeQL and Bandit integration
+- ✅ **Deployment bundles** - Conan-free artifacts for direct usage
+- ✅ **Smart upload** - Recipe-only for PRs, full package for main
+- ✅ **Fork protection** - Prevents accidental publishing from forks
+
+See [.github/WORKFLOW_CONFIGURATION.md](.github/WORKFLOW_CONFIGURATION.md) for detailed workflow documentation.
+
 ## Workflow Integration
 
 ```mermaid

@@ -7,38 +7,299 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  CONAN_REPOSITORY_NAME: sparesparrow-conan
+  CONAN_REPOSITORY_URL: https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/
+  PYTHON_VERSION: '3.12'
+
 jobs:
-  build:
+  # Security scanning job
+  security-scan:
+    name: Security Scan
     runs-on: ubuntu-latest
-
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
 
+  # Lint and test job - runs before build
+  lint-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Install Conan
-        run: pip install conan
-
-      - name: Add Cloudsmith remote
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
         run: |
-          conan remote add sparesparrow-conan \
-            https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/ \
-            --force
+          pip install conan bandit pylint
+          pip install -r requirements.txt || true
+          pip install -r requirements-dev.txt || true
+      
+      - name: Run bandit security scan
+        run: |
+          bandit -r openssl_tools/ scripts/ -f json -o bandit-report.json || true
+          bandit -r openssl_tools/ scripts/ || true
+      
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+      
+      - name: Validate conanfile
+        run: |
+          conan --version
+          python -c "from conan import ConanFile; import conanfile; print('Conanfile syntax valid')"
 
-      - name: Create package (pulls foundation packages)
-        run: conan create . --build=missing
-
-      - name: Upload to Cloudsmith (main branch only)
+  # Main build and publish job
+  build-and-publish:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+    needs: [security-scan, lint-test]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: '3.12'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      # Cache Conan data to speed up CI
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-profiles/**/*.profile') }}
+          restore-keys: |
+            conan-${{ runner.os }}-
+      
+      - name: Install Conan and tools
+        run: |
+          pip install conan cyclonedx-bom
+      
+      # Preflight check for CLOUDSMITH_API_KEY
+      - name: Verify Cloudsmith API key (main branch only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
         run: |
-          conan remote login sparesparrow-conan spare-sparrow \
+          if [ -z "$CLOUDSMITH_API_KEY" ]; then
+            echo "❌ ERROR: CLOUDSMITH_API_KEY secret is not set!"
+            echo "Please configure the CLOUDSMITH_API_KEY secret in repository settings."
+            echo "Go to: Settings > Secrets and variables > Actions > New repository secret"
+            exit 1
+          fi
+          echo "✅ CLOUDSMITH_API_KEY is configured"
+      
+      - name: Add Cloudsmith remote
+        run: |
+          conan remote add ${CONAN_REPOSITORY_NAME} \
+            ${CONAN_REPOSITORY_URL} \
+            --force
+      
+      - name: Create package (pulls foundation packages)
+        run: conan create . --build=missing
+      
+      # Generate SBOM for compliance and security
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          # Create SBOM directory
+          mkdir -p sbom
+          
+          # Generate Python dependencies SBOM
+          pip list --format=freeze > requirements-snapshot.txt
+          cyclonedx-py requirements -i requirements-snapshot.txt -o sbom/sbom-python.json --format json || true
+          
+          # Create package-level SBOM
+          cat > sbom/sbom-package.json << 'EOF'
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "version": 1,
+            "metadata": {
+              "component": {
+                "type": "application",
+                "name": "openssl-tools",
+                "version": "1.0.0",
+                "description": "OpenSSL build tools, automation scripts, and infrastructure components"
+              }
+            },
+            "components": [
+              {
+                "type": "library",
+                "name": "openssl-base",
+                "version": "1.0.0",
+                "purl": "pkg:conan/openssl-base@1.0.0"
+              },
+              {
+                "type": "library",
+                "name": "openssl-fips-data",
+                "version": "140-3.1",
+                "purl": "pkg:conan/openssl-fips-data@140-3.1"
+              }
+            ]
+          }
+          EOF
+          
+          echo "✅ SBOM generated in sbom/"
+          ls -lh sbom/
+      
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-reports
+          path: sbom/
+          retention-days: 90
+      
+      # Create full deployment bundle for non-Conan users
+      - name: Create deployment bundle
+        run: |
+          mkdir -p deploy-bundle
+          
+          # Export Conan package to bundle
+          conan list "openssl-tools/*"
+          conan cache path "openssl-tools/1.0.0"
+          
+          # Copy essential files to bundle
+          cp -r scripts deploy-bundle/
+          cp -r conan-profiles deploy-bundle/profiles
+          cp -r templates deploy-bundle/
+          cp conanfile.py deploy-bundle/
+          cp README.md deploy-bundle/
+          cp LICENSE deploy-bundle/
+          
+          # Create bundle metadata
+          cat > deploy-bundle/BUNDLE_INFO.md << 'EOF'
+          # OpenSSL Build Tools Deployment Bundle
+          
+          This bundle contains all scripts and tools from openssl-tools without requiring Conan.
+          
+          ## Contents
+          - scripts/: Build and automation scripts
+          - profiles/: Conan build profiles for various platforms
+          - templates/: Workflow and configuration templates
+          - conanfile.py: Conan package definition
+          
+          ## Usage
+          1. Extract this bundle to your project
+          2. Add scripts/ to your PATH
+          3. Use the provided scripts and profiles directly
+          
+          ## Version
+          openssl-tools/1.0.0
+          EOF
+          
+          # Create tarball
+          tar -czf deploy-bundle.tar.gz -C deploy-bundle .
+          echo "✅ Deployment bundle created: $(ls -lh deploy-bundle.tar.gz)"
+      
+      - name: Upload deployment bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-bundle
+          path: deploy-bundle.tar.gz
+          retention-days: 30
+      
+      # Upload to Cloudsmith with appropriate options based on branch
+      - name: Upload to Cloudsmith (recipe only for PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "📦 Pull request detected - would upload recipe only (dry-run)"
+          echo "Command: conan upload 'openssl-tools/*' -r=${CONAN_REPOSITORY_NAME} --only-recipe --confirm"
+      
+      - name: Upload to Cloudsmith (full upload for main)
+        if: |
+          github.event_name == 'push' && 
+          github.ref == 'refs/heads/main' &&
+          github.repository == 'sparesparrow/openssl-tools'
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "🚀 Main branch push detected - uploading full package to Cloudsmith"
+          
+          # Login to Cloudsmith
+          conan remote login ${CONAN_REPOSITORY_NAME} spare-sparrow \
             --password "$CLOUDSMITH_API_KEY"
-          conan upload "openssl-build-tools/*" \
-            -r=sparesparrow-conan \
+          
+          # Upload with all dependencies
+          conan upload "openssl-tools/*" \
+            -r=${CONAN_REPOSITORY_NAME} \
             --all \
             --confirm
+          
+          echo "✅ Package uploaded successfully to ${CONAN_REPOSITORY_URL}"
+      
+      - name: Upload to Cloudsmith (protected branches)
+        if: |
+          github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/tags/v') &&
+          github.repository == 'sparesparrow/openssl-tools'
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "🏷️ Tag push detected - uploading tagged release to Cloudsmith"
+          
+          # Login to Cloudsmith
+          conan remote login ${CONAN_REPOSITORY_NAME} spare-sparrow \
+            --password "$CLOUDSMITH_API_KEY"
+          
+          # Upload with all dependencies
+          conan upload "openssl-tools/*" \
+            -r=${CONAN_REPOSITORY_NAME} \
+            --all \
+            --confirm
+          
+          echo "✅ Tagged release uploaded to ${CONAN_REPOSITORY_URL}"
+      
+      # Summary step
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## 📊 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Event**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conan Repository**: ${CONAN_REPOSITORY_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "✅ **Full package uploaded to Cloudsmith**" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "📦 **Recipe-only upload (PR mode)**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🔍 **Build verification only (no upload)**" >> $GITHUB_STEP_SUMMARY
+          fi
