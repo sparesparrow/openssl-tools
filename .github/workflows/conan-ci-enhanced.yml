@@ -38,7 +38,7 @@ jobs:
       openssl-changed: ${{ steps.changes.outputs.openssl }}
       conan-changed: ${{ steps.changes.outputs.conan }}
       tests-changed: ${{ steps.changes.outputs.tests }}
-    steps:
+    steps:e
       - uses: actions/checkout@v4
       - name: Detect changes
         uses: dorny/paths-filter@v2

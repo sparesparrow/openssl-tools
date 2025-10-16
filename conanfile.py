@@ -20,11 +20,15 @@ class OpenSSLToolsConan(ConanFile):
     topics = ("openssl", "build-tools", "automation", "ci-cd")
     
     # Package settings
-    package_type = "application"
+    package_type = "python-require"
     settings = "os", "arch", "compiler", "build_type"
+
+    # Export Python package sources for python_requires
+    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/**"
     
-    # No source code to build - this is a tools package
-    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/automation/ai_agents/*"
+    def requirements(self):
+        self.requires("openssl-base/1.0.0")
+        self.requires("openssl-fips-data/140-3.1")
     
     def layout(self):
         basic_layout(self)
@@ -36,7 +40,7 @@ class OpenSSLToolsConan(ConanFile):
         copy(self, "docker/*", src=self.source_folder, dst=os.path.join(self.package_folder, "docker"))
         copy(self, "templates/*", src=self.source_folder, dst=os.path.join(self.package_folder, "templates"))
         copy(self, ".cursor/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".cursor"))
-        copy(self, "openssl_tools/automation/ai_agents/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools/automation/ai_agents"))
+        copy(self, "openssl_tools/**", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools"))
         
         # Copy configuration files
         copy(self, "*.md", src=self.source_folder, dst=self.package_folder)
