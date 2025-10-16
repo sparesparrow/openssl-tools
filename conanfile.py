@@ -26,6 +26,10 @@ class OpenSSLToolsConan(ConanFile):
     # No source code to build - this is a tools package
     exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/automation/ai_agents/*"
     
+    def requirements(self):
+        self.requires("openssl-base/1.0.0")
+        self.requires("openssl-fips-data/140-3.1")
+    
     def layout(self):
         basic_layout(self)
     

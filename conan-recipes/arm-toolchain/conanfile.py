@@ -83,10 +83,11 @@ class ArmToolchainPackage(ConanFile):
 
     def package_id(self):
         # Make package id depend on target settings, keep only arch to split 32/64
-        self.info.settings_target = self.settings_target
-        self.info.settings_target.rm_safe("os")
-        self.info.settings_target.rm_safe("compiler")
-        self.info.settings_target.rm_safe("build_type")
+        if self.settings_target:
+            self.info.settings_target = self.settings_target
+            self.info.settings_target.rm_safe("os")
+            self.info.settings_target.rm_safe("compiler")
+            self.info.settings_target.rm_safe("build_type")
 
     def package(self):
         toolchain, _ = self._get_toolchain(str(self.settings_target.arch))
