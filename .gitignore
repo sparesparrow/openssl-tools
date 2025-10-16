@@ -179,10 +179,20 @@ fuzz-results/
 
 # Conan
 .conan/
+.conan2/
 conandata.yml
 conanfile.txt
 conaninfo.txt
 conanbuildinfo.*
+conanbuild.sh
+conanbuildenv*.sh
+conanrun.sh
+conanrunenv*.sh
+deactivate_conanbuild.sh
+deactivate_conanrun.sh
+CMakePresets.json
+conan_toolchain.cmake
+conan.lock
 
 # Build artifacts
 build/
