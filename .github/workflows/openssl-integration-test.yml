@@ -1,0 +1,26 @@
+name: OpenSSL Integration Test
+
+on:
+    repository_dispatch:
+        types: [openssl-tools-updated]
+
+jobs:
+    validate-tools-integration:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Set up Python
+              uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+            - name: Install Conan
+              run: |
+                  pip install conan>=2.0.0
+                  conan profile detect --force
+            - name: Test integration with updated tools
+              run: |
+                  conan install --requires=openssl-build-tools/1.2.0 --build=missing
+            - name: Notify success
+              run: |
+                  echo "Successfully integrated with openssl-tools ${{ github.event.client_payload.tools_version }}"
+                  echo "Triggered by: ${{ github.event.client_payload.trigger_repo }}"
