@@ -19,7 +19,7 @@ jobs:
                   conan profile detect --force
             - name: Test integration with updated tools
               run: |
-                  conan install --requires=openssl-build-tools/1.2.0 --build=missing
+                  conan install --requires=openssl-tools/1.2.0 --build=missing
             - name: Notify success
               run: |
                   echo "Successfully integrated with openssl-tools ${{ github.event.client_payload.tools_version }}"

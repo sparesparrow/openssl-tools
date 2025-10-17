@@ -101,8 +101,8 @@ env:
       
       - name: Conan build
         run: |
-          conan install . --profile=$PROFILE
-          conan build . --profile=$PROFILE
+          python scripts/conan/conan_cli.py install --profile=$PROFILE
+          python scripts/conan/conan_cli.py build --profile=$PROFILE
       
       - name: Comment result
         if: github.event_name == 'issue_comment'
@@ -146,8 +146,8 @@ env:
       
       - name: Conan test
         run: |
-          conan install . --profile=$PROFILE
-          conan build . --profile=$PROFILE
+          python scripts/conan/conan_cli.py install --profile=$PROFILE
+          python scripts/conan/conan_cli.py build --profile=$PROFILE
           conan test . --profile=$PROFILE
       
       - name: Comment result

@@ -151,11 +151,11 @@ jobs:
       
       - name: Conan install
         run: |
-          conan install . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+          python scripts/conan/conan_cli.py install --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
       
       - name: Conan build
         run: |
-          conan build . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+          python scripts/conan/conan_cli.py build --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
       
       - name: Conan test
         if: ${{ matrix.test }}

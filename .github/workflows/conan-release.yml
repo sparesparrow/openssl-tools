@@ -13,6 +13,14 @@ on:
         description: 'Version to release'
         required: true
         default: 'auto'
+      conan_user:
+        description: 'Conan user/organization'
+        required: false
+        default: 'sparesparrow'
+      conan_channel:
+        description: 'Conan channel'
+        required: false
+        default: 'stable'
 
 env:
   CONAN_USER_HOME: ${{ github.workspace }}/.conan2
@@ -85,8 +93,8 @@ jobs:
       
       - name: Build release package
         run: |
-          conan install . --profile=${{ matrix.profile }}
-          conan build . --profile=${{ matrix.profile }}
+          python scripts/conan/conan_cli.py install --profile=${{ matrix.profile }}
+          python scripts/conan/conan_cli.py build --profile=${{ matrix.profile }}
       
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -129,11 +137,14 @@ jobs:
           conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }}
       
       - name: Upload to production
+        env:
+          CONAN_USER: ${{ github.event.inputs.conan_user || 'sparesparrow' }}
+          CONAN_CHANNEL: ${{ github.event.inputs.conan_channel || 'stable' }}
         run: |
           # Upload to primary production remote
-          conan upload "openssl/${{ needs.prepare-release.outputs.version }}@openssl/stable" -r=production --all --confirm --retry=3 --retry-wait=10 || {
+          conan upload "openssl-build-tools/${{ needs.prepare-release.outputs.version }}@${CONAN_USER}/${CONAN_CHANNEL}" -r=production --all --confirm --retry=3 --retry-wait=10 || {
             echo "Production upload failed, attempting GitHub Packages backup"
-            conan upload "openssl/${{ needs.prepare-release.outputs.version }}@openssl/stable" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {
+            conan upload "openssl-build-tools/${{ needs.prepare-release.outputs.version }}@${CONAN_USER}/${CONAN_CHANNEL}" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {
               echo "All upload attempts failed"
               exit 1
             }
@@ -147,16 +158,20 @@ jobs:
           tag_name: v${{ needs.prepare-release.outputs.version }}
           release_name: OpenSSL ${{ needs.prepare-release.outputs.version }}
           body: |
-            OpenSSL ${{ needs.prepare-release.outputs.version }} Conan Package
-            
+            OpenSSL Tools ${{ needs.prepare-release.outputs.version }} Conan Package
+
             ## Platforms Supported
             - Linux (GCC 11, Clang 15)
             - Windows (MSVC 2022)
             - macOS (Clang 14)
-            
+
             ## Installation
             ```bash
-            conan install openssl/${{ needs.prepare-release.outputs.version }}@user/channel
+            conan install openssl-build-tools/${{ needs.prepare-release.outputs.version }}@${{ github.event.inputs.conan_user || 'sparesparrow' }}/${{ github.event.inputs.conan_channel || 'stable' }}
             ```
+
+            ## Package Reference
+            - **User/Channel**: ${{ github.event.inputs.conan_user || 'sparesparrow' }}/${{ github.event.inputs.conan_channel || 'stable' }}
+            - **Version**: ${{ needs.prepare-release.outputs.version }}
           draft: false
           prerelease: false

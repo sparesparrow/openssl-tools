@@ -83,14 +83,18 @@ def create_github_release(owner, repo, version, token, zip_path):
         url = f"https://api.github.com/repos/{owner}/{repo}/releases"
         
         # Release data
+        user_channel_ref = f"{args.conan_user}/{args.conan_channel}"
         release_data = {
             "tag_name": f"v{version}",
-            "name": f"OpenSSL Tools {version}",
+            "name": f"OpenSSL Tools {version} ({user_channel_ref})",
             "body": f"Conan package for OpenSSL Tools {version}\n\n"
                    f"## Installation\n"
                    f"```bash\n"
-                   f"conan install openssl-tools/{version}@\n"
+                   f"conan install openssl-tools/{version}@{user_channel_ref}\n"
                    f"```\n\n"
+                   f"## Package Reference\n"
+                   f"- **User/Channel**: {user_channel_ref}\n"
+                   f"- **Version**: {version}\n\n"
                    f"## Package Contents\n"
                    f"- Python tools for OpenSSL development\n"
                    f"- Review and release management tools\n"
@@ -153,6 +157,8 @@ def main():
     parser.add_argument("--github-repo", required=True, help="GitHub repository name")
     parser.add_argument("--github-token", help="GitHub Personal Access Token")
     parser.add_argument("--version", help="Package version (auto-detected if not provided)")
+    parser.add_argument("--conan-user", help="Conan user/organization", default="sparesparrow")
+    parser.add_argument("--conan-channel", help="Conan channel", default="stable")
     
     args = parser.parse_args()
     
