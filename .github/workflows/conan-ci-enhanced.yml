@@ -312,6 +312,31 @@ jobs:
         continue-on-error: true
         timeout-minutes: 20
 
+      - name: Generate SBOM for build artifacts
+        if: always()
+        run: |
+          # Create build directory for SBOM generation
+          mkdir -p sbom-artifacts
+          
+          # Copy build artifacts
+          cp -r build/ sbom-artifacts/ || true
+          cp -r package/ sbom-artifacts/ || true
+          
+          # Generate SBOM using Syft
+          docker run --rm -v $(pwd)/sbom-artifacts:/workspace anchore/syft:latest \
+            /workspace -o cyclonedx-json > openssl-tools-${{ matrix.profile }}-sbom.json
+          
+          echo "✅ SBOM generated for ${{ matrix.profile }} build"
+          echo "📊 SBOM contains $(jq '.components | length' openssl-tools-${{ matrix.profile }}-sbom.json) components"
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.profile }}
+          path: openssl-tools-${{ matrix.profile }}-sbom.json
+          retention-days: 90
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -336,9 +361,55 @@ jobs:
           free -h
         continue-on-error: true
 
+  # Security scanning using Track A reusable workflow
+  security-scan:
+    needs: [detect-changes, compile-changes]
+    if: always() && needs.compile-changes.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          path: sbom-artifacts/
+          merge-multiple: true
+
+      - name: Create consolidated artifact for scanning
+        run: |
+          mkdir -p consolidated-artifact
+          # Copy all SBOM files to a single directory for scanning
+          find sbom-artifacts/ -name "*.json" -exec cp {} consolidated-artifact/ \;
+          
+          # Create a summary file
+          echo "# OpenSSL Tools Build Artifacts" > consolidated-artifact/README.md
+          echo "Generated: $(date)" >> consolidated-artifact/README.md
+          echo "Branch: ${{ github.ref_name }}" >> consolidated-artifact/README.md
+          echo "Commit: ${{ github.sha }}" >> consolidated-artifact/README.md
+          
+          # Create zip for upload
+          cd consolidated-artifact
+          zip -r ../openssl-tools-artifacts.zip .
+          cd ..
+
+      - name: Upload consolidated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-tools-artifacts
+          path: openssl-tools-artifacts.zip
+          retention-days: 7
+
+      - name: Run security scan using Track A workflow
+        uses: sparesparrow/openssl-conan-base/.github/workflows/reusable-sbom-generation.yml@main
+        with:
+          artifact-name: 'openssl-tools-artifacts'
+          output-format: 'cyclonedx-json'
+          severity-threshold: 'HIGH'
+          upload-to-dependency-track: false
+        continue-on-error: true
+
   # Notification job that runs after all compile jobs
   notify-completion:
-    needs: [detect-changes, compile-changes]
+    needs: [detect-changes, compile-changes, security-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -352,11 +423,25 @@ jobs:
           else
             echo "⚠️ Compilation jobs were cancelled or skipped"
           fi
+          
+          if [ "${{ needs.security-scan.result }}" == "success" ]; then
+            echo "✅ Security scan completed successfully"
+          elif [ "${{ needs.security-scan.result }}" == "failure" ]; then
+            echo "⚠️ Security scan found issues (check Security tab)"
+          else
+            echo "ℹ️ Security scan was skipped or cancelled"
+          fi
 
       - name: Generate summary
         run: |
           echo "## Workflow Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ needs.compile-changes.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Scan**: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Workflow**: Conan Branch Compilation (Enhanced)" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Security Information" >> $GITHUB_STEP_SUMMARY
+          echo "- Check the **Security** tab for vulnerability findings" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM artifacts are available in the workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Track A security pipeline is integrated" >> $GITHUB_STEP_SUMMARY
