@@ -1,182 +1,183 @@
 name: Reusable FIPS 140-3 Validation
 
 on:
-  workflow_call:
-    inputs:
-      openssl-version:
-        description: 'OpenSSL version to validate'
-        required: false
-        type: string
-        default: '3.6.0'
-      fips-module-version:
-        description: 'FIPS module version'
-        required: false
-        type: string
-        default: '3.0.9'
-      expected-hash:
-        description: 'Expected FIPS module hash'
-        required: false
-        type: string
-        default: ''
-    outputs:
-      validation-result:
-        description: 'FIPS validation result'
-        value: ${{ jobs.fips-validation.outputs.validation-result }}
-      compliance-report:
-        description: 'Path to compliance report'
-        value: ${{ jobs.fips-validation.outputs.compliance-report }}
+    workflow_call:
+        inputs:
+            openssl-version:
+                description: "OpenSSL version to validate"
+                required: false
+                type: string
+                default: "3.6.0"
+            fips-module-version:
+                description: "FIPS module version"
+                required: false
+                type: string
+                default: "3.0.9"
+            expected-hash:
+                description: "Expected FIPS module hash"
+                required: false
+                type: string
+                default: ""
+        outputs:
+            validation-result:
+                description: "FIPS validation result"
+                value: ${{ jobs.fips-validation.outputs.validation-result }}
+            compliance-report:
+                description: "Path to compliance report"
+                value: ${{ jobs.fips-validation.outputs.compliance-report }}
 
 jobs:
-  fips-validation:
-    runs-on: ubuntu-22.04
-    outputs:
-      validation-result: ${{ steps.validate.outputs.result }}
-      compliance-report: ${{ steps.report.outputs.report-path }}
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential perl pkg-config
-      
-      - name: Download OpenSSL source
-        run: |
-          if [ ! -f "Configure" ]; then
-            curl -L "https://github.com/openssl/openssl/archive/refs/tags/openssl-${{ inputs.openssl-version }}.tar.gz" | tar -xz --strip-components=1
-          fi
-      
-      - name: Configure with FIPS
-        run: |
-          perl Configure linux-x86_64 enable-fips --debug
-      
-      - name: Build OpenSSL with FIPS
-        run: |
-          make -j$(nproc)
-          sudo make install_fips
-      
-      - name: Validate FIPS module
-        id: validate
-        run: |
-          # Dynamic FIPS module path detection
-          FIPS_MODULE_PATH=""
-          POSSIBLE_PATHS=(
-            "/usr/local/openssl-fips/lib/ossl-modules/fips.so"
-            "/usr/local/lib/ossl-modules/fips.so"
-            "/usr/lib/ossl-modules/fips.so"
-            "/usr/local/ssl/lib/ossl-modules/fips.so"
-            "/opt/openssl/lib/ossl-modules/fips.so"
-          )
-          
-          for path in "${POSSIBLE_PATHS[@]}"; do
-            if [ -f "$path" ]; then
-              FIPS_MODULE_PATH="$path"
-              echo "Found FIPS module at: $FIPS_MODULE_PATH"
-              break
-            fi
-          done
-          
-          if [ -z "$FIPS_MODULE_PATH" ]; then
-            echo "result=failed" >> $GITHUB_OUTPUT
-            echo "::error::FIPS module not found in any expected location"
-            exit 1
-          fi
-          
-          # Check FIPS provider is available
-          if ! /usr/local/bin/openssl list -providers -verbose | grep -i fips; then
-            echo "result=failed" >> $GITHUB_OUTPUT
-            echo "::error::FIPS provider not found"
-            exit 1
-          fi
-          
-          # Validate module hash if provided
-          if [ -n "${{ inputs.expected-hash }}" ]; then
-            ACTUAL_HASH=$(/usr/local/bin/openssl dgst -sha256 -provider fips "$FIPS_MODULE_PATH" | cut -d' ' -f2)
-            if [ "$ACTUAL_HASH" != "${{ inputs.expected-hash }}" ]; then
-              echo "result=hash-mismatch" >> $GITHUB_OUTPUT
-              echo "::error::FIPS module hash mismatch! Expected: ${{ inputs.expected-hash }}, Got: $ACTUAL_HASH"
-              exit 1
-            fi
-          fi
-          
-          echo "result=passed" >> $GITHUB_OUTPUT
-          echo "✓ FIPS validation passed"
-      
-      - name: Run FIPS self-tests
-        run: |
-          # Dynamic OpenSSL installation path detection
-          OPENSSL_PREFIX=""
-          POSSIBLE_PREFIXES=(
-            "/usr/local"
-            "/usr"
-            "/opt/openssl"
-          )
-          
-          for prefix in "${POSSIBLE_PREFIXES[@]}"; do
-            if [ -f "$prefix/bin/openssl" ]; then
-              OPENSSL_PREFIX="$prefix"
-              echo "Found OpenSSL at: $OPENSSL_PREFIX"
-              break
-            fi
-          done
-          
-          if [ -n "$OPENSSL_PREFIX" ]; then
-            export OPENSSL_CONF="$OPENSSL_PREFIX/ssl/openssl.cnf"
-            export OPENSSL_MODULES="$OPENSSL_PREFIX/lib/ossl-modules"
-            "$OPENSSL_PREFIX/bin/openssl" fips-selftest -verbose
-          else
-            echo "::warning::OpenSSL installation not found, skipping self-tests"
-          fi
-      
-      - name: Test FIPS algorithms
-        run: |
-          # Test FIPS algorithms
-          if /usr/local/bin/openssl list -providers -verbose | grep -i fips; then
-            echo "Testing FIPS algorithms..."
-            /usr/local/bin/openssl enc -aes-256-gcm -pbkdf2 -pass pass:test -in /dev/null -out /dev/null 2>/dev/null || echo "AES-GCM test failed"
-            /usr/local/bin/openssl dgst -sha256 -provider fips /dev/null 2>/dev/null || echo "SHA-256 test failed"
-            echo "✓ FIPS algorithm tests completed"
-          else
-            echo "::warning::FIPS provider not available for algorithm testing"
-          fi
-      
-      - name: Generate compliance report
-        id: report
-        run: |
-          mkdir -p reports
-          REPORT_FILE="reports/fips-compliance-$(date +%Y%m%d-%H%M%S).md"
-          
-          cat > "$REPORT_FILE" << EOF
-          # FIPS 140-3 Compliance Report
-          
-          **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          **OpenSSL Version**: $(/usr/local/bin/openssl version)
-          **FIPS Module Version**: ${{ inputs.fips-module-version }}
-          **Validation Result**: ${{ steps.validate.outputs.result }}
-          
-          ## Self-Test Results
-          ✅ FIPS module loaded successfully
-          ✅ Module hash validated
-          ✅ Self-tests passed
-          
-          ## Provider Details
-          \`\`\`
-          $(/usr/local/bin/openssl list -providers -verbose | grep -A 20 fips || echo "FIPS provider details not available")
-          \`\`\`
-          
-          ## Module Information
-          - **Module Path**: $FIPS_MODULE_PATH
-          - **Configuration**: $OPENSSL_CONF
-          
-          EOF
-          
-          echo "report-path=$REPORT_FILE" >> $GITHUB_OUTPUT
-      
-      - name: Upload compliance report
-        uses: actions/upload-artifact@v4
-        with:
-          name: fips-compliance-report
-          path: reports/
-          retention-days: 365
+    fips-validation:
+        runs-on: ubuntu-22.04
+        outputs:
+            validation-result: ${{ steps.validate.outputs.result }}
+            compliance-report: ${{ steps.report.outputs.report-path }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential perl pkg-config
+
+            - name: Download OpenSSL source
+              run: |
+                  if [ ! -f "Configure" ]; then
+                    curl -L "https://github.com/openssl/openssl/archive/refs/tags/openssl-${{ inputs.openssl-version }}.tar.gz" | tar -xz --strip-components=1
+                  fi
+
+            - name: Configure with FIPS
+              run: |
+                  perl Configure linux-x86_64 enable-fips --debug
+
+            - name: Build OpenSSL with FIPS
+              run: |
+                  make -j$(nproc)
+                  sudo make install_fips
+
+            - name: Validate FIPS module
+              id: validate
+              run: |
+                  # Dynamic FIPS module path detection
+                  FIPS_MODULE_PATH=""
+                  POSSIBLE_PATHS=(
+                    "/usr/local/openssl-fips/lib/ossl-modules/fips.so"
+                    "/usr/local/lib/ossl-modules/fips.so"
+                    "/usr/lib/ossl-modules/fips.so"
+                    "/usr/local/ssl/lib/ossl-modules/fips.so"
+                    "/opt/openssl/lib/ossl-modules/fips.so"
+                  )
+
+                  for path in "${POSSIBLE_PATHS[@]}"; do
+                    if [ -f "$path" ]; then
+                      FIPS_MODULE_PATH="$path"
+                      echo "Found FIPS module at: $FIPS_MODULE_PATH"
+                      break
+                    fi
+                  done
+
+                  if [ -z "$FIPS_MODULE_PATH" ]; then
+                    echo "result=failed" >> $GITHUB_OUTPUT
+                    echo "::error::FIPS module not found in any expected location"
+                    exit 1
+                  fi
+
+                  # Check FIPS provider is available
+                  if ! /usr/local/bin/openssl list -providers -verbose | grep -i fips; then
+                    echo "result=failed" >> $GITHUB_OUTPUT
+                    echo "::error::FIPS provider not found"
+                    exit 1
+                  fi
+
+                  # Validate module hash if provided
+                  if [ -n "${{ inputs.expected-hash }}" ]; then
+                    ACTUAL_HASH=$(/usr/local/bin/openssl dgst -sha256 -provider fips "$FIPS_MODULE_PATH" | cut -d' ' -f2)
+                    if [ "$ACTUAL_HASH" != "${{ inputs.expected-hash }}" ]; then
+                      echo "result=hash-mismatch" >> $GITHUB_OUTPUT
+                      echo "::error::FIPS module hash mismatch! Expected: ${{ inputs.expected-hash }}, Got: $ACTUAL_HASH"
+                      exit 1
+                    fi
+                  fi
+
+                  echo "result=passed" >> $GITHUB_OUTPUT
+                  echo "✓ FIPS validation passed"
+
+            - name: Run FIPS self-tests
+              run: |
+                  # Dynamic OpenSSL installation path detection
+                  OPENSSL_PREFIX=""
+                  POSSIBLE_PREFIXES=(
+                    "/usr/local"
+                    "/usr"
+                    "/opt/openssl"
+                  )
+
+                  for prefix in "${POSSIBLE_PREFIXES[@]}"; do
+                    if [ -f "$prefix/bin/openssl" ]; then
+                      OPENSSL_PREFIX="$prefix"
+                      echo "Found OpenSSL at: $OPENSSL_PREFIX"
+                      break
+                    fi
+                  done
+
+                  if [ -n "$OPENSSL_PREFIX" ]; then
+                    export OPENSSL_CONF="$OPENSSL_PREFIX/ssl/openssl.cnf"
+                    export OPENSSL_MODULES="$OPENSSL_PREFIX/lib/ossl-modules"
+                    "$OPENSSL_PREFIX/bin/openssl" fips-selftest -verbose
+                  else
+                    echo "::warning::OpenSSL installation not found, skipping self-tests"
+                  fi
+
+            - name: Test FIPS algorithms
+              run: |
+                  # Test FIPS algorithms
+                  if /usr/local/bin/openssl list -providers -verbose | grep -i fips; then
+                    echo "Testing FIPS algorithms..."
+                    /usr/local/bin/openssl enc -aes-256-gcm -pbkdf2 -pass pass:test -in /dev/null -out /dev/null 2>/dev/null || echo "AES-GCM test failed"
+                    /usr/local/bin/openssl dgst -sha256 -provider fips /dev/null 2>/dev/null || echo "SHA-256 test failed"
+                    echo "✓ FIPS algorithm tests completed"
+                  else
+                    echo "::warning::FIPS provider not available for algorithm testing"
+                  fi
+
+            - name: Generate compliance report
+              id: report
+              run: |
+                  mkdir -p reports
+                  REPORT_FILE="reports/fips-compliance-$(date +%Y%m%d-%H%M%S).md"
+
+                  cat > "$REPORT_FILE" << EOF
+                  # FIPS 140-3 Compliance Report
+
+                  **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+                  **OpenSSL Version**: $(/usr/local/bin/openssl version)
+                  **FIPS Module Version**: ${{ inputs.fips-module-version }}
+                  **Validation Result**: ${{ steps.validate.outputs.result }}
+
+                  ## Self-Test Results
+                  ✅ FIPS module loaded successfully
+                  ✅ Module hash validated
+                  ✅ Self-tests passed
+
+                  ## Provider Details
+                  \`\`\`
+                  $(/usr/local/bin/openssl list -providers -verbose | grep -A 20 fips || echo "FIPS provider details not available")
+                  \`\`\`
+
+                  ## Module Information
+                  - **Module Path**: $FIPS_MODULE_PATH
+                  - **Configuration**: $OPENSSL_CONF
+
+                  EOF
+
+                  echo "report-path=$REPORT_FILE" >> $GITHUB_OUTPUT
+
+            - name: Upload compliance report
+              uses: actions/upload-artifact@v4
+              with:
+                  name: fips-compliance-report
+                  path: reports/
+                  retention-days: 365
+

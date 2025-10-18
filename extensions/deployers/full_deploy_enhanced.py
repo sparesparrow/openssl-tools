@@ -62,3 +62,4 @@ def _deploy_fips_artifacts(graph, output_folder):
             copy(dep.conanfile, "fipsmodule.cnf",
                  src=os.path.join(dep.package_folder, "ssl"),
                  dst=fips_folder)
+

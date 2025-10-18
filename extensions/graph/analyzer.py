@@ -14,3 +14,4 @@ def analyze_dependencies(graph):
             results["fips_enabled"].append(str(dep.ref))
     
     return results
+

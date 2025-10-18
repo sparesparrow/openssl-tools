@@ -1,20 +1,15 @@
 """
-OpenSSL Tools Launcher Module
-Launcher scripts and GUI tools for OpenSSL development
+OpenSSL Tools Automation Module
+
+CI/CD automation and orchestration utilities.
 """
 
-from .conan_launcher import (
-    Configuration,
-    check_conan_validity,
-    add_packages_paths_to_search_paths,
-    prepare_package_script_arguments,
-    run_package_python_script
-)
+from .conan_orchestrator import ConanOrchestrator, BuildConfig, BuildResult, BuildType, Platform
 
 __all__ = [
-    'Configuration',
-    'check_conan_validity',
-    'add_packages_paths_to_search_paths',
-    'prepare_package_script_arguments',
-    'run_package_python_script'
+    'ConanOrchestrator',
+    'BuildConfig', 
+    'BuildResult',
+    'BuildType',
+    'Platform'
 ]

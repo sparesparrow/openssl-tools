@@ -1,205 +1,206 @@
 name: Reusable Conan Build & Test
 
 on:
-  workflow_call:
-    inputs:
-      profile:
-        description: 'Conan profile to use'
-        required: false
-        type: string
-        default: 'default'
-      shared:
-        description: 'Build shared libraries'
-        required: false
-        type: boolean
-        default: false
-      fips:
-        description: 'Enable FIPS mode'
-        required: false
-        type: boolean
-        default: false
-      deploy:
-        description: 'Deploy artifacts using full_deploy_enhanced'
-        required: false
-        type: boolean
-        default: true
-      upload-to-cloudsmith:
-        description: 'Upload packages to Cloudsmith'
-        required: false
-        type: boolean
-        default: false
-      package-reference:
-        description: 'Package reference (e.g., openssl/3.6.0)'
-        required: true
-        type: string
-    outputs:
-      artifact-name:
-        description: 'Name of uploaded artifact'
-        value: ${{ jobs.conan-build.outputs.artifact-name }}
-      deploy-path:
-        description: 'Path to deployed artifacts'
-        value: ${{ jobs.conan-build.outputs.deploy-path }}
-    secrets:
-      CLOUDSMITH_API_KEY:
-        description: 'Cloudsmith API key for publishing'
-        required: false
+    workflow_call:
+        inputs:
+            profile:
+                description: "Conan profile to use"
+                required: false
+                type: string
+                default: "default"
+            shared:
+                description: "Build shared libraries"
+                required: false
+                type: boolean
+                default: false
+            fips:
+                description: "Enable FIPS mode"
+                required: false
+                type: boolean
+                default: false
+            deploy:
+                description: "Deploy artifacts using full_deploy_enhanced"
+                required: false
+                type: boolean
+                default: true
+            upload-to-cloudsmith:
+                description: "Upload packages to Cloudsmith"
+                required: false
+                type: boolean
+                default: false
+            package-reference:
+                description: "Package reference (e.g., openssl/3.6.0)"
+                required: true
+                type: string
+        outputs:
+            artifact-name:
+                description: "Name of uploaded artifact"
+                value: ${{ jobs.conan-build.outputs.artifact-name }}
+            deploy-path:
+                description: "Path to deployed artifacts"
+                value: ${{ jobs.conan-build.outputs.deploy-path }}
+        secrets:
+            CLOUDSMITH_API_KEY:
+                description: "Cloudsmith API key for publishing"
+                required: false
 
 jobs:
-  conan-build:
-    runs-on: ubuntu-latest
-    outputs:
-      artifact-name: ${{ steps.build.outputs.artifact-name }}
-      deploy-path: ${{ steps.build.outputs.deploy-path }}
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Install Conan
-        run: |
-          python -m pip install --upgrade pip
-          pip install conan==2.21.0
-          conan --version
-      
-      - name: Configure Conan
-        run: |
-          conan profile detect --force
-          conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/ || true
-          conan remote add conancenter https://center.conan.io || true
-      
-      - name: Install openssl-tools extensions
-        run: |
-          # Export this repo as python_requires if it contains conanfile.py
-          if [ -f "conanfile.py" ]; then
-            conan export . openssl-tools/1.2.0@
-          fi
-          
-          # Install extensions if they exist
-          if [ -f "install-extensions.sh" ]; then
-            ./install-extensions.sh
-          elif [ -d "extensions" ]; then
-            mkdir -p ~/.conan2/extensions
-            cp -r extensions/* ~/.conan2/extensions/
-          fi
-      
-      - name: Build package
-        id: build
-        run: |
-          # Build options
-          BUILD_OPTS=""
-          if [ "${{ inputs.shared }}" = "true" ]; then
-            BUILD_OPTS="$BUILD_OPTS -o shared=True"
-          fi
-          
-          if [ "${{ inputs.fips }}" = "true" ]; then
-            BUILD_OPTS="$BUILD_OPTS -o enable_fips=True"
-          fi
-          
-          # Use custom command if available, otherwise standard conan
-          if command -v conan openssl:build &> /dev/null; then
-            echo "Using custom openssl:build command"
-            FIPS_FLAG=""
-            if [ "${{ inputs.fips }}" = "true" ]; then
-              FIPS_FLAG="--fips"
-            fi
-            conan openssl:build $FIPS_FLAG --profile=${{ inputs.profile }} --deployer-folder=./artifacts
-          else
-            echo "Using standard conan commands"
-            conan install --requires=${{ inputs.package-reference }} \
-              --profile=${{ inputs.profile }} $BUILD_OPTS --build=missing
-            
-            if [ "${{ inputs.deploy }}" = "true" ]; then
-              conan install --requires=${{ inputs.package-reference }} \
-                --profile=${{ inputs.profile }} \
-                --deployer=full_deploy_enhanced \
-                --deployer-folder=./artifacts
-            fi
-          fi
-          
-          # Generate metadata
-          mkdir -p ./artifacts/metadata
-          cat > ./artifacts/metadata/build-info.json << EOF
-          {
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "profile": "${{ inputs.profile }}",
-            "shared": ${{ inputs.shared }},
-            "fips_enabled": ${{ inputs.fips }},
-            "package_reference": "${{ inputs.package-reference }}",
-            "deploy_enabled": ${{ inputs.deploy }},
-            "upload_to_cloudsmith": ${{ inputs.upload-to-cloudsmith }}
-          }
-          EOF
-          
-          # Set outputs
-          ARTIFACT_NAME="conan-artifacts-${{ inputs.profile }}"
-          if [ "${{ inputs.fips }}" = "true" ]; then
-            ARTIFACT_NAME="${ARTIFACT_NAME}-fips"
-          fi
-          if [ "${{ inputs.shared }}" = "true" ]; then
-            ARTIFACT_NAME="${ARTIFACT_NAME}-shared"
-          fi
-          
-          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-          echo "deploy-path=$(pwd)/artifacts" >> $GITHUB_OUTPUT
-      
-      - name: Upload to Cloudsmith
-        if: inputs.upload-to-cloudsmith && secrets.CLOUDSMITH_API_KEY != '' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-        env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-        run: |
-          pip install cloudsmith-cli
-          conan upload "${{ inputs.package-reference }}" \
-            --remote sparesparrow-conan \
-            --confirm
-      
-      - name: Upload build artifacts
-        if: inputs.deploy
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.build.outputs.artifact-name }}
-          path: ./artifacts/
-          retention-days: 30
+    conan-build:
+        runs-on: ubuntu-latest
+        outputs:
+            artifact-name: ${{ steps.build.outputs.artifact-name }}
+            deploy-path: ${{ steps.build.outputs.deploy-path }}
 
-  test-package:
-    needs: conan-build
-    runs-on: ubuntu-latest
-    if: always() && needs.conan-build.result == 'success'
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Install Conan
-        run: |
-          pip install conan==2.21.0
-          conan profile detect --force
-      
-      - name: Download artifacts
-        if: inputs.deploy
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.conan-build.outputs.artifact-name }}
-          path: ./artifacts/
-      
-      - name: Test deployment
-        run: |
-          if [ -d "./artifacts/full_deploy" ]; then
-            echo "✓ Deployment artifacts found"
-            find ./artifacts/full_deploy -name "*.so*" -o -name "*.dll" -o -name "*.dylib" | head -5
-          fi
-          
-          # Test with a simple consumer if test_package exists
-          if [ -d "test_package" ]; then
-            cd test_package
-            conan test . ${{ inputs.package-reference }}
-          fi
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Install Conan
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install conan==2.21.0
+                  conan --version
+
+            - name: Configure Conan
+              run: |
+                  conan profile detect --force
+                  conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/ || true
+                  conan remote add conancenter https://center.conan.io || true
+
+            - name: Install openssl-tools extensions
+              run: |
+                  # Export this repo as python_requires if it contains conanfile.py
+                  if [ -f "conanfile.py" ]; then
+                    conan export . openssl-tools/1.2.0@
+                  fi
+
+                  # Install extensions if they exist
+                  if [ -f "install-extensions.sh" ]; then
+                    ./install-extensions.sh
+                  elif [ -d "extensions" ]; then
+                    mkdir -p ~/.conan2/extensions
+                    cp -r extensions/* ~/.conan2/extensions/
+                  fi
+
+            - name: Build package
+              id: build
+              run: |
+                  # Build options
+                  BUILD_OPTS=""
+                  if [ "${{ inputs.shared }}" = "true" ]; then
+                    BUILD_OPTS="$BUILD_OPTS -o shared=True"
+                  fi
+
+                  if [ "${{ inputs.fips }}" = "true" ]; then
+                    BUILD_OPTS="$BUILD_OPTS -o enable_fips=True"
+                  fi
+
+                  # Use custom command if available, otherwise standard conan
+                  if command -v conan openssl:build &> /dev/null; then
+                    echo "Using custom openssl:build command"
+                    FIPS_FLAG=""
+                    if [ "${{ inputs.fips }}" = "true" ]; then
+                      FIPS_FLAG="--fips"
+                    fi
+                    conan openssl:build $FIPS_FLAG --profile=${{ inputs.profile }} --deployer-folder=./artifacts
+                  else
+                    echo "Using standard conan commands"
+                    conan install --requires=${{ inputs.package-reference }} \
+                      --profile=${{ inputs.profile }} $BUILD_OPTS --build=missing
+                    
+                    if [ "${{ inputs.deploy }}" = "true" ]; then
+                      conan install --requires=${{ inputs.package-reference }} \
+                        --profile=${{ inputs.profile }} \
+                        --deployer=full_deploy_enhanced \
+                        --deployer-folder=./artifacts
+                    fi
+                  fi
+
+                  # Generate metadata
+                  mkdir -p ./artifacts/metadata
+                  cat > ./artifacts/metadata/build-info.json << EOF
+                  {
+                    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                    "profile": "${{ inputs.profile }}",
+                    "shared": ${{ inputs.shared }},
+                    "fips_enabled": ${{ inputs.fips }},
+                    "package_reference": "${{ inputs.package-reference }}",
+                    "deploy_enabled": ${{ inputs.deploy }},
+                    "upload_to_cloudsmith": ${{ inputs.upload-to-cloudsmith }}
+                  }
+                  EOF
+
+                  # Set outputs
+                  ARTIFACT_NAME="conan-artifacts-${{ inputs.profile }}"
+                  if [ "${{ inputs.fips }}" = "true" ]; then
+                    ARTIFACT_NAME="${ARTIFACT_NAME}-fips"
+                  fi
+                  if [ "${{ inputs.shared }}" = "true" ]; then
+                    ARTIFACT_NAME="${ARTIFACT_NAME}-shared"
+                  fi
+
+                  echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+                  echo "deploy-path=$(pwd)/artifacts" >> $GITHUB_OUTPUT
+
+            - name: Upload to Cloudsmith
+              if: inputs.upload-to-cloudsmith && secrets.CLOUDSMITH_API_KEY != '' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+              env:
+                  CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+              run: |
+                  pip install cloudsmith-cli
+                  conan upload "${{ inputs.package-reference }}" \
+                    --remote sparesparrow-conan \
+                    --confirm
+
+            - name: Upload build artifacts
+              if: inputs.deploy
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.build.outputs.artifact-name }}
+                  path: ./artifacts/
+                  retention-days: 30
+
+    test-package:
+        needs: conan-build
+        runs-on: ubuntu-latest
+        if: always() && needs.conan-build.result == 'success'
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Install Conan
+              run: |
+                  pip install conan==2.21.0
+                  conan profile detect --force
+
+            - name: Download artifacts
+              if: inputs.deploy
+              uses: actions/download-artifact@v4
+              with:
+                  name: ${{ needs.conan-build.outputs.artifact-name }}
+                  path: ./artifacts/
+
+            - name: Test deployment
+              run: |
+                  if [ -d "./artifacts/full_deploy" ]; then
+                    echo "✓ Deployment artifacts found"
+                    find ./artifacts/full_deploy -name "*.so*" -o -name "*.dll" -o -name "*.dylib" | head -5
+                  fi
+
+                  # Test with a simple consumer if test_package exists
+                  if [ -d "test_package" ]; then
+                    cd test_package
+                    conan test . ${{ inputs.package-reference }}
+                  fi
+

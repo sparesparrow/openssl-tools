@@ -1,19 +1,15 @@
 """
-Foundation Module
+OpenSSL Tools Foundation Module
 
-This module provides foundational utilities and interfaces for OpenSSL development tools,
-including core utilities and command-line interfaces.
-
-Submodules:
-    utilities: Core utility functions and helpers
-    command_line: Command-line interfaces and CLI tools
+Core foundation utilities for OpenSSL Conan ecosystem.
 """
 
-from .utilities import setup_logging, ConfigManager
-from .command_line import MainCLI
+from .version_manager import get_openssl_version, parse_openssl_version
+from .profile_deployer import deploy_openssl_profiles, list_openssl_profiles
 
 __all__ = [
-    "setup_logging",
-    "ConfigManager",
-    "MainCLI",
+    'get_openssl_version',
+    'parse_openssl_version', 
+    'deploy_openssl_profiles',
+    'list_openssl_profiles'
 ]

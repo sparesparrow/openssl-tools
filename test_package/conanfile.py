@@ -6,3 +6,4 @@ class TestPackage(ConanFile):
     def test(self):
         # Ověř, že extensions jsou dostupné
         assert hasattr(self.python_requires["openssl-tools"], "build_openssl")
+
