@@ -50,6 +50,7 @@ class BootstrapConfig:
     cache_dir: Optional[Path] = None
     log_level: str = "INFO"
     force_reinstall: bool = False
+    no_pip: bool = False
     validate_signatures: bool = True
     enable_rollback: bool = True
 
@@ -691,8 +692,21 @@ def main():
     parser.add_argument("--force", action="store_true", help="Force reinstallation")
     parser.add_argument("--no-rollback", action="store_true", help="Disable rollback")
     parser.add_argument("--no-validation", action="store_true", help="Disable validation")
+    parser.add_argument("--no-pip", action="store_true", help="Disable pip fallback for dependency resolution")
+    parser.add_argument("--check", action="store_true", help="Check installation status without installing")
     
     args = parser.parse_args()
+    
+    # Handle check mode
+    if args.check:
+        print("🔍 Checking OpenSSL Tools installation status...")
+        install_dir = args.install_dir or Path.cwd()
+        if install_dir.exists() and (install_dir / ".bootstrap_state.json").exists():
+            print("✅ OpenSSL Tools is already installed")
+            sys.exit(0)
+        else:
+            print("❌ OpenSSL Tools is not installed")
+            sys.exit(1)
     
     # Detect platform if not specified
     if not args.platform or not args.arch or not args.compiler:
@@ -709,7 +723,8 @@ def main():
         install_dir=args.install_dir or Path.cwd(),
         force_reinstall=args.force,
         enable_rollback=not args.no_rollback,
-        validate_signatures=not args.no_validation
+        validate_signatures=not args.no_validation,
+        no_pip=args.no_pip
     )
     
     # Run bootstrap

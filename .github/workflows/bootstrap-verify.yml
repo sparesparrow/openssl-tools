@@ -72,6 +72,7 @@ jobs:
             --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
             --compiler ${{ matrix.compiler }} \
             --install-dir ./bootstrap-test-1 \
+            --no-pip \
             --force
           
           # Check if first run succeeded
@@ -89,7 +90,9 @@ jobs:
             --platform ${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }} \
             --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
             --compiler ${{ matrix.compiler }} \
-            --install-dir ./bootstrap-test-1
+            --install-dir ./bootstrap-test-1 \
+            --no-pip \
+            --check
           
           # Check if second run succeeded
           if [ $? -eq 0 ]; then
