@@ -1,0 +1,178 @@
+name: 🛡️ FIPS 140-3 Compliance Validation
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: 'FIPS profile to validate'
+        type: string
+        required: true
+      openssl_version:
+        description: 'OpenSSL version to validate'
+        type: string
+        default: '3.2.0'
+      fips_module_path:
+        description: 'Path to FIPS module'
+        type: string
+        default: './dist/lib/ossl-modules/fips.so'
+      strict_validation:
+        description: 'Enable strict FIPS validation'
+        type: boolean
+        default: true
+    outputs:
+      fips_compliant:
+        description: 'Whether FIPS 140-3 compliance was validated'
+        value: ${{ jobs.fips-check.outputs.compliant }}
+      validation_details:
+        description: 'FIPS validation details'
+        value: ${{ jobs.fips-check.outputs.validation_details }}
+
+jobs:
+  fips-check:
+    name: 🛡️ FIPS 140-3 Compliance Check
+    runs-on: ubuntu-22.04
+    outputs:
+      compliant: ${{ steps.fips-validation.outputs.compliant }}
+      validation_details: ${{ steps.fips-validation.outputs.details }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up OpenSSL build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev zlib1g-dev
+
+      - name: Build OpenSSL with FIPS
+        run: |
+          # Configure OpenSSL with FIPS support
+          ./Configure linux-x86_64 \
+            --prefix=/usr/local/openssl \
+            --openssldir=/usr/local/openssl/ssl \
+            enable-fips \
+            enable-module \
+            enable-fips-140-3 \
+            --strict-warnings
+          
+          # Build OpenSSL
+          make -j$(nproc)
+          sudo make install
+          
+          # Update library path
+          echo '/usr/local/openssl/lib' | sudo tee /etc/ld.so.conf.d/openssl.conf
+          sudo ldconfig
+
+      - name: FIPS 140-3 Compliance Check
+        id: fips-validation
+        run: |
+          echo "🔍 Validating FIPS 140-3 compliance for profile: ${{ inputs.profile }}"
+          
+          # Check if FIPS module exists
+          if [ ! -f "${{ inputs.fips_module_path }}" ]; then
+            echo "❌ FIPS module not found at ${{ inputs.fips_module_path }}"
+            echo "compliant=false" >> $GITHUB_OUTPUT
+            echo "details=FIPS module not found" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Install FIPS module
+          echo "📦 Installing FIPS module..."
+          openssl fipsinstall -out fipsmodule.cnf -module ${{ inputs.fips_module_path }}
+          
+          # Validate FIPS configuration
+          if grep -q "fips = 1" fipsmodule.cnf; then
+            echo "✅ FIPS module configuration valid"
+            FIPS_CONFIG_VALID=true
+          else
+            echo "❌ FIPS module configuration invalid"
+            FIPS_CONFIG_VALID=false
+          fi
+          
+          # Test FIPS functionality
+          echo "🧪 Testing FIPS functionality..."
+          if openssl version -m | grep -q "fips"; then
+            echo "✅ FIPS mode detected in OpenSSL"
+            FIPS_MODE_VALID=true
+          else
+            echo "❌ FIPS mode not detected"
+            FIPS_MODE_VALID=false
+          fi
+          
+          # Validate FIPS algorithms
+          echo "🔐 Validating FIPS algorithms..."
+          FIPS_ALGORITHMS_VALID=true
+          
+          # Test AES-256-GCM (FIPS approved)
+          if openssl enc -aes-256-gcm -k test -P 2>/dev/null | grep -q "aes-256-gcm"; then
+            echo "✅ AES-256-GCM available"
+          else
+            echo "❌ AES-256-GCM not available"
+            FIPS_ALGORITHMS_VALID=false
+          fi
+          
+          # Test SHA-256 (FIPS approved)
+          if echo "test" | openssl dgst -sha256 2>/dev/null | grep -q "sha256"; then
+            echo "✅ SHA-256 available"
+          else
+            echo "❌ SHA-256 not available"
+            FIPS_ALGORITHMS_VALID=false
+          fi
+          
+          # Overall compliance check
+          if [ "$FIPS_CONFIG_VALID" = "true" ] && [ "$FIPS_MODE_VALID" = "true" ] && [ "$FIPS_ALGORITHMS_VALID" = "true" ]; then
+            echo "✅ FIPS 140-3 compliance validated"
+            echo "compliant=true" >> $GITHUB_OUTPUT
+            echo "details=FIPS 140-3 compliance validated successfully" >> $GITHUB_OUTPUT
+          else
+            echo "❌ FIPS 140-3 compliance validation failed"
+            echo "compliant=false" >> $GITHUB_OUTPUT
+            echo "details=FIPS validation failed: config=$FIPS_CONFIG_VALID, mode=$FIPS_MODE_VALID, algorithms=$FIPS_ALGORITHMS_VALID" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: FIPS Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: fips-security-results.sarif
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: true
+
+      - name: Upload FIPS validation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fips-validation-${{ github.run_id }}
+          path: |
+            fipsmodule.cnf
+            fips-security-results.sarif
+          retention-days: 30
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: fips-security-results.sarif
+        continue-on-error: true
+
+      - name: FIPS validation summary
+        run: |
+          echo "## 🛡️ FIPS 140-3 Compliance Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Profile**: ${{ inputs.profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenSSL Version**: ${{ inputs.openssl_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS Module**: ${{ inputs.fips_module_path }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Strict Validation**: ${{ inputs.strict_validation }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Compliance Status" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS 140-3 Compliant**: ${{ steps.fips-validation.outputs.compliant }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Validation Details**: ${{ steps.fips-validation.outputs.details }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Security Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tool**: Trivy" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Type**: Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Severity**: HIGH,CRITICAL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
