@@ -1,6 +1,6 @@
 """
-OpenSSL Tools Conan Package
-Provides build tools, automation scripts, and infrastructure components
+OpenSSL Tools Python Requires Package
+Provides shared utilities and base classes for OpenSSL development tools
 """
 
 from conan import ConanFile
@@ -12,37 +12,28 @@ from pathlib import Path
 
 class OpenSSLToolsConan(ConanFile):
     name = "openssl-tools"
-    version = "1.0.0"
-    description = "OpenSSL build tools, automation scripts, and infrastructure components"
+    version = "0.1.0"
+    description = "Shared utilities and base classes for OpenSSL development tools"
     license = "Apache-2.0"
     url = "https://github.com/sparesparrow/openssl-tools"
     homepage = "https://github.com/sparesparrow/openssl-tools"
-    topics = ("openssl", "build-tools", "automation", "ci-cd")
-    
-    # Package settings
-    package_type = "application"
-    settings = "os", "arch", "compiler", "build_type"
-    
-    # No source code to build - this is a tools package
-    exports_sources = "scripts/*", "profiles/*", "docker/*", "templates/*", ".cursor/*", "openssl_tools/automation/ai_agents/*"
+    topics = ("openssl", "python-requires", "utilities", "ci-cd")
+
+    # Python requires package
+    package_type = "python-require"
+
+    # Export Python source code for consumption
+    exports_sources = "openssl_tools/foundation/*", "openssl_tools/core/*", "openssl_tools/util/*"
     
     def layout(self):
         basic_layout(self)
     
     def package(self):
-        # Copy all tools and scripts
-        copy(self, "scripts/*", src=self.source_folder, dst=os.path.join(self.package_folder, "scripts"))
-        copy(self, "profiles/*", src=self.source_folder, dst=os.path.join(self.package_folder, "profiles"))
-        copy(self, "docker/*", src=self.source_folder, dst=os.path.join(self.package_folder, "docker"))
-        copy(self, "templates/*", src=self.source_folder, dst=os.path.join(self.package_folder, "templates"))
-        copy(self, ".cursor/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".cursor"))
-        copy(self, "openssl_tools/automation/ai_agents/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools/automation/ai_agents"))
-        
-        # Copy configuration files
-        copy(self, "*.md", src=self.source_folder, dst=self.package_folder)
-        copy(self, ".env.template", src=self.source_folder, dst=self.package_folder)
-        copy(self, ".devcontainer/*", src=self.source_folder, dst=os.path.join(self.package_folder, ".devcontainer"))
-        
+        # Copy Python utilities for python_requires consumption
+        copy(self, "openssl_tools/foundation/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools", "foundation"))
+        copy(self, "openssl_tools/core/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools", "core"))
+        copy(self, "openssl_tools/util/*", src=self.source_folder, dst=os.path.join(self.package_folder, "openssl_tools", "util"))
+
         # Create package info
         self._create_package_info()
     
@@ -90,18 +81,12 @@ class OpenSSLToolsConan(ConanFile):
              json.dumps(package_info, indent=2))
     
     def package_info(self):
-        """Define package information for consumers"""
-        self.cpp_info.bindirs = ["scripts"]
-        self.cpp_info.libdirs = []
-        self.cpp_info.includedirs = []
-        
-        # Set environment variables for tools
+        """Define package information for python_requires consumers"""
+        # Add Python modules to Python path for importing
+        self.runenv_info.define("PYTHONPATH", self.package_folder)
+
+        # Set environment variables for utilities
         self.runenv_info.define("OPENSSL_TOOLS_ROOT", self.package_folder)
-        self.runenv_info.define("OPENSSL_TOOLS_SCRIPTS", os.path.join(self.package_folder, "scripts"))
-        self.runenv_info.define("OPENSSL_TOOLS_PROFILES", os.path.join(self.package_folder, "profiles"))
-        self.runenv_info.define("OPENSSL_TOOLS_DOCKER", os.path.join(self.package_folder, "docker"))
-        self.runenv_info.define("OPENSSL_TOOLS_MCP", os.path.join(self.package_folder, "openssl_tools", "automation", "ai_agents"))
-        self.runenv_info.define("OPENSSL_TOOLS_CURSOR_CONFIG", os.path.join(self.package_folder, ".cursor"))
-        
-        # Add to PATH
-        self.env_info.PATH.append(os.path.join(self.package_folder, "scripts"))
+        self.runenv_info.define("OPENSSL_TOOLS_FOUNDATION", os.path.join(self.package_folder, "openssl_tools", "foundation"))
+        self.runenv_info.define("OPENSSL_TOOLS_CORE", os.path.join(self.package_folder, "openssl_tools", "core"))
+        self.runenv_info.define("OPENSSL_TOOLS_UTIL", os.path.join(self.package_folder, "openssl_tools", "util"))
