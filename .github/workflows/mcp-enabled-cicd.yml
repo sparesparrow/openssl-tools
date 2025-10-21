@@ -1,0 +1,252 @@
+# ==============================================================================
+# 🚀 MCP-ENABLED OPENSSL CI/CD PIPELINE
+# ==============================================================================
+# Modern CI/CD with Model Context Protocol Integration
+# Architecture: Foundation → Tooling → Domain → Distribution
+# 
+# 📊 Visual Architecture:
+# ┌─────────────────────────────────────────────────────────────┐
+# │  🔐 Foundation    →  🛠️ Tooling  →  🌐 Domain  →  📦 Dist  │
+# │  (Base + FIPS)       (Tools)        (OpenSSL)     (Registry)│
+# └─────────────────────────────────────────────────────────────┘
+# ==============================================================================
+
+name: 🚀 MCP-Enabled CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**' ]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'conanfile.py'
+      - 'conan-profiles/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      deployment_target:
+        description: '🎯 Deployment Target'
+        required: true
+        default: 'general'
+        type: choice
+        options:
+          - general
+          - fips-government
+          - fips-enterprise
+      enable_mcp_analysis:
+        description: '🤖 Enable MCP Analysis'
+        required: false
+        default: true
+        type: boolean
+      build_all_platforms:
+        description: '🌐 Build All Platforms'
+        required: false
+        default: false
+        type: boolean
+
+# ==============================================================================
+# 🌍 ENVIRONMENT CONFIGURATION
+# ==============================================================================
+env:
+  # 📦 Conan Configuration
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
+  
+  # 🤖 MCP Configuration  
+  MCP_SERVER_URL: http://localhost:8080
+  MCP_PROMPTS_DIR: .cursor/prompts
+  MCP_ORCHESTRATOR_PORT: 8080
+  
+  # 🔐 OpenSSL Configuration
+  OPENSSL_VERSION: "3.4.1"
+  OPENSSL_FIPS_VERSION: "3.0.9"
+  OPENSSL_FIPS_CERT: "4985"
+  
+  # 🔧 Build Configuration
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  CONAN_VERSION: "2.0.17"
+
+# ==============================================================================
+# 🎯 JOBS
+# ==============================================================================
+
+jobs:
+  # ============================================================================
+  # 📋 STAGE 1: INITIALIZATION & PLANNING
+  # ============================================================================
+  initialize-pipeline:
+    name: 📋 Initialize Pipeline
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      deployment-target: ${{ steps.config.outputs.deployment-target }}
+      mcp-enabled: ${{ steps.config.outputs.mcp-enabled }}
+      pipeline-id: ${{ steps.init.outputs.pipeline-id }}
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🔧 Initialize Pipeline
+        id: init
+        run: |
+          echo "🚀 Initializing MCP-Enabled CI/CD Pipeline"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          PIPELINE_ID="pipeline-$(date +%Y%m%d-%H%M%S)-${{ github.run_id }}"
+          echo "pipeline-id=$PIPELINE_ID" >> $GITHUB_OUTPUT
+          
+          echo "📊 Pipeline ID: $PIPELINE_ID"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Actor: ${{ github.actor }}"
+      
+      - name: 🎯 Configure Deployment Target
+        id: config
+        run: |
+          echo "🎯 Configuring deployment target..."
+          
+          DEPLOYMENT_TARGET="${{ github.event.inputs.deployment_target || 'general' }}"
+          MCP_ENABLED="${{ github.event.inputs.enable_mcp_analysis || 'true' }}"
+          
+          echo "deployment-target=$DEPLOYMENT_TARGET" >> $GITHUB_OUTPUT
+          echo "mcp-enabled=$MCP_ENABLED" >> $GITHUB_OUTPUT
+          
+          echo "📦 Deployment: $DEPLOYMENT_TARGET"
+          echo "🤖 MCP Analysis: $MCP_ENABLED"
+      
+      - name: 🌐 Generate Build Matrix
+        id: generate-matrix
+        run: |
+          echo "🌐 Generating build matrix..."
+          
+          # Define platforms based on input
+          if [ "${{ github.event.inputs.build_all_platforms }}" = "true" ]; then
+            PLATFORMS='["linux-gcc11", "linux-gcc12", "linux-clang15", "windows-msvc2022", "macos-clang14", "macos-clang15"]'
+          else
+            PLATFORMS='["linux-gcc11", "linux-clang15", "windows-msvc2022"]'
+          fi
+          
+          # Create matrix JSON
+          MATRIX=$(cat <<EOF
+          {
+            "include": [
+              {"platform": "linux-gcc11", "os": "ubuntu-22.04", "compiler": "gcc", "version": "11"},
+              {"platform": "linux-gcc12", "os": "ubuntu-22.04", "compiler": "gcc", "version": "12"},
+              {"platform": "linux-clang15", "os": "ubuntu-22.04", "compiler": "clang", "version": "15"},
+              {"platform": "windows-msvc2022", "os": "windows-2022", "compiler": "msvc", "version": "193"},
+              {"platform": "macos-clang14", "os": "macos-12", "compiler": "apple-clang", "version": "14"},
+              {"platform": "macos-clang15", "os": "macos-13", "compiler": "apple-clang", "version": "15"}
+            ]
+          }
+          EOF
+          )
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "📊 Build matrix generated"
+      
+      - name: 💾 Cache Pipeline Configuration
+        uses: actions/cache@v4
+        with:
+          path: |
+            .mcp/
+            .cursor/
+          key: pipeline-config-${{ steps.init.outputs.pipeline-id }}
+
+  # ============================================================================
+  # 🤖 STAGE 2: MCP INFRASTRUCTURE SETUP
+  # ============================================================================
+  setup-mcp-infrastructure:
+    name: 🤖 Setup MCP Infrastructure
+    needs: initialize-pipeline
+    if: needs.initialize-pipeline.outputs.mcp-enabled == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      mcp-server-ready: ${{ steps.health.outputs.ready }}
+      mcp-server-url: ${{ steps.start.outputs.server-url }}
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 📚 Install MCP Tools
+        run: |
+          echo "📚 Installing MCP tools..."
+          
+          # Install MCP Project Orchestrator
+          pip install -e .
+          
+          # Install MCP Inspector
+          npm install -g @modelcontextprotocol/inspector
+          
+          # Install MCP Prompts Server
+          npm install -g @sparesparrow/mcp-prompts
+          
+          echo "✅ MCP tools installed"
+      
+      - name: 🚀 Start MCP Servers
+        id: start
+        run: |
+          echo "🚀 Starting MCP servers..."
+          
+          # Start MCP Project Orchestrator
+          python -m mcp_project_orchestrator.fastmcp &
+          MCP_ORCH_PID=$!
+          echo "mcp-orchestrator-pid=$MCP_ORCH_PID" >> $GITHUB_ENV
+          
+          # Start MCP Prompts Server
+          npx -y @sparesparrow/mcp-prompts \
+            --source catalog: \
+            --source file:.cursor/prompts &
+          MCP_PROMPTS_PID=$!
+          echo "mcp-prompts-pid=$MCP_PROMPTS_PID" >> $GITHUB_ENV
+          
+          # Wait for servers to be ready
+          echo "⏳ Waiting for servers to start..."
+          sleep 10
+          
+          echo "server-url=http://localhost:${MCP_ORCHESTRATOR_PORT}" >> $GITHUB_OUTPUT
+          echo "✅ MCP servers started"
+      
+      - name: 🏥 Health Check
+        id: health
+        run: |
+          echo "🏥 Checking MCP server health..."
+          
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f http://localhost:${MCP_ORCHESTRATOR_PORT}/health 2>/dev/null; then
+              echo "✅ MCP Orchestrator is healthy"
+              echo "ready=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⏳ Retry $RETRY_COUNT/$MAX_RETRIES..."
+            sleep 5
+          done
+          
+          echo "❌ MCP server health check failed"
+          echo "ready=false" >> $GITHUB_OUTPUT
+          exit 1

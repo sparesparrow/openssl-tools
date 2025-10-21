@@ -36,29 +36,29 @@ jobs:
   upload:
     name: Upload ${{ inputs.component }} to ${{ inputs.registry }}
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
-          
+
       - name: Install Conan
         run: |
           pip install conan==2.0.17
-          
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.component }}-${{ inputs.platform }}-Release
           path: ${{ env.CONAN_USER_HOME }}/p/
-          
+
       - name: Configure registry
         run: |
           case "${{ inputs.registry }}" in
@@ -75,12 +75,12 @@ jobs:
               conan remote login -p ${{ secrets.CONAN_PASSWORD }} conancenter ${{ secrets.CONAN_LOGIN_USERNAME }}
               ;;
           esac
-          
+
       - name: Upload package
         run: |
           cd ${{ inputs.component }}
           conan upload "*" -r ${{ inputs.registry }} --confirm --all
-          
+
       - name: Verify upload
         run: |
           conan search "*" -r ${{ inputs.registry }} | grep ${{ inputs.component }} || echo "Upload verification failed"
