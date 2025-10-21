@@ -1,0 +1,38 @@
+# Bootstrap Verification Test Requirements
+# Dependencies for testing openssl-conan-init.py standalone installer
+
+# Core testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.8.0
+pytest-xdist>=2.5.0
+
+# Test utilities
+mock>=4.0.0
+responses>=0.20.0
+freezegun>=1.2.0
+
+# Security testing
+cryptography>=3.4.8
+pyyaml>=6.0.0
+
+# Network testing
+requests>=2.28.0
+urllib3>=1.26.0
+
+# File system testing
+pathlib2>=2.3.0
+
+# Platform testing
+psutil>=5.9.0
+
+# Coverage and reporting
+coverage>=6.5.0
+pytest-html>=3.1.0
+pytest-json-report>=1.5.0
+
+# Performance testing
+pytest-benchmark>=4.0.0
+
+# Integration testing
+docker>=6.0.0
