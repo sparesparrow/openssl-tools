@@ -1,0 +1,340 @@
+name: 🧪 Bootstrap Idempotency Verification
+
+on:
+  workflow_call:
+    inputs:
+      test_matrix:
+        description: 'Test matrix configuration'
+        type: string
+        default: 'full'
+      enable_rollback_tests:
+        description: 'Enable rollback mechanism tests'
+        type: boolean
+        default: true
+      enable_reproducibility_tests:
+        description: 'Enable reproducibility tests'
+        type: boolean
+        default: true
+    outputs:
+      verification_passed:
+        description: 'Whether bootstrap verification passed'
+        value: ${{ jobs.verify.outputs.verification_passed }}
+      test_results:
+        description: 'Test results summary'
+        value: ${{ jobs.verify.outputs.test_results }}
+
+jobs:
+  verify:
+    name: 🧪 Bootstrap Verification
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            profile: linux-gcc11
+            compiler: gcc
+          - os: windows-2022
+            profile: windows-msvc193
+            compiler: msvc
+          - os: macos-14
+            profile: macos-arm64
+            compiler: clang
+    runs-on: ${{ matrix.os }}
+    outputs:
+      verification_passed: ${{ steps.verification-summary.outputs.passed }}
+      test_results: ${{ steps.verification-summary.outputs.results }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-mock
+
+      - name: Test Bootstrap Idempotency
+        id: idempotency-test
+        run: |
+          echo "🔄 Testing bootstrap idempotency for ${{ matrix.profile }}..."
+          
+          # First run
+          echo "📦 First bootstrap run..."
+          python3 scripts/openssl-conan-init.py \
+            --platform ${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }} \
+            --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
+            --compiler ${{ matrix.compiler }} \
+            --install-dir ./bootstrap-test-1 \
+            --no-pip \
+            --force
+          
+          # Check if first run succeeded
+          if [ $? -eq 0 ]; then
+            echo "✅ First run successful"
+            FIRST_RUN_SUCCESS=true
+          else
+            echo "❌ First run failed"
+            FIRST_RUN_SUCCESS=false
+          fi
+          
+          # Second run (should be idempotent)
+          echo "🔄 Second bootstrap run (idempotency test)..."
+          python3 scripts/openssl-conan-init.py \
+            --platform ${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }} \
+            --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
+            --compiler ${{ matrix.compiler }} \
+            --install-dir ./bootstrap-test-1 \
+            --no-pip \
+            --check
+          
+          # Check if second run succeeded
+          if [ $? -eq 0 ]; then
+            echo "✅ Second run successful (idempotent)"
+            SECOND_RUN_SUCCESS=true
+          else
+            echo "❌ Second run failed"
+            SECOND_RUN_SUCCESS=false
+          fi
+          
+          # Verify state persistence
+          if [ -f "./bootstrap-test-1/.bootstrap_state.json" ]; then
+            echo "✅ State file created"
+            STATE_PERSISTENCE=true
+          else
+            echo "❌ State file missing"
+            STATE_PERSISTENCE=false
+          fi
+          
+          # Overall idempotency test result
+          if [ "$FIRST_RUN_SUCCESS" = "true" ] && [ "$SECOND_RUN_SUCCESS" = "true" ] && [ "$STATE_PERSISTENCE" = "true" ]; then
+            echo "idempotency_passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Idempotency test passed for ${{ matrix.profile }}"
+          else
+            echo "idempotency_passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Idempotency test failed for ${{ matrix.profile }}"
+            exit 1
+          fi
+
+      - name: Test Cross-Platform Compatibility
+        id: cross-platform-test
+        run: |
+          echo "🌐 Testing cross-platform compatibility for ${{ matrix.profile }}..."
+          
+          # Test platform detection
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'scripts')
+          from openssl_conan_init import PlatformValidator
+          
+          system, arch, compiler = PlatformValidator.detect_platform()
+          print(f'Detected: {system}-{arch}-{compiler}')
+          
+          # Validate platform compatibility
+          from openssl_conan_init import BootstrapConfig
+          config = BootstrapConfig(
+              platform='${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }}',
+              arch='${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }}',
+              compiler='${{ matrix.compiler }}'
+          )
+          
+          try:
+              PlatformValidator.validate_platform(config)
+              print('✅ Platform validation passed')
+              exit(0)
+          except Exception as e:
+              print(f'❌ Platform validation failed: {e}')
+              exit(1)
+          "
+          
+          if [ $? -eq 0 ]; then
+            echo "cross_platform_passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Cross-platform compatibility test passed"
+          else
+            echo "cross_platform_passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Cross-platform compatibility test failed"
+            exit 1
+          fi
+
+      - name: Test Rollback Mechanisms
+        if: inputs.enable_rollback_tests
+        id: rollback-test
+        run: |
+          echo "🔄 Testing rollback mechanisms for ${{ matrix.profile }}..."
+          
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'scripts')
+          from openssl_conan_init import RollbackManager, BootstrapConfig
+          from pathlib import Path
+          import tempfile
+          
+          with tempfile.TemporaryDirectory() as temp_dir:
+              config = BootstrapConfig(
+                  platform='${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }}',
+                  arch='${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }}',
+                  compiler='${{ matrix.compiler }}',
+                  install_dir=Path(temp_dir)
+              )
+              
+              # Create test file
+              test_file = Path(temp_dir) / 'test_file.txt'
+              test_file.write_text('original content')
+              
+              # Test rollback
+              manager = RollbackManager(config)
+              manager.create_backup('test_op')
+              test_file.write_text('modified content')
+              manager.rollback('test_op')
+              
+              if test_file.read_text() == 'original content':
+                  print('✅ Rollback test passed')
+                  exit(0)
+              else:
+                  print('❌ Rollback test failed')
+                  exit(1)
+          "
+          
+          if [ $? -eq 0 ]; then
+            echo "rollback_passed=true" >> $GITHUB_OUTPUT
+            echo "✅ Rollback mechanism test passed"
+          else
+            echo "rollback_passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Rollback mechanism test failed"
+            exit 1
+          fi
+
+      - name: Test Reproducibility
+        if: inputs.enable_reproducibility_tests
+        id: reproducibility-test
+        run: |
+          echo "🔄 Testing reproducibility for ${{ matrix.profile }}..."
+          
+          # First installation
+          python3 scripts/openssl-conan-init.py \
+            --platform ${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }} \
+            --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
+            --compiler ${{ matrix.compiler }} \
+            --install-dir ./repro-test-1 \
+            --force
+          
+          # Second installation
+          python3 scripts/openssl-conan-init.py \
+            --platform ${{ matrix.os == 'ubuntu-22.04' && 'linux' || matrix.os == 'windows-2022' && 'windows' || 'darwin' }} \
+            --arch ${{ matrix.profile == 'linux-gcc11' && 'x86_64' || matrix.profile == 'windows-msvc193' && 'x86_64' || 'arm64' }} \
+            --compiler ${{ matrix.compiler }} \
+            --install-dir ./repro-test-2 \
+            --force
+          
+          # Compare state files
+          if [ -f "./repro-test-1/.bootstrap_state.json" ] && [ -f "./repro-test-2/.bootstrap_state.json" ]; then
+            python3 -c "
+            import json
+            with open('./repro-test-1/.bootstrap_state.json') as f1, open('./repro-test-2/.bootstrap_state.json') as f2:
+                state1 = json.load(f1)
+                state2 = json.load(f2)
+                
+                # Remove timestamps for comparison
+                for state in [state1, state2]:
+                    for key in state:
+                        if 'timestamp' in state[key]:
+                            del state[key]['timestamp']
+                
+                if state1 == state2:
+                    print('✅ Reproducibility test passed')
+                    exit(0)
+                else:
+                    print('❌ Reproducibility test failed: states differ')
+                    exit(1)
+            "
+            
+            if [ $? -eq 0 ]; then
+              echo "reproducibility_passed=true" >> $GITHUB_OUTPUT
+              echo "✅ Reproducibility test passed"
+            else
+              echo "reproducibility_passed=false" >> $GITHUB_OUTPUT
+              echo "❌ Reproducibility test failed"
+              exit 1
+            fi
+          else
+            echo "reproducibility_passed=false" >> $GITHUB_OUTPUT
+            echo "❌ Reproducibility test failed: state files missing"
+            exit 1
+          fi
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-test-${{ matrix.profile }}-${{ github.run_id }}
+          path: |
+            bootstrap-test-1/
+            repro-test-1/
+            repro-test-2/
+          retention-days: 7
+
+      - name: Verification summary
+        id: verification-summary
+        run: |
+          IDEMPOTENCY_PASSED="${{ steps.idempotency-test.outputs.idempotency_passed }}"
+          CROSS_PLATFORM_PASSED="${{ steps.cross-platform-test.outputs.cross_platform_passed }}"
+          ROLLBACK_PASSED="${{ steps.rollback-test.outputs.rollback_passed || 'true' }}"
+          REPRODUCIBILITY_PASSED="${{ steps.reproducibility-test.outputs.reproducibility_passed || 'true' }}"
+          
+          echo "## 🧪 Bootstrap Verification Results for ${{ matrix.profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Idempotency**: ${{ steps.idempotency-test.outputs.idempotency_passed == 'true' && '✅ PASS' || '❌ FAIL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cross-Platform**: ${{ steps.cross-platform-test.outputs.cross_platform_passed == 'true' && '✅ PASS' || '❌ FAIL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rollback**: ${{ steps.rollback-test.outputs.rollback_passed == 'true' && '✅ PASS' || '⏭️ SKIP' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reproducibility**: ${{ steps.reproducibility-test.outputs.reproducibility_passed == 'true' && '✅ PASS' || '⏭️ SKIP' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall verification result
+          if [ "$IDEMPOTENCY_PASSED" = "true" ] && [ "$CROSS_PLATFORM_PASSED" = "true" ]; then
+            echo "verification_passed=true" >> $GITHUB_OUTPUT
+            echo "results=All critical tests passed" >> $GITHUB_OUTPUT
+            echo "### ✅ Overall Status" >> $GITHUB_STEP_SUMMARY
+            echo "**✅ VERIFICATION PASSED**" >> $GITHUB_STEP_SUMMARY
+            echo "Bootstrap verification successful for ${{ matrix.profile }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "verification_passed=false" >> $GITHUB_OUTPUT
+            echo "results=Critical tests failed" >> $GITHUB_OUTPUT
+            echo "### ❌ Overall Status" >> $GITHUB_STEP_SUMMARY
+            echo "**❌ VERIFICATION FAILED**" >> $GITHUB_STEP_SUMMARY
+            echo "Bootstrap verification failed for ${{ matrix.profile }}" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  # Final verification summary
+  verification-summary:
+    name: 📊 Verification Summary
+    runs-on: ubuntu-latest
+    needs: verify
+    if: always()
+    
+    steps:
+      - name: Generate final summary
+        run: |
+          echo "## 🧪 Bootstrap Verification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Overall Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linux GCC11**: ${{ needs.verify.result == 'success' && '✅ PASS' || '❌ FAIL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Windows MSVC193**: ${{ needs.verify.result == 'success' && '✅ PASS' || '❌ FAIL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **macOS ARM64**: ${{ needs.verify.result == 'success' && '✅ PASS' || '❌ FAIL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.verify.result }}" = "success" ]; then
+            echo "### 🎉 Verification Status" >> $GITHUB_STEP_SUMMARY
+            echo "**✅ ALL TESTS PASSED**" >> $GITHUB_STEP_SUMMARY
+            echo "Bootstrap verification is complete and ready for production deployment." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Verification Issues" >> $GITHUB_STEP_SUMMARY
+            echo "**❌ SOME TESTS FAILED**" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the failed tests before proceeding with deployment." >> $GITHUB_STEP_SUMMARY
+          fi

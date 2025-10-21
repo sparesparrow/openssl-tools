@@ -1,0 +1,116 @@
+name: Build and Publish to Cloudsmith
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt', 'scripts/mcp/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Conan
+        run: pip install conan
+
+      - name: Clean stale Conan locks
+        run: conan cache clean --locks || true
+
+      - name: Cache Conan
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.conan2/p
+            ~/.conan2/pc
+            ~/.conan2/data
+          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.py') }}
+          restore-keys: |
+            ${{ runner.os }}-conan-
+
+      - name: Configure Conan remotes and profiles
+        run: |
+          # Add Cloudsmith remote
+          conan remote add sparesparrow-conan \
+            https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/ \
+            --force
+          
+          # Install Conan config if profiles directory exists
+          if [ -d "conan-profiles" ]; then
+            conan config install conan-profiles --type=dir
+          fi
+
+      - name: Create package (pulls openssl-base, openssl-fips-data)
+        run: conan create . --build=missing
+
+      - name: Generate dependency graph
+        run: |
+          conan graph info . --format=json > dependency-graph.json
+          echo "## Dependency Graph" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          cat dependency-graph.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload dependency graph artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph
+          path: dependency-graph.json
+          retention-days: 90
+
+      - name: Generate SBOM
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          # Generate SBOM in CycloneDX format
+          conan graph info . --format=json > sbom-raw.json
+          echo '{"bomFormat": "CycloneDX", "specVersion": "1.4", "version": 1}' > sbom.json
+          cat sbom-raw.json >> sbom.json
+
+      - name: Install Cosign
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: sigstore/cosign-installer@v3
+
+      - name: Upload to Cloudsmith (main/master branch only)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          conan remote login sparesparrow-conan spare-sparrow \
+            --password "$CLOUDSMITH_API_KEY"
+          conan upload "openssl-build-tools/*" \
+            -r=sparesparrow-conan \
+            --all \
+            --confirm
+
+      - name: Sign artifacts with Cosign
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          # Sign the SBOM
+          cosign sign-blob --yes sbom.json --output-signature sbom.json.sig
+          echo "✅ Artifacts signed successfully" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload signed artifacts
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-artifacts
+          path: |
+            sbom.json
+            sbom.json.sig
+          retention-days: 90

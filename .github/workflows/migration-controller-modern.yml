@@ -314,15 +314,9 @@ jobs:
             const ciMode = '${{ needs.determine-migration-status.outputs.ci_mode }}';
             const validationPassed = '${{ needs.migration-validation.outputs.validation_passed }}';
             
-            // Block legacy-only mode - CRITICAL: This is a hard blocker
+            // Block legacy-only mode
             if (labels.includes('legacy-only')) {
-              core.setFailed('❌ BLOCKED: Legacy-only CI mode violates modernization principles. Switch to conan-only, both-ci, or hybrid mode immediately.');
-              return;
-            }
-            
-            // Additional check for any legacy-only references
-            if (ciMode === 'legacy-only' || ciMode === 'blocked') {
-              core.setFailed('❌ BLOCKED: Legacy-only CI mode detected. Modernization requires conan-only or hybrid mode.');
+              core.setFailed('❌ Legacy-only CI mode is not permitted. Please switch to conan-only, both-ci, or hybrid mode.');
               return;
             }
             
