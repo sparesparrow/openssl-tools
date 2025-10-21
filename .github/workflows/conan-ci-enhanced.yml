@@ -2,20 +2,20 @@ name: Conan Branch Compilation (Enhanced)
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
     paths:
-      - 'conanfile.py'
-      - 'conanfile.txt'
-      - 'conan-recipes/**'
-      - 'scripts/conan/**'
-      - 'conan-dev/**'
-      - 'src/**'
-      - 'include/**'
-      - 'test/**'
-      - 'CMakeLists.txt'
-      - 'Makefile'
-      - 'configure'
-      - 'config'
+      - "conanfile.py"
+      - "conanfile.txt"
+      - "conan-recipes/**"
+      - "scripts/conan/**"
+      - "conan-dev/**"
+      - "src/**"
+      - "include/**"
+      - "test/**"
+      - "CMakeLists.txt"
+      - "Makefile"
+      - "configure"
+      - "config"
   workflow_dispatch:
 
 env:
@@ -23,9 +23,13 @@ env:
   CONAN_COLOR_DISPLAY: 1
   CLICOLOR_FORCE: 1
   CLICOLOR: 1
-  ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
+  CONAN_VERSION: ${{ vars.CONAN_VERSION || '2.0.17' }}
+  PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.12' }}
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
   ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
   ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+  CONAN_REPOSITORY_NAME: ${{ vars.CONAN_REPOSITORY_NAME || 'sparesparrow-conan' }}
+  CONAN_REPOSITORY_URL: ${{ vars.CONAN_REPOSITORY_URL || 'https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/' }}
 
 jobs:
   detect-changes:
@@ -34,7 +38,7 @@ jobs:
       openssl-changed: ${{ steps.changes.outputs.openssl }}
       conan-changed: ${{ steps.changes.outputs.conan }}
       tests-changed: ${{ steps.changes.outputs.tests }}
-    steps:
+    steps:e
       - uses: actions/checkout@v4
       - name: Detect changes
         uses: dorny/paths-filter@v2
@@ -63,7 +67,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: 3  # Limit parallel jobs to avoid resource exhaustion
+      max-parallel: 3 # Limit parallel jobs to avoid resource exhaustion
       matrix:
         include:
           - name: Linux x86_64 GCC
@@ -134,36 +138,53 @@ jobs:
             build_type: Debug
             conan_options: -o fips=False -o shared=False -o enable_tsan=True
             test: false
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Preflight secrets/vars
+        run: |
+          missing=0
+          # Optional Artifactory (skip if not provided)
+          test -n "${{ env.ARTIFACTORY_URL }}" || echo "Note: ARTIFACTORY_URL not set, Artifactory upload may be skipped"
+          # Required GitHub token for packages upload on main
+          test -n "${{ secrets.GITHUB_TOKEN }}" || echo "Note: GITHUB_TOKEN not set, package upload to GitHub Packages may be skipped"
+          # Conan remotes
+          test -n "${{ env.CONAN_REPOSITORY_NAME }}" || { echo "Missing var: CONAN_REPOSITORY_NAME"; missing=1; }
+          test -n "${{ env.CONAN_REPOSITORY_URL }}" || { echo "Missing var: CONAN_REPOSITORY_URL"; missing=1; }
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Set up Conan Python Environment
         run: |
           python scripts/setup-ci-environment.py
         continue-on-error: false
-      
+
+      - name: Configure Conan remotes
+        run: |
+          conan remote add ${{ env.CONAN_REPOSITORY_NAME }} ${{ env.CONAN_REPOSITORY_URL }} --force || true
+          conan remote add conancenter https://center.conan.io --force || true
+
       - name: Pre-build validation
         run: |
           python scripts/validation/pre-build-validation.py --config conan-dev/validation-config.yml
         continue-on-error: false
-      
+
       - name: Cache optimization
         run: |
           python scripts/validation/cache-optimization.py --config conan-dev/cache-optimization.yml
-        continue-on-error: true  # Non-critical step
-      
+        continue-on-error: true # Non-critical step
+
       - name: Authentication setup
         run: |
           python scripts/validation/auth-token-manager.py --config conan-dev/package-registries.yml
-        continue-on-error: true  # Non-critical step
-      
+        continue-on-error: true # Non-critical step
+
       - name: Conan install (with retry)
         run: |
           for attempt in 1 2 3; do
@@ -182,7 +203,7 @@ jobs:
             fi
           done
         timeout-minutes: 45
-      
+
       - name: Conan build (with retry)
         run: |
           for attempt in 1 2 3; do
@@ -201,7 +222,7 @@ jobs:
             fi
           done
         timeout-minutes: 60
-      
+
       - name: Conan test (with retry)
         if: ${{ matrix.test }}
         run: |
@@ -221,9 +242,9 @@ jobs:
             fi
           done
         timeout-minutes: 30
-      
+
       - name: Upload packages to Artifactory (with retry)
-        if: env.ARTIFACTORY_URL != ''
+        if: ${{ env.ARTIFACTORY_URL != '' }}
         run: |
           for attempt in 1 2 3; do
             echo "Artifactory upload attempt $attempt/3"
@@ -244,14 +265,36 @@ jobs:
           done
         continue-on-error: true
         timeout-minutes: 20
-      
+
+      - name: Upload packages to Cloudsmith (with retry)
+        if: ${{ secrets.CLOUDSMITH_API_KEY != '' }}
+        run: |
+          for attempt in 1 2 3; do
+            echo "Cloudsmith upload attempt $attempt/3"
+            if conan remote login ${{ env.CONAN_REPOSITORY_NAME }} spare-sparrow --password "${{ secrets.CLOUDSMITH_API_KEY }}" && \
+               conan upload "openssl/*" -r=${{ env.CONAN_REPOSITORY_NAME }} --all --confirm; then
+              echo "Cloudsmith upload successful on attempt $attempt"
+              break
+            else
+              echo "Cloudsmith upload failed on attempt $attempt"
+              if [ $attempt -eq 3 ]; then
+                echo "All retry attempts failed, but continuing..."
+                exit 0  # Don't fail the entire job for upload issues
+              fi
+              echo "Waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          done
+        continue-on-error: true
+        timeout-minutes: 20
+
       - name: Upload packages to GitHub Packages (with retry)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           for attempt in 1 2 3; do
             echo "GitHub Packages upload attempt $attempt/3"
-            if conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }} && \
-               conan remote update github-packages https://maven.pkg.github.com/${{ github.repository }} && \
+            if conan remote add github-packages ${{ vars.GITHUB_PACKAGES_URL || format('https://maven.pkg.github.com/{0}', github.repository) }} && \
+               conan remote update github-packages ${{ vars.GITHUB_PACKAGES_URL || format('https://maven.pkg.github.com/{0}', github.repository) }} && \
                conan user -p ${{ secrets.GITHUB_TOKEN }} -r github-packages ${{ github.actor }} && \
                conan upload "openssl/*" -r=github-packages --all --confirm --retry=3 --retry-wait=10; then
               echo "GitHub Packages upload successful on attempt $attempt"
@@ -268,7 +311,44 @@ jobs:
           done
         continue-on-error: true
         timeout-minutes: 20
-      
+
+      - name: Generate SBOM for build artifacts
+        if: always()
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: openssl-tools-${{ matrix.profile }}-sbom.json
+          fail-on-error: true
+
+      - name: Vulnerability Scan
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.profile }}.sarif'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: true
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.profile }}
+          path: openssl-tools-${{ matrix.profile }}-sbom.json
+          retention-days: 90
+
+      - name: Upload Trivy scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-${{ matrix.profile }}
+          path: trivy-results-${{ matrix.profile }}.sarif
+          retention-days: 30
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -279,7 +359,7 @@ jobs:
             ~/.conan2/p/*/p/
           retention-days: 30
         continue-on-error: true
-      
+
       - name: Cleanup on failure
         if: failure()
         run: |
@@ -293,9 +373,66 @@ jobs:
           free -h
         continue-on-error: true
 
+  # Security scanning job - mandatory before merge
+  security-scan:
+    needs: [detect-changes, compile-changes]
+    if: always() && needs.compile-changes.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          path: sbom-artifacts/
+          merge-multiple: true
+
+      - name: Download Trivy scan results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: trivy-scan-*
+          path: trivy-results/
+          merge-multiple: true
+
+      - name: Generate consolidated SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: openssl-tools-consolidated-sbom.json
+          fail-on-error: true
+
+      - name: Comprehensive vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-consolidated-results.sarif'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: true
+
+      - name: Upload consolidated security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            openssl-tools-consolidated-sbom.json
+            trivy-consolidated-results.sarif
+          retention-days: 90
+
+      - name: Security scan summary
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ✅ CycloneDX format" >> $GITHUB_STEP_SUMMARY
+          echo "- **Vulnerability Scan**: ✅ HIGH/CRITICAL severity check" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Status**: ✅ PASSED" >> $GITHUB_STEP_SUMMARY
+
   # Notification job that runs after all compile jobs
   notify-completion:
-    needs: [detect-changes, compile-changes]
+    needs: [detect-changes, compile-changes, security-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -309,7 +446,7 @@ jobs:
           else
             echo "⚠️ Compilation jobs were cancelled or skipped"
           fi
-      
+
       - name: Generate summary
         run: |
           echo "## Workflow Summary" >> $GITHUB_STEP_SUMMARY

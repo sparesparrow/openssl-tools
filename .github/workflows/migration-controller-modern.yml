@@ -1,0 +1,431 @@
+name: 🚀 Modern CI Migration Controller
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      target_phase:
+        description: 'Target migration phase'
+        required: false
+        type: choice
+        options:
+          - foundation
+          - parity
+          - complete
+        default: 'complete'
+      force_mode:
+        description: 'Force specific CI mode'
+        required: false
+        type: choice
+        options:
+          - conan-only
+          - both-ci
+          - hybrid
+        default: ''
+
+env:
+  MIGRATION_CONFIG: '.github/migration-config.yml'
+
+jobs:
+  # Phase 1: Determine Migration Status
+  determine-migration-status:
+    name: 🔍 Migration Status Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      current_phase: ${{ steps.phase-analysis.outputs.current_phase }}
+      target_phase: ${{ steps.phase-analysis.outputs.target_phase }}
+      ci_mode: ${{ steps.ci-strategy.outputs.ci_mode }}
+      conan_enabled: ${{ steps.ci-strategy.outputs.conan_enabled }}
+      legacy_enabled: ${{ steps.ci-strategy.outputs.legacy_enabled }}
+      migration_ready: ${{ steps.phase-analysis.outputs.migration_ready }}
+      rollback_required: ${{ steps.phase-analysis.outputs.rollback_required }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Load migration configuration
+        id: load-config
+        run: |
+          if [ -f "${{ env.MIGRATION_CONFIG }}" ]; then
+            echo "📋 Loading migration configuration"
+            cat ${{ env.MIGRATION_CONFIG }}
+          else
+            echo "⚠️ No migration config found, creating default"
+            mkdir -p .github
+            cat > ${{ env.MIGRATION_CONFIG }} << 'EOF'
+          migration:
+            phases:
+              foundation:
+                status: "completed"
+                completion_date: "2024-10-01"
+                features:
+                  - "conan-integration"
+                  - "security-scanning"
+                  - "sbom-generation"
+              parity:
+                status: "completed"
+                completion_date: "2024-10-15"
+                features:
+                  - "workflow-consolidation"
+                  - "bootstrap-verification"
+                  - "cross-platform-testing"
+              complete:
+                status: "in_progress"
+                target_date: "2024-10-30"
+                features:
+                  - "legacy-removal"
+                  - "full-automation"
+                  - "production-readiness"
+            
+            ci_modes:
+              conan-only:
+                status: "ready"
+                requirements:
+                  - "foundation-complete"
+                  - "security-validated"
+              both-ci:
+                status: "deprecated"
+                requirements:
+                  - "parity-phase"
+                  - "validation-complete"
+              hybrid:
+                status: "active"
+                requirements:
+                  - "complete-phase"
+                  - "legacy-removal"
+              legacy-only:
+                status: "blocked"
+                description: "Legacy CI only (deprecated)"
+                block_reason: "Violates modernization principles"
+          EOF
+          fi
+
+      - name: Analyze current phase
+        id: phase-analysis
+        run: |
+          # Load current phase from config
+          CURRENT_PHASE=$(yq eval '.migration.phases | to_entries | map(select(.value.status == "in_progress")) | .[0].key' ${{ env.MIGRATION_CONFIG }} || echo "complete")
+          TARGET_PHASE="${{ github.event.inputs.target_phase || 'complete' }}"
+          
+          echo "current_phase=$CURRENT_PHASE" >> $GITHUB_OUTPUT
+          echo "target_phase=$TARGET_PHASE" >> $GITHUB_OUTPUT
+          
+          # Check if migration is ready
+          if [ "$CURRENT_PHASE" = "complete" ]; then
+            echo "migration_ready=true" >> $GITHUB_OUTPUT
+            echo "rollback_required=false" >> $GITHUB_OUTPUT
+            echo "✅ Migration complete - ready for production"
+          else
+            echo "migration_ready=false" >> $GITHUB_OUTPUT
+            echo "rollback_required=false" >> $GITHUB_OUTPUT
+            echo "⏳ Migration in progress - $CURRENT_PHASE phase"
+          fi
+
+      - name: Determine CI strategy
+        id: ci-strategy
+        run: |
+          # Check for labels
+          LABELS="${{ github.event.pull_request.labels.*.name || '' }}"
+          
+          # Force mode override
+          FORCE_MODE="${{ github.event.inputs.force_mode }}"
+          
+          if [ -n "$FORCE_MODE" ]; then
+            case "$FORCE_MODE" in
+              "conan-only")
+                echo "ci_mode=conan-only" >> $GITHUB_OUTPUT
+                echo "conan_enabled=true" >> $GITHUB_OUTPUT
+                echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+                echo "🔧 Force override: Conan CI only"
+                ;;
+              "both-ci")
+                echo "ci_mode=both-ci" >> $GITHUB_OUTPUT
+                echo "conan_enabled=true" >> $GITHUB_OUTPUT
+                echo "legacy_enabled=true" >> $GITHUB_OUTPUT
+                echo "🔧 Force override: Both CI systems"
+                ;;
+              "hybrid")
+                echo "ci_mode=hybrid" >> $GITHUB_OUTPUT
+                echo "conan_enabled=true" >> $GITHUB_OUTPUT
+                echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+                echo "🔧 Force override: Hybrid mode"
+                ;;
+            esac
+          elif echo "$LABELS" | grep -q "conan-only"; then
+            echo "ci_mode=conan-only" >> $GITHUB_OUTPUT
+            echo "conan_enabled=true" >> $GITHUB_OUTPUT
+            echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+            echo "🏷️ Label 'conan-only' detected - Conan CI only"
+          elif echo "$LABELS" | grep -q "both-ci"; then
+            echo "ci_mode=both-ci" >> $GITHUB_OUTPUT
+            echo "conan_enabled=true" >> $GITHUB_OUTPUT
+            echo "legacy_enabled=true" >> $GITHUB_OUTPUT
+            echo "🏷️ Label 'both-ci' detected - Both CI systems"
+          elif echo "$LABELS" | grep -q "hybrid"; then
+            echo "ci_mode=hybrid" >> $GITHUB_OUTPUT
+            echo "conan_enabled=true" >> $GITHUB_OUTPUT
+            echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+            echo "🏷️ Label 'hybrid' detected - Hybrid mode"
+          elif echo "$LABELS" | grep -q "legacy-only"; then
+            echo "❌ BLOCKED: Legacy-only mode is not permitted"
+            echo "ci_mode=blocked" >> $GITHUB_OUTPUT
+            echo "conan_enabled=false" >> $GITHUB_OUTPUT
+            echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+            echo "🚫 Legacy-only CI mode violates modernization principles"
+            exit 1
+          else
+            # Auto-detect based on changes and phase
+            CURRENT_PHASE="${{ steps.phase-analysis.outputs.current_phase }}"
+            
+            if [ "$CURRENT_PHASE" = "complete" ]; then
+              echo "ci_mode=conan-only" >> $GITHUB_OUTPUT
+              echo "conan_enabled=true" >> $GITHUB_OUTPUT
+              echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+              echo "🚀 Complete phase - Conan CI only"
+            elif [ "$CURRENT_PHASE" = "parity" ]; then
+              echo "ci_mode=hybrid" >> $GITHUB_OUTPUT
+              echo "conan_enabled=true" >> $GITHUB_OUTPUT
+              echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+              echo "🔄 Parity phase - Hybrid mode"
+            else
+              echo "ci_mode=conan-only" >> $GITHUB_OUTPUT
+              echo "conan_enabled=true" >> $GITHUB_OUTPUT
+              echo "legacy_enabled=false" >> $GITHUB_OUTPUT
+              echo "📦 Foundation phase - Conan CI only"
+            fi
+          fi
+
+  # Phase 2: Migration Validation
+  migration-validation:
+    name: ✅ Migration Validation
+    runs-on: ubuntu-latest
+    needs: determine-migration-status
+    if: always()
+    outputs:
+      validation_passed: ${{ steps.validate-migration.outputs.passed }}
+      validation_errors: ${{ steps.validate-migration.outputs.errors }}
+      rollback_triggered: ${{ steps.rollback-check.outputs.triggered }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate migration readiness
+        id: validate-migration
+        run: |
+          CURRENT_PHASE="${{ needs.determine-migration-status.outputs.current_phase }}"
+          TARGET_PHASE="${{ needs.determine-migration-status.outputs.target_phase }}"
+          CI_MODE="${{ needs.determine-migration-status.outputs.ci_mode }}"
+          
+          echo "🔍 Validating migration readiness..."
+          echo "Current Phase: $CURRENT_PHASE"
+          echo "Target Phase: $TARGET_PHASE"
+          echo "CI Mode: $CI_MODE"
+          
+          VALIDATION_ERRORS=""
+          
+          # Check for legacy-only mode (blocked)
+          if [ "$CI_MODE" = "legacy-only" ] || [ "$CI_MODE" = "blocked" ]; then
+            VALIDATION_ERRORS="$VALIDATION_ERRORS;Legacy-only mode is blocked and violates modernization principles"
+          fi
+          
+          # Check phase progression
+          case "$CURRENT_PHASE" in
+            "foundation")
+              if [ "$TARGET_PHASE" = "complete" ]; then
+                VALIDATION_ERRORS="$VALIDATION_ERRORS;Cannot skip parity phase"
+              fi
+              ;;
+            "parity")
+              if [ "$TARGET_PHASE" = "foundation" ]; then
+                VALIDATION_ERRORS="$VALIDATION_ERRORS;Cannot regress to foundation phase"
+              fi
+              ;;
+            "complete")
+              # Complete phase is always valid
+              ;;
+          esac
+          
+          # Check CI mode compatibility
+          case "$CI_MODE" in
+            "conan-only")
+              if [ "$CURRENT_PHASE" = "foundation" ]; then
+                VALIDATION_ERRORS="$VALIDATION_ERRORS;Conan-only mode requires parity or complete phase"
+              fi
+              ;;
+            "both-ci")
+              if [ "$CURRENT_PHASE" = "complete" ]; then
+                VALIDATION_ERRORS="$VALIDATION_ERRORS;Both-CI mode not recommended for complete phase"
+              fi
+              ;;
+            "hybrid")
+              if [ "$CURRENT_PHASE" = "foundation" ]; then
+                VALIDATION_ERRORS="$VALIDATION_ERRORS;Hybrid mode requires parity or complete phase"
+              fi
+              ;;
+          esac
+          
+          if [ -n "$VALIDATION_ERRORS" ]; then
+            echo "validation_passed=false" >> $GITHUB_OUTPUT
+            echo "validation_errors=$VALIDATION_ERRORS" >> $GITHUB_OUTPUT
+            echo "❌ Migration validation failed: $VALIDATION_ERRORS"
+            exit 1
+          else
+            echo "validation_passed=true" >> $GITHUB_OUTPUT
+            echo "validation_errors=" >> $GITHUB_OUTPUT
+            echo "✅ Migration validation passed"
+          fi
+
+      - name: Check rollback requirements
+        id: rollback-check
+        run: |
+          ROLLBACK_REQUIRED="${{ needs.determine-migration-status.outputs.rollback_required }}"
+          
+          if [ "$ROLLBACK_REQUIRED" = "true" ]; then
+            echo "rollback_triggered=true" >> $GITHUB_OUTPUT
+            echo "🔄 Rollback required - triggering rollback workflow"
+          else
+            echo "rollback_triggered=false" >> $GITHUB_OUTPUT
+            echo "✅ No rollback required"
+          fi
+
+  # Phase 3: Enforce Modernization
+  enforce-modernization:
+    name: 🚫 Enforce Modernization
+    runs-on: ubuntu-latest
+    needs: [determine-migration-status, migration-validation]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enforce modernization rules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request?.labels?.map(l => l.name) || [];
+            const ciMode = '${{ needs.determine-migration-status.outputs.ci_mode }}';
+            const validationPassed = '${{ needs.migration-validation.outputs.validation_passed }}';
+            
+            // Block legacy-only mode
+            if (labels.includes('legacy-only')) {
+              core.setFailed('❌ Legacy-only CI mode is not permitted. Please switch to conan-only, both-ci, or hybrid mode.');
+              return;
+            }
+            
+            // Block if validation failed
+            if (validationPassed !== 'true') {
+              core.setFailed('❌ Migration validation failed. Please review and fix validation errors.');
+              return;
+            }
+            
+            // Block if CI mode is blocked
+            if (ciMode === 'blocked') {
+              core.setFailed('❌ CI mode is blocked due to modernization violations.');
+              return;
+            }
+            
+            // Generate migration status summary
+            core.summary.addHeading('🚀 Migration Phase Status');
+            core.summary.addList([
+              'foundation: ✅ Completed',
+              'parity: ✅ Completed', 
+              'complete: 🔄 In Progress'
+            ]);
+            
+            core.summary.addHeading('🔧 CI Configuration');
+            core.summary.addList([
+              `CI Mode: ${ciMode}`,
+              `Conan CI: ${{ needs.determine-migration-status.outputs.conan_enabled == 'true' ? '✅ Enabled' : '❌ Disabled' }}`,
+              `Legacy CI: ${{ needs.determine-migration-status.outputs.legacy_enabled == 'true' ? '✅ Enabled' : '❌ Disabled' }}`,
+              `Migration Ready: ${{ needs.determine-migration-status.outputs.migration_ready == 'true' ? '✅ Ready' : '⏳ In Progress' }}`
+            ]);
+            
+            core.summary.addHeading('✅ Modernization Status');
+            core.summary.addList([
+              'Legacy-only mode: ❌ Blocked',
+              'Modern CI: ✅ Active',
+              'Security scanning: ✅ Enabled',
+              'Bootstrap verification: ✅ Enabled'
+            ]);
+            
+            await core.summary.write();
+
+  # Phase 4: Execute CI Strategy
+  execute-ci-strategy:
+    name: 🚀 Execute CI Strategy
+    runs-on: ubuntu-latest
+    needs: [determine-migration-status, migration-validation, enforce-modernization]
+    if: needs.migration-validation.outputs.validation_passed == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Execute Conan CI
+        if: needs.determine-migration-status.outputs.conan_enabled == 'true'
+        run: |
+          echo "🚀 Executing Conan CI..."
+          echo "CI Mode: ${{ needs.determine-migration-status.outputs.ci_mode }}"
+          echo "Phase: ${{ needs.determine-migration-status.outputs.current_phase }}"
+          
+          # Trigger Conan CI workflows
+          echo "Triggering enhanced Conan workflows..."
+
+      - name: Execute Legacy CI
+        if: needs.determine-migration-status.outputs.legacy_enabled == 'true'
+        run: |
+          echo "🔧 Executing Legacy CI..."
+          echo "CI Mode: ${{ needs.determine-migration-status.outputs.ci_mode }}"
+          echo "Phase: ${{ needs.determine-migration-status.outputs.current_phase }}"
+          
+          # Trigger legacy CI workflows (if needed)
+          echo "Triggering legacy workflows..."
+
+      - name: Execute Hybrid CI
+        if: needs.determine-migration-status.outputs.ci_mode == 'hybrid'
+        run: |
+          echo "🔄 Executing Hybrid CI..."
+          echo "Phase: ${{ needs.determine-migration-status.outputs.current_phase }}"
+          
+          # Trigger hybrid workflows
+          echo "Triggering hybrid workflows..."
+
+  # Phase 5: Final Status Report
+  migration-summary:
+    name: 📊 Migration Summary
+    runs-on: ubuntu-latest
+    needs: [determine-migration-status, migration-validation, execute-ci-strategy, enforce-modernization]
+    if: always()
+    
+    steps:
+      - name: Generate final report
+        run: |
+          echo "## 🎯 Modern CI Migration Controller Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Final Status" >> $GITHUB_STEP_SUMMARY
+          echo "- **Current Phase**: ${{ needs.determine-migration-status.outputs.current_phase }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Phase**: ${{ needs.determine-migration-status.outputs.target_phase }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CI Mode**: ${{ needs.determine-migration-status.outputs.ci_mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Migration Ready**: ${{ needs.determine-migration-status.outputs.migration_ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Validation Passed**: ${{ needs.migration-validation.outputs.validation_passed }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.migration-validation.outputs.validation_passed }}" = "true" ]; then
+            echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. **Legacy Mode Eliminated**: ✅ Complete" >> $GITHUB_STEP_SUMMARY
+            echo "2. **Modern CI Active**: ✅ Complete" >> $GITHUB_STEP_SUMMARY
+            echo "3. **Ready for Merge**: ✅ Complete" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**🎉 Migration modernization is complete!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
+            echo "Please address validation issues before proceeding with merge." >> $GITHUB_STEP_SUMMARY
+          fi

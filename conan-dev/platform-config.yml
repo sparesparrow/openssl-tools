@@ -1,0 +1,15 @@
+conan_dir: ./openssl-devenv/openssl-tools/conan-dev
+launchers:
+  build: conan-build
+  cli: conan-cli
+  install: conan-install
+  setup: conan-dev-setup
+platform: linux
+profiles:
+  available:
+    - linux-gcc11
+    - linux-clang15
+    - debug
+  default: linux-gcc11
+python_executable: $HOME/.conan2/openssl-devenv/openssl-tools/venv/bin/python
+scripts_dir: $HOME/.conan2/openssl-devenv/openssl-tools/scripts/conan

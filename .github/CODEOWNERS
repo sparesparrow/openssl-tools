@@ -1,0 +1,39 @@
+# CODEOWNERS for OpenSSL Tools Repository
+# This file defines code ownership for automated review and notifications
+
+# Global Owners (maintain overall repository structure)
+* @sparesparrow
+
+# Workflow and CI/CD files
+.github/ @sparesparrow
+.github/workflows/ @sparesparrow
+.github/dependabot.yml @sparesparrow
+
+# Core tooling components
+openssl_tools/ @sparesparrow
+scripts/ @sparesparrow
+
+# Conan recipes and profiles
+conan-recipes/ @sparesparrow
+conan-profiles/ @sparesparrow
+
+# Documentation
+docs/ @sparesparrow
+README.md @sparesparrow
+CHANGELOG.md @sparesparrow
+
+# Security and compliance
+openssl_tools/security/ @sparesparrow
+openssl_tools/automation/ @sparesparrow
+
+# Tests
+tests/ @sparesparrow
+test_package/ @sparesparrow
+
+# Docker and deployment
+Dockerfile* @sparesparrow
+docker-compose* @sparesparrow
+
+# Legacy workflows (review before changes)
+.github/workflows-backup/ @sparesparrow
+.github/workflows-disabled-backup/ @sparesparrow

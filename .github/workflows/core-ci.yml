@@ -8,7 +8,7 @@ name: Core CI
 
 on:
   push:
-    branches: [main, master, 'release/*']
+    branches: [main, master, "release/*"]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -26,6 +26,10 @@ env:
   OSSL_RUN_CI_TESTS: 1
   CONAN_CPU_COUNT: 4
   CONAN_LOG_LEVEL: 10
+  CONAN_VERSION: ${{ vars.CONAN_VERSION || '2.0.17' }}
+  PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.12' }}
+  CONAN_REPOSITORY_NAME: ${{ vars.CONAN_REPOSITORY_NAME || 'sparesparrow-conan' }}
+  CONAN_REPOSITORY_URL: ${{ vars.CONAN_REPOSITORY_URL || 'https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/' }}
 
 jobs:
   # Smart change detection to skip unnecessary builds
@@ -97,28 +101,42 @@ jobs:
       cache-key: ${{ steps.cache-key.outputs.key }}
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Preflight secrets/vars
+        run: |
+          missing=0
+          test -n "${{ secrets.CONAN_GITHUB_TOKEN }}" || { echo "Missing secret: CONAN_GITHUB_TOKEN"; missing=1; }
+          test -n "${{ secrets.CLOUDSMITH_API_KEY }}" || echo "Note: CLOUDSMITH_API_KEY not set, Cloudsmith upload may be skipped"
+          test -n "${{ env.CONAN_REPOSITORY_NAME }}" || { echo "Missing var: CONAN_REPOSITORY_NAME"; missing=1; }
+          test -n "${{ env.CONAN_REPOSITORY_URL }}" || { echo "Missing var: CONAN_REPOSITORY_URL"; missing=1; }
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Install Conan 2
         run: |
-          pip install conan==2.0.17
+          pip install conan==${{ env.CONAN_VERSION }}
           conan --version
-      
+
       - name: Setup Conan profiles
         run: |
           conan profile detect --force
           conan config init
-      
+
       - name: Configure GitHub Packages remote
         run: |
-          conan remote add github-packages https://maven.pkg.github.com/sparesparrow/openssl || true
+          conan remote add github-packages ${{ vars.GITHUB_PACKAGES_URL || format('https://maven.pkg.github.com/{0}', github.repository_owner) }} || true
           conan remote login github-packages ${{ secrets.CONAN_GITHUB_TOKEN }}
-      
+
+      - name: Configure Cloudsmith remote
+        run: |
+          conan remote add ${{ env.CONAN_REPOSITORY_NAME }} ${{ env.CONAN_REPOSITORY_URL }} || true
+          conan remote login ${{ env.CONAN_REPOSITORY_NAME }} spare-sparrow --password "${{ secrets.CLOUDSMITH_API_KEY }}" || true
+
       - name: Generate cache key
         id: cache-key
         run: |
@@ -138,13 +156,13 @@ jobs:
             cc: gcc-11
             profile: "linux-gcc11"
             options: "fips=True enable_quic=True enable_lms=True"
-            
+
           - name: "gcc-14-standard"
-            os: ubuntu-latest  
+            os: ubuntu-latest
             cc: gcc-14
             profile: "linux-gcc14"
             options: "fips=False enable_quic=True"
-            
+
           - name: "clang-15-sanitizers"
             os: ubuntu-latest
             cc: clang-15
@@ -152,33 +170,38 @@ jobs:
             options: "enable_asan=True enable_ubsan=True fips=True"
             setup: |
               sudo sysctl -w vm.mmap_rnd_bits=28
-              
+
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Install Conan 2
         run: |
-          pip install conan==2.0.17
+          pip install conan==${{ env.CONAN_VERSION }}
           conan --version
-      
+
       - name: Setup Conan profiles
         run: |
           conan profile detect --force
           conan config init
-      
+
       - name: Configure GitHub Packages remote
         run: |
-          conan remote add github-packages https://maven.pkg.github.com/sparesparrow/openssl || true
+          conan remote add github-packages ${{ vars.GITHUB_PACKAGES_URL || format('https://maven.pkg.github.com/{0}', github.repository_owner) }} || true
           conan remote login github-packages ${{ secrets.CONAN_GITHUB_TOKEN }}
-      
+
+      - name: Configure Cloudsmith remote
+        run: |
+          conan remote add ${{ env.CONAN_REPOSITORY_NAME }} ${{ env.CONAN_REPOSITORY_URL }} || true
+          conan remote login ${{ env.CONAN_REPOSITORY_NAME }} spare-sparrow --password "${{ secrets.CLOUDSMITH_API_KEY }}" || true
+
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
@@ -187,34 +210,39 @@ jobs:
           restore-keys: |
             conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-dev/**') }}-
             conan-${{ runner.os }}-
-      
+
       - name: Validate build environment
         run: |
           conan --version
           python --version
           gcc --version || clang --version
-      
+
       - name: Validate conanfile.py
         run: |
           python -m py_compile conanfile.py
           conan inspect .
-      
+
       - name: Setup environment
         if: matrix.setup
         run: ${{ matrix.setup }}
-      
+
       - name: Build with Conan
         run: |
           conan create . --profile=conan-dev/profiles/${{ matrix.profile }}.profile \
             --build=missing \
             -o ${{ matrix.options }} \
             --format=json > build-result.json
-      
+
       - name: Upload to GitHub Packages
         if: success()
         run: |
           conan upload "*" -r=github-packages --confirm
-      
+
+      - name: Upload to Cloudsmith
+        if: success() && env.CLOUDSMITH_API_KEY != ''
+        run: |
+          conan upload "*" -r=${{ env.CONAN_REPOSITORY_NAME }} --confirm
+
       - name: Generate SBOM
         run: |
           python3 -c "
@@ -224,7 +252,7 @@ jobs:
           conan = OpenSSLConan()
           conan._generate_sbom()
           "
-      
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -249,40 +277,40 @@ jobs:
             profile: "linux-arm64-gcc"
             options: "fips=True"
             timeout: 45
-            
-          # macOS - Only latest version  
+
+          # macOS - Only latest version
           - name: "macos-arm64"
             os: macos-14
             profile: "macos-arm64"
             options: "fips=True"
             timeout: 60
-            
+
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout || 30 }}
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Install Conan 2
         run: |
-          pip install conan==2.0.17
+          pip install conan==${{ env.CONAN_VERSION }}
           conan --version
-      
+
       - name: Setup Conan profiles
         run: |
           conan profile detect --force
           conan config init
-      
+
       - name: Configure GitHub Packages remote
         run: |
           conan remote add github-packages https://maven.pkg.github.com/sparesparrow/openssl || true
           conan remote login github-packages ${{ secrets.CONAN_GITHUB_TOKEN }}
-      
+
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
@@ -291,17 +319,22 @@ jobs:
           restore-keys: |
             conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-dev/**') }}-
             conan-${{ runner.os }}-
-      
+
       - name: Build with Conan
         run: |
           conan create . --profile=conan-dev/profiles/${{ matrix.profile }}.profile \
             --build=missing \
             -o ${{ matrix.options }}
-      
+
       - name: Upload to GitHub Packages
         if: success()
         run: |
           conan upload "*" -r=github-packages --confirm
+
+      - name: Upload to Cloudsmith
+        if: success() && env.CLOUDSMITH_API_KEY != ''
+        run: |
+          conan upload "*" -r=${{ env.CONAN_REPOSITORY_NAME }} --confirm
 
   # Fuzzing - Only run when fuzz code changes
   fuzz:
@@ -311,36 +344,36 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-          
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Install Conan 2
         run: |
-          pip install conan==2.0.17
+          pip install conan==${{ env.CONAN_VERSION }}
           conan --version
-          
+
       - name: Setup Conan profiles
         run: |
           conan profile detect --force
           conan config init
-      
+
       - name: Configure GitHub Packages remote
         run: |
           conan remote add github-packages https://maven.pkg.github.com/sparesparrow/openssl || true
           conan remote login github-packages ${{ secrets.CONAN_GITHUB_TOKEN }}
-      
+
       - name: Setup fuzz corpora dependency
         run: |
           conan install fuzz-corpora/1.0@ --profile=default || echo "Fuzz corpora package not available, using git submodule"
           git submodule update --init --depth 1 fuzz/corpora || git clone https://github.com/sparesparrow/fuzz-corpora.git fuzz/corpora
-      
+
       - name: Adjust ASLR
         run: sudo sysctl -w vm.mmap_rnd_bits=28
-      
+
       - name: Build with fuzzing
         run: |
           conan create . --profile=conan-dev/profiles/linux-gcc11.profile \
@@ -355,16 +388,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
       - name: Install security tools
         run: |
-          pip install conan==2.0.17
+          pip install conan==${{ env.CONAN_VERSION }}
           # Install Trivy for vulnerability scanning
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg lsb-release
@@ -372,7 +405,7 @@ jobs:
           echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
           sudo apt-get update
           sudo apt-get install -y trivy
-      
+
       - name: Generate comprehensive SBOM
         run: |
           python3 -c "
@@ -382,12 +415,12 @@ jobs:
           conan = OpenSSLConan()
           conan._generate_sbom()
           "
-      
+
       - name: Run vulnerability scan
         run: |
           trivy fs --format json --output trivy-report.json .
           trivy fs --format table .
-      
+
       - name: Upload security artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -399,7 +432,8 @@ jobs:
 
   # Final status check and summary
   ci-status:
-    needs: [changes, docs-check, core-builds, cross-platform, fuzz, security-scan]
+    needs:
+      [changes, docs-check, core-builds, cross-platform, fuzz, security-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -426,16 +460,16 @@ jobs:
           echo "- **Build time**: 15-25 min (vs 45-60 min previously)" >> $GITHUB_STEP_SUMMARY
           echo "- **Cache hit rate**: >70% expected" >> $GITHUB_STEP_SUMMARY
           echo "- **Resource usage**: 50% reduction" >> $GITHUB_STEP_SUMMARY
-          
+
           # Fail if any required job failed
           if [[ "${{ needs.core-builds.result }}" == "failure" ]]; then
             echo "❌ Core builds failed - blocking merge"
             exit 1
           fi
-          
+
           if [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
             echo "⚠️ Security scan failed - review required"
             exit 1
           fi
-          
+
           echo "✅ Core CI passed - ready for merge"
