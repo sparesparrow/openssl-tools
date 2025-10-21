@@ -37,7 +37,7 @@ Examples:
     parser.add_argument(
         "--version", 
         action="version", 
-        version="OpenSSL Tools 1.0.0"
+        version="OpenSSL Tools 1.2.0"
     )
     
     subparsers = parser.add_subparsers(

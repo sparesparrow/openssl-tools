@@ -1,97 +1,275 @@
-# OpenSSL Tools
+# OpenSSL Tools - Conan 2.x Python_requires & Extensions
 
-Build tools, automation scripts, and infrastructure components for the modernized OpenSSL CI/CD pipeline.
+Comprehensive Conan 2.x tooling for OpenSSL build orchestration, including custom commands and deployers.
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-pip install -e .
+# Clone repository
+git clone https://github.com/sparesparrow/openssl-tools.git
+cd openssl-tools
+
+# Install extensions
+./install-extensions.sh
 ```
 
-### Basic Usage
+This installs:
+- Custom commands: `openssl:build`, `openssl:graph`
+- Enhanced deployer: `full_deploy_enhanced`
+- Python_requires: `openssl-tools/1.2.0`
+
+## Usage
+
+#### Simplified Build
 
 ```bash
-# Set up development environment
-openssl-env --dev
+# Basic build
+conan openssl:build
 
-# Run tests
-openssl-test
+# With FIPS
+conan openssl:build --fips --profile=linux-gcc11-fips
 
-# Build OpenSSL
-openssl-build
+# Custom output folder
+conan openssl:build --deployer-folder=./my-artifacts
+```
 
-# Validate setup
-openssl-validate
+#### Dependency Analysis
+
+```bash
+# Human-readable output
+conan openssl:graph
+
+# JSON output
+conan openssl:graph --json > dependencies.json
+```
+
+#### Using as python_requires
+
+```python
+# your_project/conanfile.py
+from conan import ConanFile
+
+class YourApp(ConanFile):
+    name = "your-app"
+    python_requires = "openssl-tools/1.2.0"
+    
+    def requirements(self):
+        self.requires("openssl/3.6.0")
+    
+    def build(self):
+        # Use build orchestration from python_requires
+        python_req = self.python_requires["openssl-tools"]
+        python_req.module.build_openssl(self)
 ```
 
 ## Architecture
 
-This repository implements a **two-repository CI/CD architecture**:
+```
+openssl-tools/
+├── conanfile.py                      # Python_requires package
+├── extensions/
+│   ├── commands/
+│   │   └── openssl/
+│   │       ├── __init__.py
+│   │       ├── cmd_build.py          # conan openssl:build
+│   │       └── cmd_graph.py          # conan openssl:graph
+│   ├── deployers/
+│   │   └── full_deploy_enhanced.py   # Enhanced deployer with SBOM
+│   └── graph/
+│       └── analyzer.py               # Graph analysis utilities
+├── install-extensions.sh             # Installation script
+└── test_package/
+    └── conanfile.py
+```
 
-- **[OpenSSL Repository](https://github.com/sparesparrow/openssl)**: Source code and fast validation
-- **[OpenSSL-Tools Repository](https://github.com/sparesparrow/openssl-tools)**: Build infrastructure and comprehensive CI/CD
+## Features
 
-## Configuration
+### Custom Commands
 
-### Cross-Repository Communication
+#### `conan openssl:build`
+- Simplified OpenSSL build orchestration
+- FIPS mode support via `--fips` flag
+- Automatic deployer integration
+- SBOM generation included
 
-Configure these secrets for full functionality:
+#### `conan openssl:graph`
+- Dependency graph analysis
+- FIPS detection
+- JSON export support
+
+### Enhanced Deployer
+
+`full_deploy_enhanced` provides:
+- Standard `full_deploy` functionality
+- Automatic SBOM generation (CycloneDX format)
+- FIPS artifact collection
+- Dependency metadata
+
+### Python_requires
+
+Reusable build logic for:
+- Platform-specific configuration
+- Ninja/Make detection
+- FIPS module setup
+- Cross-compilation support
+
+## Uninstallation
 
 ```bash
-# In OpenSSL repository
-gh secret set DISPATCH_TOKEN --repo sparesparrow/openssl --body "$YOUR_GITHUB_TOKEN"
+# Remove extensions
+rm -rf ~/.conan2/extensions/commands/openssl
+rm -f ~/.conan2/extensions/deployers/full_deploy_enhanced.py
+rm -rf ~/.conan2/extensions/graph
 
-# In OpenSSL-Tools repository  
-gh secret set OPENSSL_TOKEN --repo sparesparrow/openssl-tools --body "$YOUR_GITHUB_TOKEN"
+# Remove python_requires
+conan remove "openssl-tools/*" -c
 ```
 
-**Required Token Scopes**: `repo`, `workflow`
+## Development
 
-## Workflow Integration
+### Testing Extensions Locally
 
-```mermaid
-graph TD
-    A[OpenSSL PR Created] --> B[Fast Validation]
-    B --> C[Trigger openssl-tools Build]
-    C --> D[Comprehensive CI/CD]
-    D --> E[Report Status Back]
-    
-    F[OpenSSL Master Merge] --> G[Release Build]
-    G --> H[Production Deploy]
-    
-    I[Nightly Schedule] --> J[Full Test Suite]
-    J --> K[Security Scans]
-    K --> L[Performance Tests]
+```bash
+# Install in editable mode (changes reflect immediately)
+conan editable add . openssl-tools/1.2.0
+
+# Test commands
+conan openssl:build --help
+
+# Remove editable
+conan editable remove openssl-tools/1.2.0
 ```
 
-## Available Commands
+### Running Tests
 
-- `openssl-env` - Environment setup (--minimal, --full, --dev)
-- `openssl-build` - Build optimization and management
-- `openssl-conan` - Conan package management
-- `openssl-test` - Test execution and validation
-- `openssl-security` - Security validation and scanning
-- `openssl-monitor` - Status monitoring and reporting
-- `openssl-workflow` - Workflow management and automation
+```bash
+# Unit tests
+python -m pytest test/
 
-## Documentation
+# Integration tests
+./test_package/test.sh
+```
 
-- **[Getting Started](docs/README.md)** - Detailed setup guide
-- **[Contributing](docs/CONTRIBUTING.md)** - How to contribute
-- **[Technical Details](.cursor/docs/)** - Deep technical documentation
-- **[AI Agent Rules](.cursor/rules/)** - Cursor AI configuration
+## Troubleshooting
 
-## Separate Packages
+### Command not found: `conan openssl:build`
 
-These packages are being extracted to separate repositories:
+Extensions not installed. Run:
+```bash
+./install-extensions.sh
+```
 
-- **[openssl-migration](https://github.com/sparesparrow/openssl-migration)** - Migration framework
-- **[openssl-crypto](https://github.com/sparesparrow/openssl-crypto)** - Crypto library wrappers  
-- **[openssl-ssl](https://github.com/sparesparrow/openssl-ssl)** - SSL/TLS utilities
-- **[openssl-query](https://github.com/sparesparrow/openssl-query)** - Perl-based query tool
+### ImportError in graph analyzer
+
+Graph utilities not found. Reinstall:
+```bash
+./install-extensions.sh
+```
+
+### FIPS self-test failed
+
+Check module hash:
+```bash
+openssl dgst -sha256 -provider fips /path/to/fips.so
+```
+
+Compare with expected hash in `openssl-fips-policy/fips/expected_module_hash.txt`.
+
+## Contributing
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for development workflow.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache-2.0 (same as OpenSSL)
+
+## Reusable GitHub Actions Workflows
+
+This repository provides reusable GitHub Actions workflows for OpenSSL development:
+
+### Available Workflows
+
+| Workflow | Description | Inputs |
+|----------|-------------|--------|
+| `reusable-conan-build.yml` | Build & test Conan packages | profile, shared, fips, deploy, upload-to-cloudsmith, package-reference |
+| `reusable-security-scan.yml` | SBOM + Trivy + CodeQL scanning | artifact-name, language, sbom-format, trivy-severity, upload-sarif |
+| `reusable-fips-validation.yml` | FIPS 140-3 compliance validation | openssl-version, fips-module-version, expected-hash |
+
+### Usage Examples
+
+#### Conan Build Workflow
+
+```yaml
+# .github/workflows/build.yml
+name: Build OpenSSL Package
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    uses: sparesparrow/openssl-tools/.github/workflows/reusable-conan-build.yml@v1
+    with:
+      package-reference: 'openssl/3.6.0'
+      profile: 'linux-gcc11-fips'
+      fips: true
+      deploy: true
+      upload-to-cloudsmith: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+```
+
+#### Security Scanning Workflow
+
+```yaml
+# .github/workflows/security.yml
+name: Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    uses: sparesparrow/openssl-tools/.github/workflows/reusable-conan-build.yml@v1
+    with:
+      package-reference: 'openssl/3.6.0'
+      deploy: true
+  
+  security:
+    needs: build
+    uses: sparesparrow/openssl-tools/.github/workflows/reusable-security-scan.yml@v1
+    with:
+      artifact-name: 'conan-artifacts-linux-gcc11-fips'
+      language: 'cpp'
+      upload-sarif: true
+```
+
+#### FIPS Validation Workflow
+
+```yaml
+# .github/workflows/fips.yml
+name: FIPS Validation
+
+on: [push, pull_request]
+
+jobs:
+  fips:
+    uses: sparesparrow/openssl-tools/.github/workflows/reusable-fips-validation.yml@v1
+    with:
+      openssl-version: '3.6.0'
+      fips-module-version: '3.0.9'
+      expected-hash: ${{ vars.FIPS_MODULE_HASH }}
+```
+
+### Workflow Integration
+
+For complete CI/CD integration, see:
+- [Track A Security Pipeline Documentation](../openssl-devenv/TRACK-A-SECURITY-PIPELINE.md)
+- [Verification Scripts Documentation](../openssl-devenv/docs/verification.md)
+
+## Related Repositories
+
+- [openssl-conan-base](https://github.com/sparesparrow/openssl-conan-base) - Profiles and production CI/CD
+- [openssl](https://github.com/sparesparrow/openssl) - Minimal fork for testing
+- [openssl-fips-policy](https://github.com/sparesparrow/openssl-fips-policy) - FIPS configuration
+- [openssl-devenv](https://github.com/sparesparrow/openssl-devenv) - Developer onboarding

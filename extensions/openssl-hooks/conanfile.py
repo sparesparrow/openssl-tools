@@ -27,7 +27,7 @@ class OpenSSLHooksConan(ConanFile):
     
     # Package metadata
     name = "openssl-hooks"
-    version = "1.0.0"
+    version = "1.2.0"
     description = "Conan hooks for OpenSSL projects - build validation, security checks, and quality assurance"
     license = "Apache-2.0"
     author = "OpenSSL Tools Team <openssl-tools@example.com>"

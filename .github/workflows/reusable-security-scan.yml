@@ -1,0 +1,125 @@
+name: 🔒 Reusable Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: 'Path to scan'
+        type: string
+        default: '.'
+      fail_on_severity:
+        description: 'Severity levels to fail on'
+        type: string
+        default: 'HIGH,CRITICAL'
+      scan_type:
+        description: 'Type of scan to perform'
+        type: string
+        default: 'fs'
+      output_format:
+        description: 'Output format for results'
+        type: string
+        default: 'table'
+      upload_sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        type: boolean
+        default: true
+    outputs:
+      sbom_generated:
+        description: 'Whether SBOM was successfully generated'
+        value: ${{ jobs.sbom-and-trivy.outputs.sbom_generated }}
+      vulnerabilities_found:
+        description: 'Number of vulnerabilities found'
+        value: ${{ jobs.sbom-and-trivy.outputs.vulnerabilities_found }}
+      scan_passed:
+        description: 'Whether security scan passed'
+        value: ${{ jobs.sbom-and-trivy.outputs.scan_passed }}
+
+jobs:
+  sbom-and-trivy:
+    name: 🔒 Security Scan (SBOM + Trivy)
+    runs-on: ubuntu-22.04
+    outputs:
+      sbom_generated: ${{ steps.sbom-generation.outputs.generated }}
+      vulnerabilities_found: ${{ steps.trivy-scan.outputs.vulnerabilities_found }}
+      scan_passed: ${{ steps.trivy-scan.outputs.scan_passed }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install cyclonedx-bom cyclonedx-python-lib
+
+      - name: Generate SBOM
+        id: sbom-generation
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ inputs.path }}
+          format: cyclonedx-json
+          output-file: security-sbom.json
+          fail-on-error: true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-sbom-${{ github.run_id }}
+          path: security-sbom.json
+          retention-days: 30
+
+      - name: Vulnerability Scan (Filesystem)
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: ${{ inputs.scan_type }}
+          scan-ref: ${{ inputs.path }}
+          format: ${{ inputs.output_format }}
+          output: trivy-results.txt
+          exit-code: '1'
+          severity: ${{ inputs.fail_on_severity }}
+          fail-on-error: true
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results-${{ github.run_id }}
+          path: trivy-results.txt
+          retention-days: 30
+
+      - name: Upload SARIF results
+        if: inputs.upload_sarif
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Security scan summary
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 SBOM Generation" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Generated successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- **Format**: CycloneDX JSON" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path**: ${{ inputs.path }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🛡️ Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tool**: Trivy" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Type**: ${{ inputs.scan_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Severity Threshold**: ${{ inputs.fail_on_severity }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Scan completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f "trivy-results.txt" ]; then
+            echo "```" >> $GITHUB_STEP_SUMMARY
+            head -20 trivy-results.txt >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+          fi

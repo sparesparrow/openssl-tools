@@ -1,0 +1,163 @@
+# Modern CI Migration Configuration
+# This file defines the migration phases and CI modes for the modernization process
+
+migration:
+  # Migration phases with clear progression
+  phases:
+    foundation:
+      status: "completed"
+      completion_date: "2024-10-01"
+      description: "Core infrastructure and Conan integration"
+      features:
+        - "conan-integration"
+        - "security-scanning"
+        - "sbom-generation"
+        - "bootstrap-verification"
+        - "cross-platform-testing"
+      validation:
+        - "conan-workflows-active"
+        - "security-scanning-enabled"
+        - "bootstrap-verification-complete"
+    
+    parity:
+      status: "completed"
+      completion_date: "2024-10-15"
+      description: "Feature parity and workflow consolidation"
+      features:
+        - "workflow-consolidation"
+        - "enhanced-security-scanning"
+        - "automated-validation"
+        - "rollback-mechanisms"
+        - "production-readiness"
+      validation:
+        - "all-workflows-consolidated"
+        - "security-pipeline-complete"
+        - "automated-validation-working"
+        - "rollback-tested"
+    
+    complete:
+      status: "in_progress"
+      target_date: "2024-10-30"
+      description: "Legacy removal and full modernization"
+      features:
+        - "legacy-removal"
+        - "full-automation"
+        - "production-deployment"
+        - "monitoring-integration"
+        - "performance-optimization"
+      validation:
+        - "legacy-workflows-removed"
+        - "modern-ci-only"
+        - "production-deployment-ready"
+        - "monitoring-active"
+
+  # CI modes with clear requirements
+  ci_modes:
+    conan-only:
+      status: "ready"
+      description: "Modern Conan-based CI only"
+      requirements:
+        - "foundation-complete"
+        - "security-validated"
+        - "bootstrap-verified"
+      features:
+        - "enhanced-workflows"
+        - "security-scanning"
+        - "sbom-generation"
+        - "cross-platform-testing"
+      deprecated: false
+    
+    both-ci:
+      status: "deprecated"
+      description: "Both Conan and legacy CI (transitional)"
+      requirements:
+        - "parity-phase"
+        - "validation-complete"
+      features:
+        - "parallel-execution"
+        - "comparison-validation"
+        - "gradual-migration"
+      deprecated: true
+      deprecation_reason: "Legacy CI should be removed in complete phase"
+    
+    hybrid:
+      status: "active"
+      description: "Hybrid mode with modern features"
+      requirements:
+        - "complete-phase"
+        - "legacy-removal"
+      features:
+        - "modern-workflows"
+        - "enhanced-security"
+        - "automated-validation"
+        - "production-ready"
+      deprecated: false
+    
+    # Legacy modes (blocked)
+    legacy-only:
+      status: "blocked"
+      description: "Legacy CI only (deprecated)"
+      requirements: []
+      features: []
+      deprecated: true
+      deprecation_reason: "Violates modernization principles"
+      block_reason: "Legacy-only mode prevents modernization"
+
+  # Migration validation rules
+  validation_rules:
+    phase_progression:
+      - "Cannot skip phases"
+      - "Cannot regress to previous phases"
+      - "Complete phase requires all previous phases"
+    
+    ci_mode_compatibility:
+      - "conan-only requires foundation or higher"
+      - "both-ci only allowed in parity phase"
+      - "hybrid requires complete phase"
+      - "legacy-only is blocked"
+    
+    feature_requirements:
+      - "Security scanning mandatory"
+      - "SBOM generation required"
+      - "Bootstrap verification needed"
+      - "Cross-platform testing essential"
+
+  # Rollback configuration
+  rollback:
+    enabled: true
+    triggers:
+      - "validation-failure"
+      - "critical-error"
+      - "manual-request"
+    procedures:
+      - "restore-previous-config"
+      - "disable-failed-features"
+      - "notify-stakeholders"
+      - "log-rollback-reason"
+
+  # Monitoring and metrics
+  monitoring:
+    enabled: true
+    metrics:
+      - "migration-progress"
+      - "ci-success-rate"
+      - "validation-pass-rate"
+      - "rollback-frequency"
+    alerts:
+      - "validation-failure"
+      - "rollback-triggered"
+      - "phase-completion"
+      - "critical-errors"
+
+  # Documentation and reporting
+  reporting:
+    enabled: true
+    formats:
+      - "github-summary"
+      - "json-report"
+      - "markdown-documentation"
+    frequency: "per-workflow-run"
+    stakeholders:
+      - "development-team"
+      - "devops-team"
+      - "security-team"

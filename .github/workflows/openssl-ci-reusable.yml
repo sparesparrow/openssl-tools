@@ -1,0 +1,67 @@
+name: Reusable OpenSSL CI
+
+on:
+    workflow_call:
+        inputs:
+            profile:
+                description: "Conan profile to use"
+                required: true
+                type: string
+            shared:
+                description: "Build shared libraries"
+                required: false
+                type: boolean
+                default: true
+            fips:
+                description: "Enable FIPS mode"
+                required: false
+                type: boolean
+                default: false
+        outputs:
+            artifact-name:
+                description: "Name of built artifact"
+                value: ${{ jobs.build.outputs.artifact-name }}
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        outputs:
+            artifact-name: ${{ steps.build.outputs.name }}
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+
+            - name: Install Conan (pinned)
+              uses: conan-io/setup-conan@v1
+              with:
+                  version: "2.21.0"
+
+            - name: Configure Conan
+              run: |
+                  conan profile detect
+                  conan config install . -sf extensions -tf extensions
+
+            - name: Build
+              id: build
+              run: |
+                  OPTIONS="-o openssl/*:shared=${{ inputs.shared }}"
+                  if [ "${{ inputs.fips }}" = "true" ]; then
+                    OPTIONS="$OPTIONS -o openssl/*:enable_fips=True"
+                  fi
+
+                  conan build . --profile=${{ inputs.profile }} $OPTIONS
+                  echo "name=openssl-${{ inputs.profile }}" >> $GITHUB_OUTPUT
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.build.outputs.name }}
+                  path: deploy/
+            - name: Upload conan remote artifacts
+              run: |
+                  conan upload "openssl/*" -r="${{ steps.build.outputs.name }}" --confirm
