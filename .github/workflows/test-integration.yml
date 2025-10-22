@@ -1,0 +1,400 @@
+name: Reusable OpenSSL Integration Tests
+
+on:
+  workflow_call:
+    inputs:
+      openssl-version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+      test-matrix:
+        description: 'JSON string defining test matrix (os, python-version, conan-version)'
+        required: false
+        type: string
+        default: '{"os": ["ubuntu-latest", "macos-latest", "windows-latest"], "python-version": ["3.8", "3.9", "3.10", "3.11", "3.12"], "conan-version": ["2.0", "2.1"]}'
+      test-type:
+        description: 'Type of tests to run'
+        required: false
+        type: string
+        default: 'full'
+      enable-fuzzing:
+        description: 'Enable fuzzing tests'
+        required: false
+        type: boolean
+        default: true
+      enable-performance:
+        description: 'Enable performance tests'
+        required: false
+        type: boolean
+        default: true
+      enable-security-scan:
+        description: 'Enable security scanning'
+        required: false
+        type: boolean
+        default: true
+      upload-results:
+        description: 'Upload test results'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      test-results-url:
+        description: 'URL of uploaded test results'
+        value: ${{ jobs.test-results.outputs.results-url }}
+      test-summary:
+        description: 'Test summary JSON'
+        value: ${{ jobs.test-results.outputs.summary }}
+      security-scan-results:
+        description: 'Security scan results'
+        value: ${{ jobs.security-scan.outputs.results }}
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub token for artifact upload'
+        required: false
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for package access'
+        required: false
+
+jobs:
+  integration-tests:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include: ${{ fromJson(inputs.test-matrix) }}
+    outputs:
+      test-results: ${{ steps.test-results.outputs.results }}
+      test-status: ${{ steps.test-status.outputs.status }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install system dependencies
+      run: |
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            wget \
+            curl \
+            libssl-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            libncursesw5-dev \
+            xz-utils \
+            tk-dev \
+            libxml2-dev \
+            libxmlsec1-dev \
+            libffi-dev \
+            liblzma-dev \
+            pkg-config \
+            jq
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          brew install cmake pkg-config openssl zlib jq
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+          choco install cmake git pkgconfig jq
+        fi
+        
+    - name: Install Conan ${{ matrix.conan-version }}
+      run: |
+        pip install conan==${{ matrix.conan-version }}
+        
+    - name: Install Python dependencies
+      run: |
+        pip install -e .[dev,statistics,github,gitlab]
+        pip install pytest pytest-cov pytest-xdist
+        
+    - name: Set up Conan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python conan_remote_manager.py --setup-ssh || true
+        python conan_remote_manager.py --setup || true
+        
+    - name: Download OpenSSL package
+      run: |
+        # Try to download from various sources
+        python conan_remote_manager.py --download openssl/${{ inputs.openssl-version }}@sparesparrow/stable || \
+        conan install openssl/${{ inputs.openssl-version }}@sparesparrow/stable --build=missing || \
+        echo "OpenSSL package not found, will build from source"
+        
+    - name: Build OpenSSL from source (if needed)
+      if: failure()
+      run: |
+        git clone --depth 1 https://github.com/openssl/openssl.git openssl-src
+        cd openssl-src
+        if [ "${{ inputs.openssl-version }}" != "latest" ]; then
+          git fetch --depth 1 origin OpenSSL_${{ inputs.openssl-version | replace('.', '_') }}
+          git checkout OpenSSL_${{ inputs.openssl-version | replace('.', '_') }}
+        fi
+        
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          ./Configure linux-x86_64 --prefix=/usr/local/openssl shared zlib-dynamic
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          ./Configure darwin64-x86_64-cc --prefix=/usr/local/openssl shared zlib-dynamic
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+          perl Configure VC-WIN64A --prefix=C:/openssl shared zlib-dynamic
+        fi
+        
+        make -j$(nproc) || nmake
+        make test || nmake test
+        make install || nmake install
+        
+    - name: Run unit tests
+      id: unit-tests
+      run: |
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=html -x
+        echo "unit-tests-passed=true" >> $GITHUB_OUTPUT
+        
+    - name: Run integration tests
+      id: integration-tests
+      run: |
+        python test_integration.py
+        echo "integration-tests-passed=true" >> $GITHUB_OUTPUT
+        
+    - name: Test Conan package creation
+      id: conan-tests
+      run: |
+        conan create . --build=missing
+        echo "conan-tests-passed=true" >> $GITHUB_OUTPUT
+        
+    - name: Test command line tools
+      id: cli-tests
+      run: |
+        addrev --help
+        gitaddrev --help
+        ghmerge --help
+        stage-release --help
+        copyright-year --help
+        bn-rand-range --help
+        echo "cli-tests-passed=true" >> $GITHUB_OUTPUT
+        
+    - name: Run fuzzing tests
+      if: inputs.enable-fuzzing == 'true'
+      id: fuzzing-tests
+      run: |
+        python fuzz_integration.py --setup
+        python fuzz_integration.py --fuzz test_target --timeout 300 --max-crashes 5 || true
+        echo "fuzzing-tests-completed=true" >> $GITHUB_OUTPUT
+        
+    - name: Run performance tests
+      if: inputs.enable-performance == 'true'
+      id: performance-tests
+      run: |
+        python -c "
+        import time
+        import ssl
+        import hashlib
+        import statistics
+        
+        def benchmark_ssl():
+            times = []
+            for i in range(100):
+                start = time.time()
+                context = ssl.create_default_context()
+                end = time.time()
+                times.append(end - start)
+            return statistics.mean(times)
+        
+        def benchmark_crypto():
+            data = b'test data' * 1000
+            times = []
+            for i in range(100):
+                start = time.time()
+                hashlib.sha256(data).hexdigest()
+                end = time.time()
+                times.append(end - start)
+            return statistics.mean(times)
+        
+        ssl_time = benchmark_ssl()
+        crypto_time = benchmark_crypto()
+        
+        print(f'SSL benchmark: {ssl_time:.6f}s')
+        print(f'Crypto benchmark: {crypto_time:.6f}s')
+        
+        # Save results
+        with open('performance_results.json', 'w') as f:
+            import json
+            json.dump({
+                'ssl_benchmark': ssl_time,
+                'crypto_benchmark': crypto_time,
+                'platform': '${{ runner.os }}',
+                'python_version': '${{ matrix.python-version }}',
+                'conan_version': '${{ matrix.conan-version }}'
+            }, f)
+        "
+        echo "performance-tests-completed=true" >> $GITHUB_OUTPUT
+        
+    - name: Collect test results
+      id: test-results
+      run: |
+        # Create test results summary
+        cat > test_results.json << EOF
+        {
+          "platform": "${{ runner.os }}",
+          "python_version": "${{ matrix.python-version }}",
+          "conan_version": "${{ matrix.conan-version }}",
+          "openssl_version": "${{ inputs.openssl-version }}",
+          "test_type": "${{ inputs.test-type }}",
+          "unit_tests": "${{ steps.unit-tests.outputs.unit-tests-passed }}",
+          "integration_tests": "${{ steps.integration-tests.outputs.integration-tests-passed }}",
+          "conan_tests": "${{ steps.conan-tests.outputs.conan-tests-passed }}",
+          "cli_tests": "${{ steps.cli-tests.outputs.cli-tests-passed }}",
+          "fuzzing_tests": "${{ steps.fuzzing-tests.outputs.fuzzing-tests-completed }}",
+          "performance_tests": "${{ steps.performance-tests.outputs.performance-tests-completed }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "results=$(cat test_results.json | base64 -w 0)" >> $GITHUB_OUTPUT
+        
+    - name: Upload test results
+      if: inputs.upload-results == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ runner.os }}-py${{ matrix.python-version }}-conan${{ matrix.conan-version }}
+        path: |
+          test_results.json
+          performance_results.json
+          coverage.xml
+          htmlcov/
+        retention-days: 30
+        
+    - name: Set test status
+      id: test-status
+      run: |
+        # Determine overall test status
+        if [ "${{ steps.unit-tests.outputs.unit-tests-passed }}" == "true" ] && \
+           [ "${{ steps.integration-tests.outputs.integration-tests-passed }}" == "true" ] && \
+           [ "${{ steps.conan-tests.outputs.conan-tests-passed }}" == "true" ] && \
+           [ "${{ steps.cli-tests.outputs.cli-tests-passed }}" == "true" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+        fi
+        
+  security-scan:
+    runs-on: ubuntu-latest
+    if: inputs.enable-security-scan == 'true'
+    outputs:
+      results: ${{ steps.scan-results.outputs.results }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install security scanning tools
+      run: |
+        pip install bandit safety semgrep
+        # Install Trivy
+        sudo apt-get update
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install -y trivy
+        
+    - name: Run Bandit security scan
+      run: |
+        bandit -r openssl_tools/ -f json -o bandit-results.json || true
+        
+    - name: Run Safety dependency scan
+      run: |
+        safety check --json --output safety-results.json || true
+        
+    - name: Run Semgrep static analysis
+      run: |
+        semgrep --config=auto --json --output=semgrep-results.json . || true
+        
+    - name: Run Trivy vulnerability scan
+      run: |
+        trivy fs --format json --output trivy-results.json . || true
+        
+    - name: Collect security scan results
+      id: scan-results
+      run: |
+        # Combine all security scan results
+        cat > security_scan_results.json << EOF
+        {
+          "bandit": $(cat bandit-results.json 2>/dev/null || echo '{}'),
+          "safety": $(cat safety-results.json 2>/dev/null || echo '{}'),
+          "semgrep": $(cat semgrep-results.json 2>/dev/null || echo '{}'),
+          "trivy": $(cat trivy-results.json 2>/dev/null || echo '{}'),
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "results=$(cat security_scan_results.json | base64 -w 0)" >> $GITHUB_OUTPUT
+        
+    - name: Upload security scan results
+      if: inputs.upload-results == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-scan-results
+        path: |
+          security_scan_results.json
+          bandit-results.json
+          safety-results.json
+          semgrep-results.json
+          trivy-results.json
+        retention-days: 30
+        
+  test-results:
+    runs-on: ubuntu-latest
+    needs: [integration-tests, security-scan]
+    if: always()
+    outputs:
+      results-url: ${{ steps.upload-results.outputs.url }}
+      summary: ${{ steps.summary.outputs.summary }}
+    
+    steps:
+    - name: Download all test results
+      uses: actions/download-artifact@v4
+      with:
+        path: test-results/
+        
+    - name: Generate test summary
+      id: summary
+      run: |
+        # Collect all test results
+        find test-results/ -name "test_results.json" -exec cat {} \; > all_test_results.jsonl
+        
+        # Generate summary
+        cat > test_summary.json << EOF
+        {
+          "total_platforms": $(find test-results/ -name "test_results.json" | wc -l),
+          "successful_tests": $(grep '"status":"success"' all_test_results.jsonl | wc -l),
+          "failed_tests": $(grep '"status":"failure"' all_test_results.jsonl | wc -l),
+          "openssl_version": "${{ inputs.openssl-version }}",
+          "test_type": "${{ inputs.test-type }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "summary=$(cat test_summary.json | base64 -w 0)" >> $GITHUB_OUTPUT
+        
+    - name: Upload consolidated results
+      if: inputs.upload-results == 'true'
+      uses: actions/upload-artifact@v4
+      id: upload-results
+      with:
+        name: consolidated-test-results-${{ inputs.openssl-version }}
+        path: |
+          test-results/
+          test_summary.json
+          all_test_results.jsonl
+        retention-days: 30

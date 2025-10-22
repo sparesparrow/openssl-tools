@@ -1,0 +1,340 @@
+name: Reusable Cloudsmith Publish
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        description: 'Name of the package to publish'
+        required: true
+        type: string
+      package-version:
+        description: 'Version of the package'
+        required: true
+        type: string
+      package-type:
+        description: 'Type of package (raw, conan, maven, npm, etc.)'
+        required: true
+        type: string
+        default: 'raw'
+      repository:
+        description: 'Cloudsmith repository name'
+        required: true
+        type: string
+      organization:
+        description: 'Cloudsmith organization name'
+        required: true
+        type: string
+      artifact-path:
+        description: 'Path to the artifact to upload'
+        required: true
+        type: string
+      distribution:
+        description: 'Distribution name (for raw packages)'
+        required: false
+        type: string
+        default: 'any'
+      component:
+        description: 'Component name (for raw packages)'
+        required: false
+        type: string
+        default: 'main'
+      architecture:
+        description: 'Architecture (for raw packages)'
+        required: false
+        type: string
+        default: 'amd64'
+      tags:
+        description: 'Comma-separated list of tags'
+        required: false
+        type: string
+        default: 'openssl,security,crypto'
+      description:
+        description: 'Package description'
+        required: false
+        type: string
+        default: 'OpenSSL package'
+      license:
+        description: 'Package license'
+        required: false
+        type: string
+        default: 'OpenSSL'
+      homepage:
+        description: 'Package homepage URL'
+        required: false
+        type: string
+      vcs-url:
+        description: 'VCS URL'
+        required: false
+        type: string
+      keywords:
+        description: 'Comma-separated list of keywords'
+        required: false
+        type: string
+        default: 'openssl,ssl,tls,crypto,security'
+      publish:
+        description: 'Whether to publish the package (vs just upload)'
+        required: false
+        type: boolean
+        default: true
+      wait-for-sync:
+        description: 'Wait for package to be synced'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      package-url:
+        description: 'URL of the published package'
+        value: ${{ jobs.publish.outputs.package-url }}
+      package-id:
+        description: 'Cloudsmith package ID'
+        value: ${{ jobs.publish.outputs.package-id }}
+      upload-status:
+        description: 'Upload status'
+        value: ${{ jobs.publish.outputs.upload-status }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for authentication'
+        required: true
+      CLOUDSMITH_USERNAME:
+        description: 'Cloudsmith username'
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      package-url: ${{ steps.publish.outputs.package-url }}
+      package-id: ${{ steps.publish.outputs.package-id }}
+      upload-status: ${{ steps.publish.outputs.upload-status }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Cloudsmith CLI
+      run: |
+        # Install Cloudsmith CLI
+        curl -1sLf 'https://dl.cloudsmith.io/public/cloudsmith/cli/setup.deb.sh' | sudo -E bash
+        sudo apt-get update
+        sudo apt-get install -y cloudsmith-cli
+        
+        # Verify installation
+        cloudsmith --version
+        
+    - name: Configure Cloudsmith authentication
+      run: |
+        # Set up Cloudsmith configuration
+        cloudsmith config set-api-key ${{ secrets.CLOUDSMITH_API_KEY }}
+        
+        # Set default organization if provided
+        if [ -n "${{ secrets.CLOUDSMITH_USERNAME }}" ]; then
+          cloudsmith config set-username ${{ secrets.CLOUDSMITH_USERNAME }}
+        fi
+        
+    - name: Prepare package metadata
+      id: metadata
+      run: |
+        # Create package metadata
+        cat > package-metadata.json << EOF
+        {
+          "name": "${{ inputs.package-name }}",
+          "version": "${{ inputs.package-version }}",
+          "type": "${{ inputs.package-type }}",
+          "description": "${{ inputs.description }}",
+          "license": "${{ inputs.license }}",
+          "homepage": "${{ inputs.homepage }}",
+          "vcs_url": "${{ inputs.vcs-url }}",
+          "keywords": "${{ inputs.keywords }}",
+          "tags": "${{ inputs.tags }}",
+          "distribution": "${{ inputs.distribution }}",
+          "component": "${{ inputs.component }}",
+          "architecture": "${{ inputs.architecture }}"
+        }
+        EOF
+        
+        echo "metadata=$(cat package-metadata.json | base64 -w 0)" >> $GITHUB_OUTPUT
+        
+    - name: Validate artifact path
+      run: |
+        if [ ! -f "${{ inputs.artifact-path }}" ] && [ ! -d "${{ inputs.artifact-path }}" ]; then
+          echo "❌ Artifact path does not exist: ${{ inputs.artifact-path }}"
+          exit 1
+        fi
+        
+        echo "✅ Artifact path validated: ${{ inputs.artifact-path }}"
+        
+    - name: Create package archive (if needed)
+      id: archive
+      run: |
+        if [ -d "${{ inputs.artifact-path }}" ]; then
+          # Create archive from directory
+          archive_name="${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz"
+          tar -czf "$archive_name" -C "${{ inputs.artifact-path }}" .
+          echo "archive-path=$archive_name" >> $GITHUB_OUTPUT
+          echo "archive-created=true" >> $GITHUB_OUTPUT
+        else
+          # Use file as-is
+          echo "archive-path=${{ inputs.artifact-path }}" >> $GITHUB_OUTPUT
+          echo "archive-created=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Upload package to Cloudsmith
+      id: upload
+      run: |
+        # Upload package based on type
+        case "${{ inputs.package-type }}" in
+          "raw")
+            cloudsmith upload raw ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --distribution "${{ inputs.distribution }}" \
+              --component "${{ inputs.component }}" \
+              --architecture "${{ inputs.architecture }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --publish \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "conan")
+            cloudsmith upload conan ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --publish \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "maven")
+            cloudsmith upload maven ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --publish \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "npm")
+            cloudsmith upload npm ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --publish \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          *)
+            echo "❌ Unsupported package type: ${{ inputs.package-type }}"
+            exit 1
+            ;;
+        esac
+        
+        echo "upload-status=success" >> $GITHUB_OUTPUT
+        
+    - name: Get package information
+      id: package-info
+      run: |
+        # Get package information from Cloudsmith
+        package_info=$(cloudsmith show package ${{ inputs.organization }}/${{ inputs.repository }} \
+          --name "${{ inputs.package-name }}" \
+          --version "${{ inputs.package-version }}" \
+          --format json)
+        
+        if [ $? -eq 0 ]; then
+          package_url=$(echo "$package_info" | jq -r '.self_url')
+          package_id=$(echo "$package_info" | jq -r '.slug_perm')
+          
+          echo "package-url=$package_url" >> $GITHUB_OUTPUT
+          echo "package-id=$package_id" >> $GITHUB_OUTPUT
+          
+          echo "✅ Package uploaded successfully:"
+          echo "   URL: $package_url"
+          echo "   ID: $package_id"
+        else
+          echo "❌ Failed to get package information"
+          echo "package-url=" >> $GITHUB_OUTPUT
+          echo "package-id=" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Wait for package sync
+      if: inputs.wait-for-sync == 'true'
+      run: |
+        echo "⏳ Waiting for package to be synced..."
+        
+        # Wait for package to be available
+        max_attempts=30
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          if cloudsmith show package ${{ inputs.organization }}/${{ inputs.repository }} \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --format json > /dev/null 2>&1; then
+            echo "✅ Package is now available"
+            break
+          fi
+          
+          echo "   Attempt $attempt/$max_attempts: Package not yet available, waiting 10 seconds..."
+          sleep 10
+          attempt=$((attempt + 1))
+        done
+        
+        if [ $attempt -gt $max_attempts ]; then
+          echo "⚠️ Package sync timeout, but upload may have succeeded"
+        fi
+        
+    - name: Generate package report
+      run: |
+        cat > package-report.json << EOF
+        {
+          "package_name": "${{ inputs.package-name }}",
+          "package_version": "${{ inputs.package-version }}",
+          "package_type": "${{ inputs.package-type }}",
+          "organization": "${{ inputs.organization }}",
+          "repository": "${{ inputs.repository }}",
+          "package_url": "${{ steps.package-info.outputs.package-url }}",
+          "package_id": "${{ steps.package-info.outputs.package-id }}",
+          "upload_status": "${{ steps.upload.outputs.upload-status }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "📦 Package Report:"
+        cat package-report.json | jq .
+        
+    - name: Upload package report
+      uses: actions/upload-artifact@v4
+      with:
+        name: package-report-${{ inputs.package-name }}-${{ inputs.package-version }}
+        path: |
+          package-report.json
+          package-metadata.json
+        retention-days: 30
+        
+    - name: Clean up temporary files
+      if: always()
+      run: |
+        if [ "${{ steps.archive.outputs.archive-created }}" == "true" ]; then
+          rm -f "${{ steps.archive.outputs.archive-path }}"
+        fi
+        rm -f package-metadata.json package-report.json

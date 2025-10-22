@@ -1,0 +1,452 @@
+name: 'Cloudsmith Publish'
+description: 'Publish packages to Cloudsmith with OIDC authentication and quality gates'
+inputs:
+  package-name:
+    description: 'Name of the package to publish'
+    required: true
+  package-version:
+    description: 'Version of the package'
+    required: true
+  package-type:
+    description: 'Type of package (raw, conan, maven, npm, etc.)'
+    required: true
+    default: 'raw'
+  repository:
+    description: 'Cloudsmith repository name'
+    required: true
+  organization:
+    description: 'Cloudsmith organization name'
+    required: true
+  artifact-path:
+    description: 'Path to the artifact to upload'
+    required: true
+  distribution:
+    description: 'Distribution name (for raw packages)'
+    required: false
+    default: 'any'
+  component:
+    description: 'Component name (for raw packages)'
+    required: false
+    default: 'main'
+  architecture:
+    description: 'Architecture (for raw packages)'
+    required: false
+    default: 'amd64'
+  tags:
+    description: 'Comma-separated list of tags'
+    required: false
+    default: 'openssl,security,crypto'
+  description:
+    description: 'Package description'
+    required: false
+    default: 'OpenSSL package'
+  license:
+    description: 'Package license'
+    required: false
+    default: 'OpenSSL'
+  homepage:
+    description: 'Package homepage URL'
+    required: false
+  vcs-url:
+    description: 'VCS URL'
+    required: false
+  keywords:
+    description: 'Comma-separated list of keywords'
+    required: false
+    default: 'openssl,ssl,tls,crypto,security'
+  publish:
+    description: 'Whether to publish the package (vs just upload)'
+    required: false
+    default: 'true'
+  wait-for-sync:
+    description: 'Wait for package to be synced'
+    required: false
+    default: 'true'
+  enable-sbom:
+    description: 'Generate and attach SBOM'
+    required: false
+    default: 'true'
+  enable-security-scan:
+    description: 'Run security scan before upload'
+    required: false
+    default: 'true'
+  fail-on-high-severity:
+    description: 'Fail on high severity vulnerabilities'
+    required: false
+    default: 'true'
+  oidc-token:
+    description: 'OIDC token for authentication'
+    required: false
+  api-key:
+    description: 'Cloudsmith API key (alternative to OIDC)'
+    required: false
+  username:
+    description: 'Cloudsmith username'
+    required: false
+outputs:
+  package-url:
+    description: 'URL of the published package'
+    value: ${{ steps.publish.outputs.package-url }}
+  package-id:
+    description: 'Cloudsmith package ID'
+    value: ${{ steps.publish.outputs.package-id }}
+  upload-status:
+    description: 'Upload status'
+    value: ${{ steps.publish.outputs.upload-status }}
+  sbom-url:
+    description: 'URL of the uploaded SBOM'
+    value: ${{ steps.sbom.outputs.sbom-url }}
+  security-scan-status:
+    description: 'Security scan status'
+    value: ${{ steps.security-scan.outputs.scan-status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Cloudsmith CLI
+      shell: bash
+      run: |
+        # Install Cloudsmith CLI
+        curl -1sLf 'https://dl.cloudsmith.io/public/cloudsmith/cli/setup.deb.sh' | sudo -E bash
+        sudo apt-get update
+        sudo apt-get install -y cloudsmith-cli
+        
+        # Verify installation
+        cloudsmith --version
+        
+    - name: Install security tools
+      shell: bash
+      run: |
+        # Install Syft for SBOM generation
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        
+        # Install Trivy for security scanning
+        sudo apt-get update
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install -y trivy
+        
+        # Install jq for JSON processing
+        sudo apt-get install -y jq
+        
+    - name: Configure Cloudsmith authentication
+      id: auth
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.oidc-token }}" ]; then
+          echo "Using OIDC authentication"
+          # Configure OIDC authentication
+          cloudsmith config set-oidc-token ${{ inputs.oidc-token }}
+        elif [ -n "${{ inputs.api-key }}" ]; then
+          echo "Using API key authentication"
+          # Configure API key authentication
+          cloudsmith config set-api-key ${{ inputs.api-key }}
+        else
+          echo "❌ No authentication method provided"
+          exit 1
+        fi
+        
+        # Set default organization if provided
+        if [ -n "${{ inputs.username }}" ]; then
+          cloudsmith config set-username ${{ inputs.username }}
+        fi
+        
+    - name: Generate SBOM
+      id: sbom
+      if: inputs.enable-sbom == 'true'
+      shell: bash
+      run: |
+        echo "🔍 Generating SBOM for ${{ inputs.artifact-path }}"
+        
+        # Generate SBOM using Syft
+        sbom_file="sbom-${{ inputs.package-name }}-${{ inputs.package-version }}.spdx.json"
+        syft ${{ inputs.artifact-path }} -o spdx-json > "$sbom_file"
+        
+        # Validate SBOM
+        if [ -f "$sbom_file" ] && [ -s "$sbom_file" ]; then
+          echo "✅ SBOM generated successfully: $sbom_file"
+          echo "sbom-file=$sbom_file" >> $GITHUB_OUTPUT
+          echo "sbom-generated=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Failed to generate SBOM"
+          echo "sbom-generated=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Run security scan
+      id: security-scan
+      if: inputs.enable-security-scan == 'true'
+      shell: bash
+      run: |
+        echo "🔒 Running security scan on ${{ inputs.artifact-path }}"
+        
+        # Run Trivy security scan
+        scan_file="security-scan-${{ inputs.package-name }}-${{ inputs.package-version }}.json"
+        trivy fs --format json --output "$scan_file" ${{ inputs.artifact-path }}
+        
+        if [ -f "$scan_file" ]; then
+          # Check for high severity vulnerabilities
+          high_severity=$(jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL") | .VulnerabilityID' "$scan_file" | wc -l)
+          
+          echo "Security scan completed:"
+          echo "  High/Critical vulnerabilities: $high_severity"
+          
+          if [ "$high_severity" -gt 0 ] && [ "${{ inputs.fail-on-high-severity }}" == "true" ]; then
+            echo "❌ Found $high_severity high severity vulnerabilities"
+            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL") | "\(.VulnerabilityID): \(.Title) (Severity: \(.Severity))"' "$scan_file"
+            echo "scan-status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ Security scan passed"
+            echo "scan-status=passed" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "scan-file=$scan_file" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Security scan failed"
+          echo "scan-status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Prepare package metadata
+      id: metadata
+      shell: bash
+      run: |
+        # Create package metadata
+        cat > package-metadata.json << EOF
+        {
+          "name": "${{ inputs.package-name }}",
+          "version": "${{ inputs.package-version }}",
+          "type": "${{ inputs.package-type }}",
+          "description": "${{ inputs.description }}",
+          "license": "${{ inputs.license }}",
+          "homepage": "${{ inputs.homepage }}",
+          "vcs_url": "${{ inputs.vcs-url }}",
+          "keywords": "${{ inputs.keywords }}",
+          "tags": "${{ inputs.tags }}",
+          "distribution": "${{ inputs.distribution }}",
+          "component": "${{ inputs.component }}",
+          "architecture": "${{ inputs.architecture }}",
+          "sbom_generated": "${{ steps.sbom.outputs.sbom-generated }}",
+          "security_scan_status": "${{ steps.security-scan.outputs.scan-status }}"
+        }
+        EOF
+        
+        echo "metadata=$(cat package-metadata.json | base64 -w 0)" >> $GITHUB_OUTPUT
+        
+    - name: Validate artifact path
+      shell: bash
+      run: |
+        if [ ! -f "${{ inputs.artifact-path }}" ] && [ ! -d "${{ inputs.artifact-path }}" ]; then
+          echo "❌ Artifact path does not exist: ${{ inputs.artifact-path }}"
+          exit 1
+        fi
+        
+        echo "✅ Artifact path validated: ${{ inputs.artifact-path }}"
+        
+    - name: Create package archive (if needed)
+      id: archive
+      shell: bash
+      run: |
+        if [ -d "${{ inputs.artifact-path }}" ]; then
+          # Create archive from directory
+          archive_name="${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz"
+          tar -czf "$archive_name" -C "${{ inputs.artifact-path }}" .
+          echo "archive-path=$archive_name" >> $GITHUB_OUTPUT
+          echo "archive-created=true" >> $GITHUB_OUTPUT
+        else
+          # Use file as-is
+          echo "archive-path=${{ inputs.artifact-path }}" >> $GITHUB_OUTPUT
+          echo "archive-created=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Upload package to Cloudsmith
+      id: upload
+      shell: bash
+      run: |
+        echo "📦 Uploading package to Cloudsmith..."
+        
+        # Upload package based on type
+        case "${{ inputs.package-type }}" in
+          "raw")
+            cloudsmith upload raw ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --distribution "${{ inputs.distribution }}" \
+              --component "${{ inputs.component }}" \
+              --architecture "${{ inputs.architecture }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              $([ "${{ inputs.publish }}" == "true" ] && echo "--publish" || echo "") \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "conan")
+            cloudsmith upload conan ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              $([ "${{ inputs.publish }}" == "true" ] && echo "--publish" || echo "") \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "maven")
+            cloudsmith upload maven ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              $([ "${{ inputs.publish }}" == "true" ] && echo "--publish" || echo "") \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          "npm")
+            cloudsmith upload npm ${{ inputs.organization }}/${{ inputs.repository }} \
+              --name "${{ inputs.package-name }}" \
+              --version "${{ inputs.package-version }}" \
+              --description "${{ inputs.description }}" \
+              --tags "${{ inputs.tags }}" \
+              --keywords "${{ inputs.keywords }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              $([ "${{ inputs.publish }}" == "true" ] && echo "--publish" || echo "") \
+              "${{ steps.archive.outputs.archive-path }}"
+            ;;
+          *)
+            echo "❌ Unsupported package type: ${{ inputs.package-type }}"
+            exit 1
+            ;;
+        esac
+        
+        echo "upload-status=success" >> $GITHUB_OUTPUT
+        
+    - name: Upload SBOM to Cloudsmith
+      id: upload-sbom
+      if: inputs.enable-sbom == 'true' && steps.sbom.outputs.sbom-generated == 'true'
+      shell: bash
+      run: |
+        echo "📋 Uploading SBOM to Cloudsmith..."
+        
+        # Upload SBOM as a separate package
+        cloudsmith upload raw ${{ inputs.organization }}/${{ inputs.repository }} \
+          --name "${{ inputs.package-name }}-sbom" \
+          --version "${{ inputs.package-version }}" \
+          --distribution "${{ inputs.distribution }}" \
+          --component "${{ inputs.component }}" \
+          --architecture "${{ inputs.architecture }}" \
+          --description "SBOM for ${{ inputs.package-name }} ${{ inputs.package-version }}" \
+          --tags "${{ inputs.tags }},sbom" \
+          --keywords "${{ inputs.keywords }},sbom" \
+          --license "${{ inputs.license }}" \
+          --homepage "${{ inputs.homepage }}" \
+          --vcs-url "${{ inputs.vcs-url }}" \
+          $([ "${{ inputs.publish }}" == "true" ] && echo "--publish" || echo "") \
+          "${{ steps.sbom.outputs.sbom-file }}"
+          
+        echo "sbom-uploaded=true" >> $GITHUB_OUTPUT
+        
+    - name: Get package information
+      id: package-info
+      shell: bash
+      run: |
+        # Get package information from Cloudsmith
+        package_info=$(cloudsmith show package ${{ inputs.organization }}/${{ inputs.repository }} \
+          --name "${{ inputs.package-name }}" \
+          --version "${{ inputs.package-version }}" \
+          --format json)
+        
+        if [ $? -eq 0 ]; then
+          package_url=$(echo "$package_info" | jq -r '.self_url')
+          package_id=$(echo "$package_info" | jq -r '.slug_perm')
+          
+          echo "package-url=$package_url" >> $GITHUB_OUTPUT
+          echo "package-id=$package_id" >> $GITHUB_OUTPUT
+          
+          echo "✅ Package uploaded successfully:"
+          echo "   URL: $package_url"
+          echo "   ID: $package_id"
+        else
+          echo "❌ Failed to get package information"
+          echo "package-url=" >> $GITHUB_OUTPUT
+          echo "package-id=" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Wait for package sync
+      if: inputs.wait-for-sync == 'true'
+      shell: bash
+      run: |
+        echo "⏳ Waiting for package to be synced..."
+        
+        # Wait for package to be available
+        max_attempts=30
+        attempt=1
+        
+        while [ $attempt -le $max_attempts ]; do
+          if cloudsmith show package ${{ inputs.organization }}/${{ inputs.repository }} \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --format json > /dev/null 2>&1; then
+            echo "✅ Package is now available"
+            break
+          fi
+          
+          echo "   Attempt $attempt/$max_attempts: Package not yet available, waiting 10 seconds..."
+          sleep 10
+          attempt=$((attempt + 1))
+        done
+        
+        if [ $attempt -gt $max_attempts ]; then
+          echo "⚠️ Package sync timeout, but upload may have succeeded"
+        fi
+        
+    - name: Generate package report
+      shell: bash
+      run: |
+        cat > package-report.json << EOF
+        {
+          "package_name": "${{ inputs.package-name }}",
+          "package_version": "${{ inputs.package-version }}",
+          "package_type": "${{ inputs.package-type }}",
+          "organization": "${{ inputs.organization }}",
+          "repository": "${{ inputs.repository }}",
+          "package_url": "${{ steps.package-info.outputs.package-url }}",
+          "package_id": "${{ steps.package-info.outputs.package-id }}",
+          "upload_status": "${{ steps.upload.outputs.upload-status }}",
+          "sbom_generated": "${{ steps.sbom.outputs.sbom-generated }}",
+          "sbom_uploaded": "${{ steps.upload-sbom.outputs.sbom-uploaded }}",
+          "security_scan_status": "${{ steps.security-scan.outputs.scan-status }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "📦 Package Report:"
+        cat package-report.json | jq .
+        
+    - name: Clean up temporary files
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.archive.outputs.archive-created }}" == "true" ]; then
+          rm -f "${{ steps.archive.outputs.archive-path }}"
+        fi
+        rm -f package-metadata.json package-report.json
+        rm -f "${{ steps.sbom.outputs.sbom-file }}" || true
+        rm -f "${{ steps.security-scan.outputs.scan-file }}" || true

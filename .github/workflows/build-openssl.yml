@@ -1,0 +1,292 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform for build'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      build_type:
+        description: 'Build type (Release, Debug, RelWithDebInfo)'
+        required: false
+        type: string
+        default: 'Release'
+      shared:
+        description: 'Build shared libraries'
+        required: false
+        type: boolean
+        default: true
+      enable_tests:
+        description: 'Run OpenSSL test suite'
+        required: false
+        type: boolean
+        default: true
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of uploaded build artifacts'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      build-hash:
+        description: 'Build hash for caching'
+        value: ${{ jobs.build.outputs.build-hash }}
+      openssl-version:
+        description: 'Actual OpenSSL version built'
+        value: ${{ jobs.build.outputs.openssl-version }}
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub token for artifact upload'
+        required: false
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for package upload'
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.url }}
+      build-hash: ${{ steps.build-hash.outputs.hash }}
+      openssl-version: ${{ steps.version.outputs.version }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install system dependencies
+      run: |
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            wget \
+            curl \
+            libssl-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            libncursesw5-dev \
+            xz-utils \
+            tk-dev \
+            libxml2-dev \
+            libxmlsec1-dev \
+            libffi-dev \
+            liblzma-dev \
+            pkg-config
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          brew install cmake pkg-config openssl zlib
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+          choco install cmake git pkgconfig
+        fi
+        
+    - name: Extract OpenSSL version
+      id: version
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=latest" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Generate build hash
+      id: build-hash
+      run: |
+        # Create a hash based on version, platform, fips, and build_type
+        hash_input="${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.fips }}-${{ inputs.build_type }}-${{ inputs.shared }}"
+        hash=$(echo -n "$hash_input" | sha256sum | cut -d' ' -f1)
+        echo "hash=$hash" >> $GITHUB_OUTPUT
+        
+    - name: Check build cache
+      id: cache-check
+      run: |
+        cache_dir="$HOME/.openssl-build-cache"
+        cache_file="$cache_dir/${{ steps.build-hash.outputs.hash }}.tar.gz"
+        
+        if [ -f "$cache_file" ]; then
+          echo "cache-hit=true" >> $GITHUB_OUTPUT
+          echo "cache-file=$cache_file" >> $GITHUB_OUTPUT
+        else
+          echo "cache-hit=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Restore from cache
+      if: steps.cache-check.outputs.cache-hit == 'true'
+      run: |
+        mkdir -p openssl-build
+        tar -xzf "${{ steps.cache-check.outputs.cache-file }}" -C openssl-build
+        echo "Build restored from cache"
+        
+    - name: Clone OpenSSL repository
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        git clone --depth 1 https://github.com/openssl/openssl.git openssl-src
+        cd openssl-src
+        if [ "${{ steps.version.outputs.version }}" != "latest" ]; then
+          git fetch --depth 1 origin OpenSSL_${{ steps.version.outputs.version | replace('.', '_') }}
+          git checkout OpenSSL_${{ steps.version.outputs.version | replace('.', '_') }}
+        fi
+        
+    - name: Configure OpenSSL build
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        cd openssl-src
+        
+        # Set configuration based on platform
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          config_cmd="./Configure linux-x86_64"
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          config_cmd="./Configure darwin64-x86_64-cc"
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+          config_cmd="perl Configure VC-WIN64A"
+        fi
+        
+        # Add FIPS configuration if enabled
+        if [ "${{ inputs.fips }}" == "true" ]; then
+          config_cmd="$config_cmd enable-fips"
+        fi
+        
+        # Add shared library configuration
+        if [ "${{ inputs.shared }}" == "true" ]; then
+          config_cmd="$config_cmd shared"
+        else
+          config_cmd="$config_cmd no-shared"
+        fi
+        
+        # Add zlib support
+        config_cmd="$config_cmd zlib-dynamic"
+        
+        # Add prefix and other options
+        config_cmd="$config_cmd --prefix=/usr/local/openssl --openssldir=/usr/local/openssl/ssl --libdir=lib"
+        
+        echo "Running: $config_cmd"
+        eval $config_cmd
+        
+    - name: Build OpenSSL
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        cd openssl-src
+        make -j$(nproc)
+        
+    - name: Test OpenSSL build
+      if: steps.cache-check.outputs.cache-hit != 'true' && inputs.enable_tests == 'true'
+      run: |
+        cd openssl-src
+        make test
+        
+    - name: Install OpenSSL
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        cd openssl-src
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          nmake install
+        else
+          sudo make install
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            sudo ldconfig
+          fi
+        fi
+        
+    - name: Create build artifacts
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p artifacts
+        cp -r /usr/local/openssl/* artifacts/ || true
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          cp -r C:/Program\ Files/OpenSSL/* artifacts/ || true
+        fi
+        
+        # Create package info
+        cat > artifacts/package-info.json << EOF
+        {
+          "version": "${{ steps.version.outputs.version }}",
+          "platform": "${{ inputs.platform }}",
+          "fips": ${{ inputs.fips }},
+          "build_type": "${{ inputs.build_type }}",
+          "shared": ${{ inputs.shared }},
+          "build_hash": "${{ steps.build-hash.outputs.hash }}",
+          "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+    - name: Cache build artifacts
+      if: steps.cache-check.outputs.cache-hit != 'true'
+      run: |
+        cache_dir="$HOME/.openssl-build-cache"
+        mkdir -p "$cache_dir"
+        tar -czf "$cache_dir/${{ steps.build-hash.outputs.hash }}.tar.gz" -C openssl-src .
+        
+    - name: Upload build artifacts
+      if: inputs.upload_artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      id: upload
+      with:
+        name: openssl-${{ steps.version.outputs.version }}-${{ inputs.platform }}-${{ steps.build-hash.outputs.hash }}
+        path: artifacts/
+        retention-days: 30
+        
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        path: artifacts/
+        format: spdx-json
+        output-file: openssl-sbom.spdx.json
+        
+    - name: Upload SBOM
+      if: inputs.upload_artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: openssl-sbom-${{ steps.version.outputs.version }}-${{ inputs.platform }}
+        path: openssl-sbom.spdx.json
+        retention-days: 30
+        
+    - name: Security scan with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: 'artifacts/'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy scan results
+      if: inputs.upload_artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-scan-${{ steps.version.outputs.version }}-${{ inputs.platform }}
+        path: trivy-results.sarif
+        retention-days: 30
+        
+    - name: Check for high severity vulnerabilities
+      run: |
+        if [ -f "trivy-results.sarif" ]; then
+          # Check for high severity vulnerabilities
+          high_severity=$(jq -r '.runs[0].results[] | select(.level == "error") | .ruleId' trivy-results.sarif | wc -l)
+          if [ "$high_severity" -gt 0 ]; then
+            echo "❌ Found $high_severity high severity vulnerabilities"
+            jq -r '.runs[0].results[] | select(.level == "error") | "\(.ruleId): \(.message.text)"' trivy-results.sarif
+            exit 1
+          else
+            echo "✅ No high severity vulnerabilities found"
+          fi
+        fi
