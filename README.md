@@ -203,7 +203,159 @@ graph TD
     K --> L[Performance Tests]
 ```
 
-## Available Commands
+## Reusable Workflows
+
+This repository provides reusable GitHub Actions workflows for building, testing, and publishing OpenSSL across multiple platforms.
+
+### Core Workflows
+
+#### 1. Build OpenSSL (`build-openssl.yml`)
+
+Compiles OpenSSL with configurable options across different platforms.
+
+**Inputs:**
+```yaml
+version: string (required)      # OpenSSL version to build
+platform: string (required)     # ubuntu-latest, windows-latest, macos-latest
+fips: boolean (default: false)  # Enable FIPS mode
+enable-demos: boolean (default: true)    # Enable demo applications
+enable-tests: boolean (default: true)    # Enable test compilation
+```
+
+**Outputs:**
+```yaml
+artifact-url: string    # URL of uploaded build artifact
+```
+
+**Usage Example:**
+```yaml
+jobs:
+  build:
+    uses: sparesparrow/openssl-tools/.github/workflows/build-openssl.yml@v1
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: true
+      enable-demos: true
+      enable-tests: true
+    secrets: inherit
+```
+
+#### 2. Integration Tests (`test-integration.yml`)
+
+Runs comprehensive tests across platforms with matrix compilation.
+
+**Inputs:**
+```yaml
+version: string (required)      # OpenSSL version to test
+platform: string (required)     # Target platform for testing
+fips: boolean (default: false)  # Test FIPS mode
+test-type: string (default: all) # all, minimal, crypto, ssl, performance
+```
+
+**Outputs:**
+```yaml
+test-results: string    # Test execution summary
+```
+
+**Usage Example:**
+```yaml
+jobs:
+  test:
+    uses: sparesparrow/openssl-tools/.github/workflows/test-integration.yml@v1
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: false
+      test-type: 'all'
+    secrets: inherit
+```
+
+#### 3. Cloudsmith Publishing (`publish-cloudsmith.yml`)
+
+Publishes packages to Cloudsmith repositories with OIDC authentication.
+
+**Inputs:**
+```yaml
+package-type: string (required)  # conan, raw, deb, rpm
+repository: string (required)    # Cloudsmith repository slug
+package-path: string (required)  # Path to package files
+package-version: string (required) # Package version
+distribution: string (optional)  # For deb/rpm packages
+```
+
+**Secrets:**
+```yaml
+cloudsmith-api-key: string (required)  # Cloudsmith API key
+```
+
+**Outputs:**
+```yaml
+package-url: string    # Published package URL
+```
+
+**Usage Example:**
+```yaml
+jobs:
+  publish:
+    uses: sparesparrow/openssl-tools/.github/workflows/publish-cloudsmith.yml@v1
+    with:
+      package-type: 'conan'
+      repository: 'openssl/openssl-tools'
+      package-version: '3.3.0'
+    secrets:
+      cloudsmith-api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+```
+
+### Composite Actions
+
+#### Cloudsmith Publisher (`cloudsmith-publish`)
+
+Publishes packages to Cloudsmith with OIDC authentication support.
+
+**Inputs:**
+```yaml
+package-type: string (required)  # conan, raw, deb, rpm
+repository: string (required)    # Cloudsmith repository slug
+package-path: string (required)  # Path to package files
+package-version: string (required) # Package version
+distribution: string (optional)  # For deb/rpm packages
+```
+
+**Usage Example:**
+```yaml
+- name: Publish to Cloudsmith
+  uses: sparesparrow/openssl-tools/.github/actions/cloudsmith-publish@v1
+  with:
+    package-type: 'raw'
+    repository: 'openssl/openssl-tools'
+    package-path: './artifacts'
+    package-version: '3.3.0'
+```
+
+### Quality Gates
+
+All reusable workflows include built-in quality gates:
+
+- **SBOM Generation**: Creates Software Bill of Materials using Syft
+- **Vulnerability Scanning**: Trivy scans for high/critical vulnerabilities
+- **Compliance Checks**: Fails builds with security policy violations
+
+### Testing Workflows
+
+Use the test workflow to validate reusable components:
+
+```bash
+# Trigger via GitHub Actions tab
+# Select "Test Reusable Workflows" → Choose test scenario
+```
+
+**Test Scenarios:**
+- `build-and-test`: Build and test OpenSSL
+- `build-test-publish`: Full pipeline with Cloudsmith publishing
+- `quality-gates-only`: Validate security scanning
+
+### Available Commands
 
 - `openssl-env` - Environment setup (--minimal, --full, --dev)
 - `openssl-build` - Build optimization and management

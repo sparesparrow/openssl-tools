@@ -1,0 +1,171 @@
+name: Reusable OpenSSL Integration Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform for testing'
+        required: true
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+      fips:
+        description: 'Test FIPS mode'
+        type: boolean
+        default: false
+      test-type:
+        description: 'Type of tests to run'
+        type: choice
+        options:
+          - all
+          - minimal
+          - crypto
+          - ssl
+          - performance
+        default: all
+    inputs:
+      version:
+        description: 'OpenSSL version to test'
+        type: string
+        required: true
+      platform:
+        description: 'Target platform for testing'
+        type: string
+        required: true
+      fips:
+        description: 'Test FIPS mode'
+        type: boolean
+        default: false
+      test-type:
+        description: 'Type of tests to run (all, minimal, crypto, ssl)'
+        type: string
+        default: 'all'
+    outputs:
+      test-results:
+        description: 'Test execution summary'
+        value: ${{ jobs.test.outputs.test-summary }}
+
+jobs:
+  test:
+    runs-on: ${{ inputs.platform }}
+    strategy:
+      matrix:
+        include:
+          - compiler: gcc
+            flags: '--strict-warnings'
+          - compiler: clang
+            flags: '--strict-warnings'
+    outputs:
+      test-summary: ${{ steps.test-summary.outputs.summary }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: openssl/openssl
+          ref: ${{ inputs.version }}
+          path: openssl-source
+
+      - name: Setup test environment
+        run: |
+          case "${{ inputs.platform }}" in
+            ubuntu-latest)
+              sudo apt-get update
+              sudo apt-get install -y build-essential perl
+              ;;
+            windows-latest)
+              choco install perl strawberryperl
+              ;;
+            macos-latest)
+              brew install perl
+              ;;
+          esac
+
+      - name: Configure OpenSSL for testing
+        working-directory: openssl-source
+        run: |
+          ./Configure \
+            ${{ contains(inputs.platform, 'ubuntu') && 'linux-x86_64' || '' }}\
+            ${{ contains(inputs.platform, 'windows') && 'mingw64' || '' }}\
+            ${{ contains(inputs.platform, 'macos') && 'darwin64-x86_64-cc' || '' }}\
+            ${{ inputs.fips && 'fips' || '' }} \
+            shared
+
+      - name: Build OpenSSL with tests
+        working-directory: openssl-source
+        run: make -j$(nproc)
+
+      - name: Run OpenSSL tests
+        working-directory: openssl-source
+        run: |
+          case "${{ inputs.test-type }}" in
+            "minimal")
+              make test_verification
+              ;;
+            "crypto")
+              make test_crypto
+              ;;
+            "ssl")
+              make test_ssl
+              ;;
+            "all"|*)
+              make test
+              ;;
+          esac
+
+      - name: Run additional validation tests
+        working-directory: openssl-source
+        run: |
+          # Run specific validation tests based on platform
+          if [[ "${{ inputs.platform }}" == "ubuntu-latest" ]]; then
+            make test_fuzz || true
+          fi
+
+          # Run performance benchmarks if requested
+          if [[ "${{ inputs.test-type }}" == "performance" ]]; then
+            make test_benchmark || true
+          fi
+
+      - name: Collect test results
+        id: test-summary
+        run: |
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "OpenSSL ${{ inputs.version }} Test Results" >> $GITHUB_OUTPUT
+          echo "Platform: ${{ inputs.platform }}" >> $GITHUB_OUTPUT
+          echo "FIPS Mode: ${{ inputs.fips }}" >> $GITHUB_OUTPUT
+          echo "Test Type: ${{ inputs.test-type }}" >> $GITHUB_OUTPUT
+          echo "Compiler: ${{ matrix.compiler }}" >> $GITHUB_OUTPUT
+          echo "Status: Completed" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy security scan on test artifacts
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          scan-type: 'fs'
+          scan-ref: 'openssl-source'
+          format: 'sarif'
+          output: 'test-trivy-results.sarif'
+
+      - name: Upload Trivy test scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          path: test-trivy-results.sarif
+          name: test-trivy-results-${{ inputs.version }}-${{ inputs.platform }}-${{ matrix.compiler }}
+          retention-days: 30
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          path: openssl-source/test-logs/
+          name: test-logs-${{ inputs.version }}-${{ inputs.platform }}-${{ matrix.compiler }}
+          retention-days: 7

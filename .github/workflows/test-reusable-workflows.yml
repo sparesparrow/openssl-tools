@@ -1,0 +1,106 @@
+name: Test Reusable Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-scenario:
+        description: 'Test scenario to run'
+        required: true
+        type: choice
+        options:
+          - build-and-test
+          - build-test-publish
+          - quality-gates-only
+
+jobs:
+  # Example 1: Build and Test OpenSSL
+  build-and-test:
+    if: github.event.inputs.test-scenario == 'build-and-test'
+    uses: ./.github/workflows/build-openssl.yml
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: false
+      enable-demos: true
+      enable-tests: true
+    secrets: inherit
+
+  test-openssl:
+    if: github.event.inputs.test-scenario == 'build-and-test'
+    needs: build-and-test
+    uses: ./.github/workflows/test-integration.yml
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: false
+      test-type: 'all'
+    secrets: inherit
+
+  # Example 2: Full Build, Test, and Publish Pipeline
+  build-openssl-full:
+    if: github.event.inputs.test-scenario == 'build-test-publish'
+    uses: ./.github/workflows/build-openssl.yml
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: true
+      enable-demos: true
+      enable-tests: true
+    secrets: inherit
+
+  test-openssl-full:
+    if: github.event.inputs.test-scenario == 'build-test-publish'
+    needs: build-openssl-full
+    uses: ./.github/workflows/test-integration.yml
+    with:
+      version: '3.3.0'
+      platform: 'ubuntu-latest'
+      fips: true
+      test-type: 'all'
+    secrets: inherit
+
+  publish-to-cloudsmith:
+    if: github.event.inputs.test-scenario == 'build-test-publish'
+    needs: [build-openssl-full, test-openssl-full]
+    uses: ./.github/workflows/publish-cloudsmith.yml
+    with:
+      package-type: 'raw'
+      repository: 'openssl/openssl-tools'
+      package-version: '3.3.0'
+    secrets:
+      cloudsmith-api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  # Example 3: Quality Gates Only (for existing artifacts)
+  quality-gates-only:
+    if: github.event.inputs.test-scenario == 'quality-gates-only'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.15.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: test-sbom.spdx.json
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'test-trivy-results.sarif'
+
+      - name: Check for high-severity vulnerabilities
+        run: |
+          if [ -f test-trivy-results.sarif ]; then
+            HIGH_CRITICAL_VULNS=$(cat test-trivy-results.sarif | jq -r '.runs[0].results[]?.ruleId' | grep -E '^(HIGH|CRITICAL)$' | wc -l)
+            if [ "$HIGH_CRITICAL_VULNS" -gt 0 ]; then
+              echo "❌ Found $HIGH_CRITICAL_VULNS high/critical vulnerabilities"
+              exit 1
+            else
+              echo "✅ No high/critical vulnerabilities found"
+            fi
+          fi

@@ -1,0 +1,130 @@
+name: Reusable Cloudsmith Package Publishing
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      package-type:
+        description: 'Type of package'
+        required: true
+        type: choice
+        options:
+          - conan
+          - raw
+          - deb
+          - rpm
+      repository:
+        description: 'Cloudsmith repository slug'
+        required: true
+        type: string
+      package-version:
+        description: 'Package version'
+        required: true
+        type: string
+      distribution:
+        description: 'Target distribution (for deb/rpm packages)'
+        type: string
+    inputs:
+      package-type:
+        description: 'Type of package (conan, raw, deb, rpm)'
+        type: string
+        required: true
+      repository:
+        description: 'Cloudsmith repository slug'
+        type: string
+        required: true
+      package-path:
+        description: 'Path to package files'
+        type: string
+        required: true
+      package-version:
+        description: 'Package version'
+        type: string
+        required: true
+      distribution:
+        description: 'Target distribution (for deb/rpm packages)'
+        type: string
+        default: ''
+    secrets:
+      cloudsmith-api-key:
+        description: 'Cloudsmith API key for authentication'
+        required: true
+    outputs:
+      package-url:
+        description: 'Published package URL'
+        value: ${{ jobs.publish.outputs.package-url }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      package-url: ${{ steps.publish.outputs.package-url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Cloudsmith CLI
+        run: |
+          pip install cloudsmith-cli
+
+      - name: Configure Cloudsmith authentication
+        run: |
+          cloudsmith login --api-key ${{ secrets.cloudsmith-api-key }}
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./packages
+
+      - name: Publish to Cloudsmith
+        id: publish
+        run: |
+          set -e
+
+          case "${{ inputs.package-type }}" in
+            "conan")
+              # Publish Conan packages
+              for conanfile in $(find ./packages -name "*.tar.gz" | grep -E "(conaninfo|conanmanifest|conanfile|conan_sources)"); do
+                echo "Publishing Conan package: $conanfile"
+                cloudsmith push conan ${{ inputs.repository }} "$conanfile"
+              done
+              ;;
+
+            "raw")
+              # Publish raw files
+              for file in $(find ./packages -type f); do
+                echo "Publishing raw file: $file"
+                cloudsmith push raw ${{ inputs.repository }} "$file"
+              done
+              ;;
+
+            "deb")
+              # Publish Debian packages
+              for deb in $(find ./packages -name "*.deb"); do
+                echo "Publishing Debian package: $deb"
+                cloudsmith push deb ${{ inputs.repository }} "$deb" \
+                  --distribution ${{ inputs.distribution }}
+              done
+              ;;
+
+            "rpm")
+              # Publish RPM packages
+              for rpm in $(find ./packages -name "*.rpm"); do
+                echo "Publishing RPM package: $rpm"
+                cloudsmith push rpm ${{ inputs.repository }} "$rpm" \
+                  --distribution ${{ inputs.distribution }}
+              done
+              ;;
+          esac
+
+          # Get the published package URL
+          PACKAGE_URL="https://cloudsmith.io/repos/${{ inputs.repository }}/packages/"
+          echo "package-url=$PACKAGE_URL" >> $GITHUB_OUTPUT
+
+      - name: Verify package publication
+        run: |
+          # Verify the package was published successfully
+          cloudsmith list packages ${{ inputs.repository }} \
+            --query "version:${{ inputs.package-version }}" \
+            --format table

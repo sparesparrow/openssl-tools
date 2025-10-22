@@ -1,0 +1,162 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform'
+        required: true
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+      fips:
+        description: 'Enable FIPS mode'
+        type: boolean
+        default: false
+      enable-demos:
+        description: 'Enable demo applications'
+        type: boolean
+        default: true
+      enable-tests:
+        description: 'Enable test compilation'
+        type: boolean
+        default: true
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        type: string
+        required: true
+      platform:
+        description: 'Target platform (ubuntu-latest, windows-latest, macos-latest)'
+        type: string
+        required: true
+      fips:
+        description: 'Enable FIPS mode'
+        type: boolean
+        default: false
+      enable-demos:
+        description: 'Enable demo applications'
+        type: boolean
+        default: true
+      enable-tests:
+        description: 'Enable test compilation'
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of the uploaded build artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: openssl/openssl
+          ref: ${{ inputs.version }}
+          path: openssl-source
+
+      - name: Setup build environment
+        run: |
+          case "${{ inputs.platform }}" in
+            ubuntu-latest)
+              sudo apt-get update
+              sudo apt-get install -y build-essential perl
+              ;;
+            windows-latest)
+              choco install perl strawberryperl
+              ;;
+            macos-latest)
+              brew install perl
+              ;;
+          esac
+
+      - name: Configure OpenSSL
+        working-directory: openssl-source
+        run: |
+          ./Configure \
+            --prefix=/tmp/openssl-install \
+            ${{ inputs.fips && 'fips ' || '' }}\
+            ${{ contains(inputs.platform, 'ubuntu') && 'linux-x86_64' || '' }}\
+            ${{ contains(inputs.platform, 'windows') && 'mingw64' || '' }}\
+            ${{ contains(inputs.platform, 'macos') && 'darwin64-x86_64-cc' || '' }}\
+            ${{ inputs.enable-demos && 'enable-demos' || 'no-demos' }} \
+            ${{ inputs.enable-tests && 'enable-tests' || 'no-tests' }} \
+            shared
+
+      - name: Build OpenSSL
+        working-directory: openssl-source
+        run: make -j$(nproc)
+
+      - name: Install OpenSSL
+        working-directory: openssl-source
+        run: make install_sw
+
+      - name: Create build artifacts
+        run: |
+          mkdir -p artifacts
+          cp -r /tmp/openssl-install/* artifacts/
+          tar -czf openssl-${{ inputs.version }}-${{ inputs.platform }}.tar.gz -C artifacts .
+
+      - name: Generate SBOM (Software Bill of Materials)
+        uses: anchore/sbom-action@v0.15.0
+        with:
+          path: openssl-source
+          format: spdx-json
+          output-file: openssl-${{ inputs.version }}-sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          path: openssl-${{ inputs.version }}-sbom.spdx.json
+          name: openssl-${{ inputs.version }}-sbom-${{ inputs.platform }}
+          retention-days: 90
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'openssl-source'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          path: trivy-results.sarif
+          name: trivy-results-${{ inputs.version }}-${{ inputs.platform }}
+          retention-days: 90
+
+      - name: Check for high-severity vulnerabilities
+        run: |
+          # Parse Trivy results and fail on high/critical vulnerabilities
+          if [ -f trivy-results.sarif ]; then
+            HIGH_CRITICAL_VULNS=$(cat trivy-results.sarif | jq -r '.runs[0].results[]?.ruleId' | grep -E '^(HIGH|CRITICAL)$' | wc -l)
+            if [ "$HIGH_CRITICAL_VULNS" -gt 0 ]; then
+              echo "❌ Found $HIGH_CRITICAL_VULNS high/critical vulnerabilities"
+              echo "Failing build due to security policy"
+              exit 1
+            else
+              echo "✅ No high/critical vulnerabilities found"
+            fi
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          path: openssl-${{ inputs.version }}-${{ inputs.platform }}.tar.gz
+          name: openssl-${{ inputs.version }}-${{ inputs.platform }}
+          retention-days: 30

@@ -1,0 +1,118 @@
+name: 'Cloudsmith Package Publisher'
+description: 'Publishes packages to Cloudsmith repositories with OIDC authentication'
+
+inputs:
+  package-type:
+    description: 'Type of package (conan, raw, deb, rpm)'
+    required: true
+  repository:
+    description: 'Cloudsmith repository slug'
+    required: true
+  package-path:
+    description: 'Path to package files'
+    required: true
+  package-version:
+    description: 'Package version'
+    required: true
+  distribution:
+    description: 'Target distribution (for deb/rpm packages)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Cloudsmith CLI
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install cloudsmith-cli
+
+    - name: Configure Cloudsmith authentication
+      shell: bash
+      run: |
+        # Use OIDC token if available, otherwise fall back to API key
+        if [ -n "${{ env.CLOUDSMITH_OIDC_TOKEN }}" ]; then
+          echo "Using OIDC authentication"
+          cloudsmith login --token ${{ env.CLOUDSMITH_OIDC_TOKEN }}
+        elif [ -n "${{ env.CLOUDSMITH_API_KEY }}" ]; then
+          echo "Using API key authentication"
+          cloudsmith login --api-key ${{ env.CLOUDSMITH_API_KEY }}
+        else
+          echo "Error: No authentication method configured"
+          exit 1
+        fi
+
+    - name: Prepare packages for publishing
+      shell: bash
+      run: |
+        mkdir -p ./prepared-packages
+        cp -r ${{ inputs.package-path }}/* ./prepared-packages/ 2>/dev/null || true
+
+        # List prepared packages for debugging
+        echo "Prepared packages:"
+        find ./prepared-packages -type f | head -20
+
+    - name: Publish packages to Cloudsmith
+      shell: bash
+      run: |
+        set -e
+
+        case "${{ inputs.package-type }}" in
+          "conan")
+            echo "Publishing Conan packages..."
+            for conanfile in $(find ./prepared-packages -name "*.tar.gz" | grep -E "(conaninfo|conanmanifest|conanfile|conan_sources)"); do
+              echo "Publishing Conan package: $(basename "$conanfile")"
+              cloudsmith push conan ${{ inputs.repository }} "$conanfile"
+            done
+            ;;
+
+          "raw")
+            echo "Publishing raw files..."
+            for file in $(find ./prepared-packages -type f); do
+              echo "Publishing raw file: $(basename "$file")"
+              cloudsmith push raw ${{ inputs.repository }} "$file"
+            done
+            ;;
+
+          "deb")
+            echo "Publishing Debian packages..."
+            for deb in $(find ./prepared-packages -name "*.deb"); do
+              echo "Publishing Debian package: $(basename "$deb")"
+              if [ -n "${{ inputs.distribution }}" ]; then
+                cloudsmith push deb ${{ inputs.repository }} "$deb" --distribution ${{ inputs.distribution }}
+              else
+                cloudsmith push deb ${{ inputs.repository }} "$deb"
+              fi
+            done
+            ;;
+
+          "rpm")
+            echo "Publishing RPM packages..."
+            for rpm in $(find ./prepared-packages -name "*.rpm"); do
+              echo "Publishing RPM package: $(basename "$rpm")"
+              if [ -n "${{ inputs.distribution }}" ]; then
+                cloudsmith push rpm ${{ inputs.repository }} "$rpm" --distribution ${{ inputs.distribution }}
+              else
+                cloudsmith push rpm ${{ inputs.repository }} "$rpm"
+              fi
+            done
+            ;;
+        esac
+
+    - name: Verify package publication
+      shell: bash
+      run: |
+        echo "Verifying package publication..."
+        cloudsmith list packages ${{ inputs.repository }} \
+          --query "version:${{ inputs.package-version }}" \
+          --format table \
+          --limit 5
+
+    - name: Generate package URLs
+      shell: bash
+      id: package-urls
+      run: |
+        PACKAGE_BASE_URL="https://cloudsmith.io/repos/${{ inputs.repository }}/packages/"
+        echo "package-url=$PACKAGE_BASE_URL" >> $GITHUB_OUTPUT
+        echo "Package published to: $PACKAGE_BASE_URL"
