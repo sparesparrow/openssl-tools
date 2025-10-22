@@ -22,6 +22,7 @@ All requested reusable workflows and composite actions have been successfully im
 
 ### Build OpenSSL Workflow (`build-openssl.yml`)
 - ✅ `workflow_call` with typed inputs/outputs
+- ✅ Uses `conan build` command for consistent builds
 - ✅ Configurable version, platform, FIPS mode
 - ✅ Conan profile support
 - ✅ Artifact upload with metadata

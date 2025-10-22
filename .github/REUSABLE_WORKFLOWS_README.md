@@ -5,7 +5,7 @@ This directory contains reusable GitHub Actions workflows and composite actions 
 ## Overview
 
 The reusable workflows provide:
-- **Build OpenSSL**: Compiles OpenSSL with configurable options (version, platform, FIPS mode)
+- **Build OpenSSL**: Compiles OpenSSL using `conan build` with configurable options (version, platform, FIPS mode)
 - **Integration Testing**: Matrixed validation across multiple OSes and configurations
 - **Cloudsmith Publishing**: OIDC-authenticated package publishing with metadata
 - **Quality Gates**: SBOM generation, vulnerability scanning, and security validation
@@ -14,7 +14,7 @@ The reusable workflows provide:
 
 ### 1. Build OpenSSL (`build-openssl.yml`)
 
-Compiles OpenSSL with configurable version, platform, and FIPS support.
+Compiles OpenSSL using `conan build` command with configurable version, platform, and FIPS support.
 
 **Inputs:**
 - `version` (required): OpenSSL version to build

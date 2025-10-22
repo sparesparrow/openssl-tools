@@ -119,31 +119,14 @@ jobs:
           # Create build directory
           mkdir -p build artifacts
           
-          # Run the build script
-          if [ -f "./scripts/build-openssl.sh" ]; then
-            ./scripts/build-openssl.sh \
-              --version "${{ inputs.version }}" \
-              --fips "${{ inputs.fips }}" \
-              --build-type "${{ inputs.build-type }}" \
-              --enable-tests "${{ inputs.enable-tests }}" \
-              --conan-profile "${{ inputs.conan-profile }}" \
-              --output-dir "./artifacts"
-          else
-            # Fallback to conan build if script doesn't exist
-            conan create . --profile="${{ inputs.conan-profile }}" \
-              -o openssl:version="${{ inputs.version }}" \
-              -o openssl:fips="${{ inputs.fips }}" \
-              -o openssl:build_type="${{ inputs.build-type }}" \
-              -o openssl:enable_tests="${{ inputs.enable-tests }}"
-            
-            # Copy artifacts
-            conan export-pkg . --profile="${{ inputs.conan-profile }}" \
-              -o openssl:version="${{ inputs.version }}" \
-              -o openssl:fips="${{ inputs.fips }}" \
-              -o openssl:build_type="${{ inputs.build-type }}" \
-              -o openssl:enable_tests="${{ inputs.enable-tests }}" \
-              --package-folder="./artifacts"
-          fi
+          # Use conan build command for consistent builds
+          conan build . --profile="${{ inputs.conan-profile }}" \
+            -o openssl:version="${{ inputs.version }}" \
+            -o openssl:fips="${{ inputs.fips }}" \
+            -o openssl:build_type="${{ inputs.build-type }}" \
+            -o openssl:enable_tests="${{ inputs.enable-tests }}" \
+            --build-folder="./build" \
+            --package-folder="./artifacts"
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
