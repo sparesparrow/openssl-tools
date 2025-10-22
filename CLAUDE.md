@@ -122,5 +122,46 @@ python ../scripts/validate-conan-packages.py openssl-tools/1.2.4
 - Initial release with build orchestration tools
 - Python tools, profiles, scripts, and templates
 
+**Role:** 🔵 Tooling Layer (Morpheus)
 
+Build orchestration, custom commands, deployers, and Python utilities for OpenSSL ecosystem
 
+## Architecture Position
+
+**Layer:** Tooling (Middle of dependency hierarchy)
+**Dependencies:**
+- openssl-base/1.0.1 (python_requires)
+- openssl-fips-data/140-3.2 (python_requires)
+**Consumers:** openssl (via python_requires)
+
+## Key Files
+
+- `conanfile.py`: Tooling package (v1.2.4)
+- `openssl_tools/`: Python utilities and build orchestration
+- `extensions/`: Conan extensions and custom commands
+- `templates/`: Build templates and configurations
+- `.github/workflows/`: Reusable CI/CD workflows
+
+## Quick Start
+
+```bash
+# Clone repository (if not in workspace)
+git clone https://github.com/sparesparrow/openssl-tools.git
+
+# Navigate to directory
+cd openssl-tools
+
+# Create Conan package
+conan create . --build=missing
+```
+
+## Related Documentation
+
+- [Main Architecture Diagram](../architecture-diagram.md)
+- [Workspace Overview](../README.md)
+- [Conan Integration Guide](../docs/conan-extensions-diagram.md)
+
+---
+
+*Generated: 2024-10-18 20:45:00 UTC*
+*Part of the OpenSSL DevEnv ecosystem managed by sparesparrow*
