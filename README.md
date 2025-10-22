@@ -227,22 +227,170 @@ pytest -n auto
 
 ## 🚀 CI/CD Integration
 
-### GitHub Actions Workflows
+### Reusable Workflows
 
-#### Main CI Pipeline (`tools-ci.yml`)
+The project includes a comprehensive set of reusable GitHub Actions workflows that can be called from any repository:
 
-- **Python Environment Testing**: Multi-version compatibility
-- **Conan Integration**: Package management testing
-- **Build Optimization**: Cache performance validation
-- **Security Scanning**: Bandit, Safety, Semgrep
-- **Fuzzing Tests**: Automated security testing
+#### Core Reusable Workflows
 
-#### OpenSSL Integration (`openssl-integration.yml`)
+- **`build-openssl.yml`**: Reusable OpenSSL build workflow
+- **`test-integration.yml`**: Matrixed integration testing across OSes
+- **`publish-cloudsmith.yml`**: OIDC-authenticated package publishing to Cloudsmith
 
-- **OpenSSL Build**: Automated compilation and testing
-- **Package Creation**: Conan package generation
-- **Integration Testing**: Cross-repository compatibility
-- **Performance Benchmarking**: Performance regression testing
+#### Composite Actions
+
+- **`.github/actions/cloudsmith-publish/`**: Reusable action for Cloudsmith package publishing
+
+### Workflow Features
+
+- **Multi-platform testing** (Ubuntu, Windows, macOS)
+- **Matrix builds** for different Python and Conan versions
+- **Automated fuzzing** with comprehensive test coverage
+- **Performance benchmarking** and monitoring
+- **Security scanning** with Trivy and SBOM generation
+- **Package signing** and verification
+- **OIDC authentication** for secure package publishing
+- **Quality gates** with vulnerability scanning
+
+### Using Reusable Workflows
+
+#### Build OpenSSL
+
+```yaml
+jobs:
+  build-openssl:
+    uses: ./.github/workflows/build-openssl.yml@v1
+    with:
+      version: '3.2.0'
+      platform: 'ubuntu-latest'
+      fips: false
+      conan-version: '2.0.17'
+      build-type: 'Release'
+      shared: true
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+```
+
+#### Run Integration Tests
+
+```yaml
+jobs:
+  test-integration:
+    uses: ./.github/workflows/test-integration.yml@v1
+    with:
+      openssl-version: '3.2.0'
+      test-type: 'full'
+      platforms: 'ubuntu-latest,windows-latest,macos-latest'
+      python-versions: '3.8,3.9,3.10,3.11,3.12'
+      conan-version: '2.0.17'
+      fips-enabled: false
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+#### Publish to Cloudsmith
+
+```yaml
+jobs:
+  publish-package:
+    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    with:
+      package-name: 'openssl'
+      package-version: '3.2.0'
+      package-type: 'raw'
+      repository: 'openssl-packages'
+      organization: 'my-org'
+      distribution: 'stable'
+      artifact-path: 'openssl-3.2.0-ubuntu-latest-standard'
+      tags: 'openssl,security,crypto'
+      description: 'OpenSSL cryptographic library'
+      publish: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+```
+
+#### Using Composite Actions
+
+```yaml
+jobs:
+  publish-with-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish to Cloudsmith
+        uses: ./.github/actions/cloudsmith-publish@v1
+        with:
+          package-name: 'openssl'
+          package-version: '3.2.0'
+          package-type: 'conan'
+          repository: 'openssl-packages'
+          organization: 'my-org'
+          artifact-path: 'artifacts/'
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          username: ${{ secrets.CLOUDSMITH_USERNAME }}
+```
+
+### Input Schemas
+
+#### build-openssl.yml Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `version` | string | ✅ | - | OpenSSL version to build |
+| `platform` | string | ✅ | `ubuntu-latest` | Target platform for build |
+| `fips` | boolean | ❌ | `false` | Enable FIPS mode |
+| `conan-version` | string | ❌ | `2.0.17` | Conan version to use |
+| `build-type` | string | ❌ | `Release` | Build type (Release, Debug, RelWithDebInfo) |
+| `shared` | boolean | ❌ | `true` | Build shared libraries |
+
+#### test-integration.yml Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `openssl-version` | string | ✅ | - | OpenSSL version to test |
+| `test-type` | string | ❌ | `full` | Type of test to run |
+| `platforms` | string | ❌ | `ubuntu-latest,windows-latest,macos-latest` | Comma-separated list of platforms |
+| `python-versions` | string | ❌ | `3.8,3.9,3.10,3.11,3.12` | Comma-separated list of Python versions |
+| `conan-version` | string | ❌ | `2.0.17` | Conan version to use |
+| `fips-enabled` | boolean | ❌ | `false` | Test with FIPS enabled |
+
+#### publish-cloudsmith.yml Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `package-name` | string | ✅ | - | Name of the package to publish |
+| `package-version` | string | ✅ | - | Version of the package |
+| `package-type` | string | ✅ | `raw` | Type of package (raw, conan, maven, npm, etc.) |
+| `repository` | string | ✅ | - | Cloudsmith repository name |
+| `organization` | string | ✅ | - | Cloudsmith organization name |
+| `distribution` | string | ❌ | `stable` | Distribution name for the package |
+| `artifact-path` | string | ✅ | - | Path to the artifact to upload |
+| `tags` | string | ❌ | `openssl,security,crypto` | Comma-separated list of tags |
+| `description` | string | ❌ | `OpenSSL cryptographic library` | Description of the package |
+| `publish` | boolean | ❌ | `true` | Whether to publish the package (vs just upload) |
+
+### Quality Gates
+
+All reusable workflows include built-in quality gates:
+
+- **SBOM Generation**: Automatic Software Bill of Materials generation using Syft
+- **Trivy Security Scanning**: Vulnerability scanning with high/critical severity checks
+- **Package Integrity**: SHA256 hash generation and verification
+- **Test Coverage**: Comprehensive test execution across multiple platforms
+- **Performance Monitoring**: Build time and performance metrics
+
+### Legacy Workflows
+
+The project also includes legacy workflows for backward compatibility:
+
+- **`ci.yml`**: Main CI pipeline with multi-version Python testing
+- **`openssl-integration.yml`**: OpenSSL integration testing with fuzzing
+- **`openssl-ci-dispatcher.yml`**: Dispatcher for OpenSSL repository events
+- **`tools-ci.yml`**: Tools-specific CI pipeline
+- **`build-cache.yml`**: Build cache management
+- **`cache-warmup.yml`**: Cache warming for performance
+- **`jfrog-artifactory.yml`**: JFrog Artifactory integration
 
 ## 🔄 Cross-Repository CI Integration
 

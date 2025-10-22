@@ -1,0 +1,237 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform for build'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      conan-version:
+        description: 'Conan version to use'
+        required: false
+        type: string
+        default: '2.0.17'
+      build-type:
+        description: 'Build type (Release, Debug, RelWithDebInfo)'
+        required: false
+        type: string
+        default: 'Release'
+      shared:
+        description: 'Build shared libraries'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+      build-hash:
+        description: 'SHA256 hash of the built package'
+        value: ${{ jobs.build.outputs.build-hash }}
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub token for artifact upload'
+        required: true
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for package upload'
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      artifact-name: ${{ steps.upload.outputs.artifact-name }}
+      build-hash: ${{ steps.build-hash.outputs.hash }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          git \
+          wget \
+          curl \
+          libssl-dev \
+          zlib1g-dev \
+          libbz2-dev \
+          libreadline-dev \
+          libsqlite3-dev \
+          libncursesw5-dev \
+          xz-utils \
+          tk-dev \
+          libxml2-dev \
+          libxmlsec1-dev \
+          libffi-dev \
+          liblzma-dev \
+          pkg-config \
+          autoconf \
+          automake \
+          libtool
+          
+    - name: Install Conan
+      run: |
+        pip install conan==${{ inputs.conan-version }}
+        conan --version
+        
+    - name: Configure Conan
+      run: |
+        conan config init
+        conan profile detect --force
+        
+    - name: Clone OpenSSL repository
+      run: |
+        git clone https://github.com/openssl/openssl.git openssl-src
+        cd openssl-src
+        if [ "${{ inputs.version }}" != "latest" ]; then
+          git checkout OpenSSL_${{ inputs.version | replace('.', '_') }}
+        fi
+        
+    - name: Configure OpenSSL build
+      run: |
+        cd openssl-src
+        ./Configure linux-x86_64 \
+          --prefix=/usr/local/openssl \
+          --openssldir=/usr/local/openssl/ssl \
+          --libdir=lib \
+          ${{ inputs.shared && 'shared' || 'no-shared' }} \
+          zlib-dynamic \
+          ${{ inputs.fips && 'enable-fips' || '' }}
+          
+    - name: Build OpenSSL
+      run: |
+        cd openssl-src
+        make -j$(nproc)
+        
+    - name: Test OpenSSL build
+      run: |
+        cd openssl-src
+        make test
+        
+    - name: Install OpenSSL
+      run: |
+        cd openssl-src
+        sudo make install
+        sudo ldconfig
+        
+    - name: Create Conan package
+      run: |
+        # Create Conan recipe for OpenSSL
+        mkdir -p openssl-conan
+        cat > openssl-conan/conanfile.py << 'EOF'
+        from conans import ConanFile, CMake, tools
+        import os
+        
+        class OpenSSLConan(ConanFile):
+            name = "openssl"
+            version = "${{ inputs.version }}"
+            description = "OpenSSL library"
+            settings = "os", "compiler", "build_type", "arch"
+            options = {
+                "shared": [True, False],
+                "fips": [True, False]
+            }
+            default_options = {
+                "shared": ${{ inputs.shared }},
+                "fips": ${{ inputs.fips }}
+            }
+            
+            def package(self):
+                self.copy("*", src="/usr/local/openssl", dst=".")
+                
+            def package_info(self):
+                self.cpp_info.libs = ["ssl", "crypto"]
+                self.cpp_info.includedirs = ["include"]
+                self.cpp_info.libdirs = ["lib"]
+                if self.options.fips:
+                    self.cpp_info.defines = ["OPENSSL_FIPS"]
+        EOF
+        
+        # Export and create package
+        conan export openssl-conan openssl/${{ inputs.version }}@sparesparrow/stable
+        conan create openssl-conan openssl/${{ inputs.version }}@sparesparrow/stable
+        
+    - name: Generate SBOM
+      run: |
+        python scripts/sbom_generator.py \
+          --conanfile openssl-conan/conanfile.py \
+          --format both \
+          --output-dir artifacts/sbom
+          
+    - name: Run Trivy security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '/usr/local/openssl'
+        format: 'sarif'
+        output: 'artifacts/trivy-results.sarif'
+        severity: 'HIGH,CRITICAL'
+        
+    - name: Check Trivy results
+      run: |
+        if [ -f artifacts/trivy-results.sarif ]; then
+          # Check if there are any high/critical vulnerabilities
+          if grep -q '"level":"error"' artifacts/trivy-results.sarif; then
+            echo "High or critical vulnerabilities found!"
+            cat artifacts/trivy-results.sarif
+            exit 1
+          else
+            echo "No high or critical vulnerabilities found"
+          fi
+        else
+          echo "Trivy scan completed successfully"
+        fi
+        
+    - name: Calculate build hash
+      id: build-hash
+      run: |
+        # Calculate SHA256 hash of the built package
+        find /usr/local/openssl -type f -name "*.so*" -o -name "*.a" | \
+        xargs sha256sum | \
+        sha256sum | \
+        cut -d' ' -f1 > build_hash.txt
+        echo "hash=$(cat build_hash.txt)" >> $GITHUB_OUTPUT
+        
+    - name: Prepare artifacts
+      run: |
+        mkdir -p artifacts/openssl
+        cp -r /usr/local/openssl/* artifacts/openssl/
+        cp -r openssl-conan artifacts/
+        cp build_hash.txt artifacts/
+        
+    - name: Upload artifacts
+      id: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.fips && 'fips' || 'standard' }}
+        path: artifacts/
+        retention-days: 30
+        
+    - name: Set outputs
+      run: |
+        echo "artifact-url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+        echo "artifact-name=openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.fips && 'fips' || 'standard' }}" >> $GITHUB_OUTPUT

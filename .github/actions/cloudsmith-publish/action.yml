@@ -1,0 +1,210 @@
+name: 'Cloudsmith Publish'
+description: 'Publish packages to Cloudsmith with OIDC authentication and multiple format support'
+inputs:
+  package-name:
+    description: 'Name of the package to publish'
+    required: true
+  package-version:
+    description: 'Version of the package'
+    required: true
+  package-type:
+    description: 'Type of package (raw, conan, maven, npm, etc.)'
+    required: true
+    default: 'raw'
+  repository:
+    description: 'Cloudsmith repository name'
+    required: true
+  organization:
+    description: 'Cloudsmith organization name'
+    required: true
+  distribution:
+    description: 'Distribution name for the package'
+    required: false
+    default: 'stable'
+  artifact-path:
+    description: 'Path to the artifact to upload'
+    required: true
+  tags:
+    description: 'Comma-separated list of tags for the package'
+    required: false
+    default: 'openssl,security,crypto'
+  description:
+    description: 'Description of the package'
+    required: false
+    default: 'OpenSSL cryptographic library'
+  publish:
+    description: 'Whether to publish the package (vs just upload)'
+    required: false
+    default: 'true'
+  oidc-token:
+    description: 'OIDC token for authentication'
+    required: false
+  api-key:
+    description: 'Cloudsmith API key (alternative to OIDC)'
+    required: false
+  username:
+    description: 'Cloudsmith username (required with API key)'
+    required: false
+
+outputs:
+  package-url:
+    description: 'URL of the published package'
+    value: ${{ steps.upload.outputs.package-url }}
+  package-id:
+    description: 'ID of the published package'
+    value: ${{ steps.upload.outputs.package-id }}
+  upload-status:
+    description: 'Status of the upload'
+    value: ${{ steps.upload.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Cloudsmith CLI
+      shell: bash
+      run: |
+        pip install cloudsmith-cli
+        cloudsmith --version
+        
+    - name: Configure OIDC authentication
+      if: inputs.oidc-token != ''
+      shell: bash
+      run: |
+        # Configure OIDC authentication
+        cloudsmith config set-oidc-token ${{ inputs.oidc-token }}
+        echo "OIDC authentication configured"
+        
+    - name: Configure API key authentication
+      if: inputs.oidc-token == '' && inputs.api-key != ''
+      shell: bash
+      run: |
+        # Configure API key authentication
+        cloudsmith config set-api-key ${{ inputs.api-key }}
+        if [ -n "${{ inputs.username }}" ]; then
+          cloudsmith config set-username ${{ inputs.username }}
+        fi
+        echo "API key authentication configured"
+        
+    - name: Validate authentication
+      shell: bash
+      run: |
+        # Test authentication
+        cloudsmith whoami || {
+          echo "Authentication failed"
+          exit 1
+        }
+        echo "Authentication successful"
+        
+    - name: Prepare package metadata
+      shell: bash
+      run: |
+        # Create package metadata
+        cat > package_metadata.json << EOF
+        {
+          "name": "${{ inputs.package-name }}",
+          "version": "${{ inputs.package-version }}",
+          "type": "${{ inputs.package-type }}",
+          "description": "${{ inputs.description }}",
+          "tags": ["${{ join(split(inputs.tags, ','), '", "') }}"],
+          "distribution": "${{ inputs.distribution }}",
+          "organization": "${{ inputs.organization }}",
+          "repository": "${{ inputs.repository }}"
+        }
+        EOF
+        
+    - name: Generate package checksums
+      shell: bash
+      run: |
+        # Generate checksums for all files
+        find ${{ inputs.artifact-path }} -type f -exec sha256sum {} \; > checksums.txt
+        find ${{ inputs.artifact-path }} -type f -exec md5sum {} \; > checksums_md5.txt
+        
+    - name: Create package archive
+      shell: bash
+      run: |
+        # Create a compressed archive of the package
+        tar -czf ${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz -C ${{ inputs.artifact-path }} .
+        
+    - name: Upload package to Cloudsmith
+      id: upload
+      shell: bash
+      run: |
+        # Upload the package to Cloudsmith
+        if [ "${{ inputs.package-type }}" = "raw" ]; then
+          # Upload as raw package
+          cloudsmith upload raw ${{ inputs.organization }}/${{ inputs.repository }} \
+            ${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --distribution "${{ inputs.distribution }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        elif [ "${{ inputs.package-type }}" = "conan" ]; then
+          # Upload as Conan package
+          cloudsmith upload conan ${{ inputs.organization }}/${{ inputs.repository }} \
+            ${{ inputs.artifact-path }}/ \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        elif [ "${{ inputs.package-type }}" = "maven" ]; then
+          # Upload as Maven package
+          cloudsmith upload maven ${{ inputs.organization }}/${{ inputs.repository }} \
+            ${{ inputs.artifact-path }}/ \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        elif [ "${{ inputs.package-type }}" = "npm" ]; then
+          # Upload as NPM package
+          cloudsmith upload npm ${{ inputs.organization }}/${{ inputs.repository }} \
+            ${{ inputs.artifact-path }}/ \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        else
+          echo "Unsupported package type: ${{ inputs.package-type }}"
+          exit 1
+        fi
+        
+        # Extract results
+        PACKAGE_URL=$(jq -r '.data.package_url // empty' upload_result.json)
+        PACKAGE_ID=$(jq -r '.data.identifier // empty' upload_result.json)
+        STATUS=$(jq -r '.data.status // "unknown"' upload_result.json)
+        
+        echo "package-url=$PACKAGE_URL" >> $GITHUB_OUTPUT
+        echo "package-id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        
+        # Display results
+        echo "Upload completed:"
+        echo "  Package URL: $PACKAGE_URL"
+        echo "  Package ID: $PACKAGE_ID"
+        echo "  Status: $STATUS"
+        
+    - name: Verify package upload
+      shell: bash
+      run: |
+        # Verify the package was uploaded successfully
+        if [ -n "${{ steps.upload.outputs.package-url }}" ]; then
+          echo "✅ Package uploaded successfully"
+          echo "Package URL: ${{ steps.upload.outputs.package-url }}"
+        else
+          echo "❌ Package upload failed"
+          cat upload_result.json
+          exit 1
+        fi

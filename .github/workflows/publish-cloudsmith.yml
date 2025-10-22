@@ -1,0 +1,195 @@
+name: Reusable Cloudsmith Publish
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        description: 'Name of the package to publish'
+        required: true
+        type: string
+      package-version:
+        description: 'Version of the package'
+        required: true
+        type: string
+      package-type:
+        description: 'Type of package (raw, conan, maven, npm, etc.)'
+        required: true
+        type: string
+        default: 'raw'
+      repository:
+        description: 'Cloudsmith repository name'
+        required: true
+        type: string
+      organization:
+        description: 'Cloudsmith organization name'
+        required: true
+        type: string
+      distribution:
+        description: 'Distribution name for the package'
+        required: false
+        type: string
+        default: 'stable'
+      artifact-path:
+        description: 'Path to the artifact to upload'
+        required: true
+        type: string
+      tags:
+        description: 'Comma-separated list of tags for the package'
+        required: false
+        type: string
+        default: 'openssl,security,crypto'
+      description:
+        description: 'Description of the package'
+        required: false
+        type: string
+        default: 'OpenSSL cryptographic library'
+      publish:
+        description: 'Whether to publish the package (vs just upload)'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      package-url:
+        description: 'URL of the published package'
+        value: ${{ jobs.publish.outputs.package-url }}
+      package-id:
+        description: 'ID of the published package'
+        value: ${{ jobs.publish.outputs.package-id }}
+      upload-status:
+        description: 'Status of the upload'
+        value: ${{ jobs.publish.outputs.upload-status }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for authentication'
+        required: true
+      CLOUDSMITH_USERNAME:
+        description: 'Cloudsmith username'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      package-url: ${{ steps.upload.outputs.package-url }}
+      package-id: ${{ steps.upload.outputs.package-id }}
+      upload-status: ${{ steps.upload.outputs.status }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install Cloudsmith CLI
+      run: |
+        pip install cloudsmith-cli
+        cloudsmith --version
+        
+    - name: Configure Cloudsmith authentication
+      run: |
+        cloudsmith config set-api-key ${{ secrets.CLOUDSMITH_API_KEY }}
+        cloudsmith config set-username ${{ secrets.CLOUDSMITH_USERNAME }}
+        
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-path }}
+        path: artifacts/
+        
+    - name: Prepare package metadata
+      run: |
+        # Create package metadata
+        cat > package_metadata.json << EOF
+        {
+          "name": "${{ inputs.package-name }}",
+          "version": "${{ inputs.package-version }}",
+          "type": "${{ inputs.package-type }}",
+          "description": "${{ inputs.description }}",
+          "tags": ["${{ join(split(inputs.tags, ','), '", "') }}"],
+          "distribution": "${{ inputs.distribution }}",
+          "organization": "${{ inputs.organization }}",
+          "repository": "${{ inputs.repository }}"
+        }
+        EOF
+        
+    - name: Generate package checksums
+      run: |
+        # Generate checksums for all files
+        find artifacts/ -type f -exec sha256sum {} \; > checksums.txt
+        find artifacts/ -type f -exec md5sum {} \; > checksums_md5.txt
+        
+    - name: Create package archive
+      run: |
+        # Create a compressed archive of the package
+        tar -czf ${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz -C artifacts .
+        
+    - name: Upload package to Cloudsmith
+      id: upload
+      run: |
+        # Upload the package to Cloudsmith
+        if [ "${{ inputs.package-type }}" = "raw" ]; then
+          # Upload as raw package
+          cloudsmith upload raw ${{ inputs.organization }}/${{ inputs.repository }} \
+            ${{ inputs.package-name }}-${{ inputs.package-version }}.tar.gz \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --distribution "${{ inputs.distribution }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        elif [ "${{ inputs.package-type }}" = "conan" ]; then
+          # Upload as Conan package
+          cloudsmith upload conan ${{ inputs.organization }}/${{ inputs.repository }} \
+            artifacts/ \
+            --name "${{ inputs.package-name }}" \
+            --version "${{ inputs.package-version }}" \
+            --description "${{ inputs.description }}" \
+            --tags "${{ inputs.tags }}" \
+            --publish ${{ inputs.publish }} \
+            --json > upload_result.json
+        else
+          echo "Unsupported package type: ${{ inputs.package-type }}"
+          exit 1
+        fi
+        
+        # Extract results
+        PACKAGE_URL=$(jq -r '.data.package_url // empty' upload_result.json)
+        PACKAGE_ID=$(jq -r '.data.identifier // empty' upload_result.json)
+        STATUS=$(jq -r '.data.status // "unknown"' upload_result.json)
+        
+        echo "package-url=$PACKAGE_URL" >> $GITHUB_OUTPUT
+        echo "package-id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        
+        # Display results
+        echo "Upload completed:"
+        echo "  Package URL: $PACKAGE_URL"
+        echo "  Package ID: $PACKAGE_ID"
+        echo "  Status: $STATUS"
+        
+    - name: Verify package upload
+      run: |
+        # Verify the package was uploaded successfully
+        if [ -n "${{ steps.upload.outputs.package-url }}" ]; then
+          echo "✅ Package uploaded successfully"
+          echo "Package URL: ${{ steps.upload.outputs.package-url }}"
+        else
+          echo "❌ Package upload failed"
+          cat upload_result.json
+          exit 1
+        fi
+        
+    - name: Upload package metadata
+      uses: actions/upload-artifact@v4
+      with:
+        name: package-metadata-${{ inputs.package-name }}-${{ inputs.package-version }}
+        path: |
+          package_metadata.json
+          upload_result.json
+          checksums.txt
+          checksums_md5.txt
+        retention-days: 30
