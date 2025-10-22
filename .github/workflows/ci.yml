@@ -94,7 +94,7 @@ jobs:
             platform: windows-msvc2022
             profile: windows-msvc2022
             arch: x86_64
-          - os: macos-12
+          - os: macos-14
             platform: macos-clang14
             profile: macos-clang14
             arch: x86_64
@@ -124,7 +124,7 @@ jobs:
           echo "Windows dependencies handled by Conan"
           
       - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-12'
+        if: matrix.os == 'macos-14'
         run: |
           brew install cmake perl
           
@@ -177,7 +177,7 @@ jobs:
           - os: windows-2022
             platform: windows-msvc2022
             profile: windows-msvc2022
-          - os: macos-12
+          - os: macos-14
             platform: macos-clang14
             profile: macos-clang14
             

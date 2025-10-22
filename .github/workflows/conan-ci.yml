@@ -17,13 +17,13 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      openssl-changed: ${{ steps.changes.outputs.changes.openssl }}
-      conan-changed: ${{ steps.changes.outputs.changes.conan }}
-      tests-changed: ${{ steps.changes.outputs.changes.tests }}
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v2.2.0
         id: changes
         with:
           filters: |
@@ -67,7 +67,7 @@ jobs:
             test: true
           - name: Linux ARM64 GCC
             os: ubuntu-24.04-arm
-            profile: linux-arm64-gcc
+            profile: ubuntu-22.04-arm-gcc
             conan_options: -o fips=True -o enable_ec_nistp_64_gcc_128=True
             test: true
           - name: macOS x86_64
@@ -250,4 +250,3 @@ jobs:
             } catch (error) {
               console.log('Could not read analysis report:', error.message);
             }
-          retention-days: 30

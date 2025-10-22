@@ -76,7 +76,7 @@ jobs:
           - os: windows-2022
             profile: windows-msvc2022
             platform: windows
-          - os: macos-12
+          - os: macos-14
             profile: macos-clang14
             platform: macos
     

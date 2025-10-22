@@ -37,7 +37,7 @@ jobs:
                   python-version: "3.12"
 
             - name: Install Conan (pinned)
-              uses: conan-io/setup-conan@v1
+              uses: conan-io/setup-conan@v5
               with:
                   version: "2.21.0"
 

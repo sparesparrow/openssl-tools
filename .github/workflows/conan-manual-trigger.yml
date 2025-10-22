@@ -26,13 +26,13 @@ on:
           - windows-msvc2022
           - macos-clang14
 
-jobs:
 env:
   CONAN_USER_HOME: ${{ github.workspace }}/.conan2
   CONAN_COLOR_DISPLAY: 1
   CLICOLOR_FORCE: 1
   CLICOLOR: 1
 
+jobs:
   parse-comment:
     runs-on: ubuntu-latest
     if: github.event_name == 'issue_comment'
@@ -43,8 +43,10 @@ env:
     steps:
       - name: Parse comment
         id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          COMMENT="${{ github.event.comment.body }}"
+          COMMENT="$COMMENT_BODY"
           
           if echo "$COMMENT" | grep -q "/conan build"; then
             echo "action=build" >> $GITHUB_OUTPUT

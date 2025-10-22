@@ -87,7 +87,7 @@ jobs:
         config:
           - { profile: "linux-gcc11", os: "ubuntu-22.04", container: "gcc:11" }
           - { profile: "abi-strict-clang15", os: "ubuntu-22.04", container: "silkeh/clang:15" }
-          - { profile: "macos-clang14", os: "macos-12", container: "" }
+          - { profile: "macos-clang14", os: "macos-14", container: "" }
           - { profile: "windows-msvc2022", os: "windows-2022", container: "" }
           
     runs-on: ${{ matrix.config.os }}

@@ -195,11 +195,11 @@ jobs:
       run: sudo apt-get -yq --allow-unauthenticated --allow-downgrades --allow-remove-essential --allow-change-held-packages install qemu-user
 
     - name: Set QEMU environment
-      if: matrix.platform.qemucpu != ''
+      if: matrix.platform.qemucpu != null && matrix.platform.qemucpu != ''
       run: echo "QEMU_CPU=${{ matrix.platform.qemucpu }}" >> $GITHUB_ENV
 
     - name: Set OpenSSL caps environment
-      if: matrix.platform.opensslcapsname != ''
+      if: matrix.platform.opensslcapsname != null && matrix.platform.opensslcapsname != ''
       run: echo "OPENSSL_${{ matrix.platform.opensslcapsname }}=\
                  ${{ matrix.platform.opensslcaps }}" >> $GITHUB_ENV
 

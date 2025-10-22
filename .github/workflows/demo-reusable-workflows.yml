@@ -36,7 +36,7 @@ on:
 
 jobs:
   build-openssl-standard:
-    uses: ./.github/workflows/build-openssl.yml@v1
+    uses: ./.github/workflows/build-openssl.yml
     with:
       version: ${{ inputs.openssl-version }}
       platform: 'ubuntu-latest'
@@ -50,7 +50,7 @@ jobs:
 
   build-openssl-fips:
     if: inputs.enable-fips
-    uses: ./.github/workflows/build-openssl.yml@v1
+    uses: ./.github/workflows/build-openssl.yml
     with:
       version: ${{ inputs.openssl-version }}
       platform: 'ubuntu-latest'
@@ -65,7 +65,7 @@ jobs:
   test-integration:
     needs: [build-openssl-standard, build-openssl-fips]
     if: always() && (needs.build-openssl-standard.result == 'success' || needs.build-openssl-fips.result == 'success')
-    uses: ./.github/workflows/test-integration.yml@v1
+    uses: ./.github/workflows/test-integration.yml
     with:
       openssl-version: ${{ inputs.openssl-version }}
       test-type: 'full'
@@ -79,7 +79,7 @@ jobs:
   publish-standard:
     if: inputs.publish-package && needs.build-openssl-standard.result == 'success'
     needs: [build-openssl-standard, test-integration]
-    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    uses: ./.github/workflows/publish-cloudsmith.yml
     with:
       package-name: 'openssl'
       package-version: ${{ inputs.openssl-version }}
@@ -98,7 +98,7 @@ jobs:
   publish-fips:
     if: inputs.publish-package && inputs.enable-fips && needs.build-openssl-fips.result == 'success'
     needs: [build-openssl-fips, test-integration]
-    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    uses: ./.github/workflows/publish-cloudsmith.yml
     with:
       package-name: 'openssl-fips'
       package-version: ${{ inputs.openssl-version }}
@@ -117,7 +117,7 @@ jobs:
   publish-conan:
     if: inputs.publish-package && needs.build-openssl-standard.result == 'success'
     needs: [build-openssl-standard, test-integration]
-    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    uses: ./.github/workflows/publish-cloudsmith.yml
     with:
       package-name: 'openssl'
       package-version: ${{ inputs.openssl-version }}

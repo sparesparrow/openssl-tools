@@ -55,7 +55,7 @@ jobs:
           - platform: windows-msvc2022
             os: windows-2022
           - platform: macos-clang14
-            os: macos-12
+            os: macos-14
         exclude:
           - platform: ${{ inputs.platform != matrix.platform && 'dummy' || '' }}
     

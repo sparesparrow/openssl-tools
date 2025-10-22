@@ -54,14 +54,14 @@ jobs:
             config: "--strict-warnings no-fips enable-quic"
             
           # ARM64 platforms
-          - name: "linux-arm64-gcc"
-            os: linux-arm64
+          - name: "ubuntu-22.04-arm-gcc"
+            os: ubuntu-22.04-arm
             cc: gcc
             config: "--strict-warnings enable-fips"
             
           # macOS variants
           - name: "macos-x64"
-            os: macos-12
+            os: macos-14
             cc: clang
             config: "--strict-warnings enable-fips"
             

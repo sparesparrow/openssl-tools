@@ -54,7 +54,7 @@ jobs:
         run: |
           echo "Building for Linux ARM64..."
           cd openssl-source
-          conan install . --build=missing --profile:build=default --profile:host=linux-arm64
+          conan install . --build=missing --profile:build=default --profile:host=ubuntu-22.04-arm
           conan build .
           
       - name: Build Windows x64

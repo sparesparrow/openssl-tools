@@ -38,10 +38,10 @@ jobs:
       openssl-changed: ${{ steps.changes.outputs.openssl }}
       conan-changed: ${{ steps.changes.outputs.conan }}
       tests-changed: ${{ steps.changes.outputs.tests }}
-    steps:e
+    steps:
       - uses: actions/checkout@v4
       - name: Detect changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v2.2.0
         id: changes
         with:
           filters: |
@@ -63,8 +63,10 @@ jobs:
 
   compile-changes:
     needs: detect-changes
-    if: needs.detect-changes.outputs.openssl == 'true' || needs.detect-changes.outputs.conan == 'true'
+    if: needs.detect-changes.outputs.openssl-changed == 'true' || needs.detect-changes.outputs.conan-changed == 'true'
     runs-on: ${{ matrix.os }}
+    env:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     strategy:
       fail-fast: false
       max-parallel: 3 # Limit parallel jobs to avoid resource exhaustion
@@ -82,7 +84,7 @@ jobs:
             test: true
           - name: Linux ARM64 GCC
             os: ubuntu-24.04-arm
-            profile: linux-arm64-gcc
+            profile: ubuntu-22.04-arm-gcc
             conan_options: -o fips=True -o enable_ec_nistp_64_gcc_128=True
             test: true
           - name: macOS x86_64
@@ -267,7 +269,7 @@ jobs:
         timeout-minutes: 20
 
       - name: Upload packages to Cloudsmith (with retry)
-        if: ${{ secrets.CLOUDSMITH_API_KEY != '' }}
+        if: env.CLOUDSMITH_API_KEY != ''
         run: |
           for attempt in 1 2 3; do
             echo "Cloudsmith upload attempt $attempt/3"

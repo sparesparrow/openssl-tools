@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Detect changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v2.2.0
         id: changes
         with:
           filters: |
@@ -129,7 +129,7 @@ jobs:
           - os: windows-2022
             profile: windows-msvc2022
             platform: windows-x86_64
-          - os: macos-12
+          - os: macos-14
             profile: macos-clang14
             platform: macos-x86_64
           - os: macos-14

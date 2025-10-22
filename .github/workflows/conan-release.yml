@@ -40,10 +40,10 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [ "${{ github.event.inputs.version }}" = "auto" ]; then
-            VERSION=$(cat VERSION.dat | tr -d '\n')
-          else
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.version }}" != "auto" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(cat VERSION.dat | tr -d '\n')
           fi
           
           # Check if this is a new version
@@ -70,7 +70,7 @@ jobs:
             profile: linux-clang15
           - os: windows-2022
             profile: windows-msvc2022
-          - os: macos-12
+          - os: macos-14
             profile: macos-clang14
     
     steps:

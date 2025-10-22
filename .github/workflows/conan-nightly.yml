@@ -68,5 +68,6 @@ jobs:
       with:
         status: success
         text: '🌙 OpenSSL Conan nightly build completed successfully!'
-        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
         fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

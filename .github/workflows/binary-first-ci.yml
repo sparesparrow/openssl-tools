@@ -19,6 +19,10 @@ concurrency:
 env:
   CONAN_VERSION: "2.0.17"
   CONAN_HOME: "${{ github.workspace }}/.conan2"
+  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+  CONAN_COLOR_DISPLAY: 1
+  CLICOLOR_FORCE: 1
+  CLICOLOR: 1
 
 permissions:
   contents: read
@@ -26,12 +30,6 @@ permissions:
   packages: write
 
 jobs:
-env:
-  CONAN_USER_HOME: ${{ github.workspace }}/.conan2
-  CONAN_COLOR_DISPLAY: 1
-  CLICOLOR_FORCE: 1
-  CLICOLOR: 1
-
   # Analyze changes to determine what needs to be built
   analyze-changes:
     runs-on: ubuntu-latest
@@ -81,7 +79,7 @@ env:
         config:
           - { profile: "linux-gcc11", os: "ubuntu-22.04", container: "gcc:11" }
           - { profile: "abi-strict-clang15", os: "ubuntu-22.04", container: "silkeh/clang:15" }
-          - { profile: "macos-clang14", os: "macos-12", container: "" }
+          - { profile: "macos-clang14", os: "macos-14", container: "" }
           - { profile: "windows-msvc2022", os: "windows-2022", container: "" }
           
     runs-on: ${{ matrix.config.os }}

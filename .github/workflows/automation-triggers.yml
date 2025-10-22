@@ -40,10 +40,12 @@ jobs:
 
       - name: Trigger Security Review Workflow
         if: env.TRIGGER_SECURITY == 'true'
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           echo "🚨 Triggering Security Review Workflow..."
           if gh workflow list | grep -q "security-review"; then
-            gh workflow run security-review.yml --ref ${{ github.event.pull_request.head.ref }}
+            gh workflow run security-review.yml --ref "$PR_HEAD_REF"
           else
             echo "⚠️ Security Review Workflow not found, skipping trigger"
           fi

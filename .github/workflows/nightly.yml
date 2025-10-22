@@ -44,8 +44,8 @@ jobs:
           platforms=(
             "linux-x86_64-shared"
             "linux-x86_64-static"
-            "linux-arm64-shared"
-            "linux-arm64-static"
+            "ubuntu-22.04-arm-shared"
+            "ubuntu-22.04-arm-static"
             "windows-x64-shared"
             "windows-x64-static"
             "windows-x86-shared"

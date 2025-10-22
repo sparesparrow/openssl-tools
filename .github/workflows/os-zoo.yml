@@ -189,8 +189,8 @@ jobs:
         call "${{ matrix.platform.vcvars }}"
         nmake test VERBOSE_FAILURE=yes HARNESS_JOBS=2
 
-  linux-arm64:
-    runs-on: linux-arm64
+  ubuntu-22.04-arm:
+    runs-on: ubuntu-22.04-arm
     if: github.repository == 'openssl/openssl'
     steps:
     - uses: actions/checkout@v4

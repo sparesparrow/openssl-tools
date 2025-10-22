@@ -272,9 +272,9 @@ jobs:
       matrix:
         include:
           # ARM64 - Single representative
-          - name: "linux-arm64"
-            os: linux-arm64
-            profile: "linux-arm64-gcc"
+          - name: "ubuntu-22.04-arm"
+            os: ubuntu-22.04-arm
+            profile: "ubuntu-22.04-arm-gcc"
             options: "fips=True"
             timeout: 45
 

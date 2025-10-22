@@ -18,7 +18,7 @@ jobs:
     uses: sparesparrow/openssl-tools/.github/workflows/openssl-ci.yaml@main
     with:
       # Platform matrix - build on multiple platforms
-      platforms: 'ubuntu-22.04,windows-2022,macos-12'
+      platforms: 'ubuntu-22.04,windows-2022,macos-14'
       
       # Build types to test
       build_types: 'Release,Debug'
