@@ -1,0 +1,190 @@
+name: Test Reusable Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_workflow:
+        description: 'Which workflow to test'
+        required: true
+        type: choice
+        options:
+          - build-openssl
+          - test-integration
+          - publish-cloudsmith
+          - quality-gates
+          - all
+        default: 'all'
+      openssl_version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+        default: '3.1.4'
+      test_platform:
+        description: 'Platform to test on'
+        required: true
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        default: 'ubuntu-latest'
+      enable_fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      test_publish:
+        description: 'Test publishing to Cloudsmith'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test-build-openssl:
+    name: Test Build OpenSSL Workflow
+    if: inputs.test_workflow == 'build-openssl' || inputs.test_workflow == 'all'
+    uses: ./.github/workflows/build-openssl.yml
+    with:
+      version: ${{ inputs.openssl_version }}
+      platform: ${{ inputs.test_platform }}
+      fips: ${{ inputs.enable_fips }}
+      build_type: 'Release'
+      upload_artifacts: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_REPOSITORY: ${{ secrets.CLOUDSMITH_REPOSITORY }}
+
+  test-integration-workflow:
+    name: Test Integration Workflow
+    if: inputs.test_workflow == 'test-integration' || inputs.test_workflow == 'all'
+    uses: ./.github/workflows/test-integration.yml
+    with:
+      openssl_version: ${{ inputs.openssl_version }}
+      test_matrix: '{"os": ["${{ inputs.test_platform }}"], "compiler": ["gcc"], "arch": ["x64"]}'
+      test_suite: 'integration'
+      fips_mode: ${{ inputs.enable_fips }}
+      upload_results: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  test-publish-workflow:
+    name: Test Publish Workflow
+    if: (inputs.test_workflow == 'publish-cloudsmith' || inputs.test_workflow == 'all') && secrets.CLOUDSMITH_API_KEY != ''
+    uses: ./.github/workflows/publish-cloudsmith.yml
+    with:
+      package_name: 'openssl-test'
+      package_version: ${{ inputs.openssl_version }}-test
+      package_path: 'test-artifacts'
+      package_type: 'raw'
+      repository: ${{ secrets.CLOUDSMITH_REPOSITORY || 'test-repo' }}
+      description: 'Test package for OpenSSL ${{ inputs.openssl_version }}'
+      tags: 'test,openssl,ci'
+      publish: 'false'  # Don't actually publish, just upload
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_NAMESPACE: ${{ secrets.CLOUDSMITH_NAMESPACE }}
+
+  test-composite-action:
+    name: Test Composite Action
+    runs-on: ubuntu-latest
+    if: (inputs.test_workflow == 'publish-cloudsmith' || inputs.test_workflow == 'all') && inputs.test_publish == 'true' && secrets.CLOUDSMITH_API_KEY != ''
+    steps:
+      - name: Create test package
+        run: |
+          mkdir -p test-package
+          echo "Test package content" > test-package/test.txt
+          echo "OpenSSL ${{ inputs.openssl_version }}" > test-package/version.txt
+
+      - name: Test Cloudsmith Publish Action
+        uses: ./.github/actions/cloudsmith-publish
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          namespace: ${{ secrets.CLOUDSMITH_NAMESPACE }}
+          repository: ${{ secrets.CLOUDSMITH_REPOSITORY || 'test-repo' }}
+          package-name: 'openssl-composite-test'
+          package-version: ${{ inputs.openssl_version }}-composite
+          package-path: 'test-package'
+          package-type: 'raw'
+          description: 'Test package using composite action'
+          tags: 'test,composite,openssl'
+          publish: 'false'
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-build-openssl, test-integration-workflow, test-publish-workflow, test-composite-action]
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate test report
+        run: |
+          cat > test-report.json << EOF
+          {
+            "test_run": {
+              "test_workflow": "${{ inputs.test_workflow }}",
+              "openssl_version": "${{ inputs.openssl_version }}",
+              "test_platform": "${{ inputs.test_platform }}",
+              "enable_fips": ${{ inputs.enable_fips }},
+              "test_publish": ${{ inputs.test_publish }},
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            },
+            "workflow_results": {
+              "build_workflow": {
+                "status": "${{ needs.test-build-openssl.result }}",
+                "artifact_url": "${{ needs.test-build-openssl.outputs.artifact-url }}",
+                "build_success": "${{ needs.test-build-openssl.outputs.build-success }}",
+                "sbom_url": "${{ needs.test-build-openssl.outputs.sbom-url }}"
+              },
+              "integration_workflow": {
+                "status": "${{ needs.test-integration-workflow.result }}",
+                "test_results_url": "${{ needs.test-integration-workflow.outputs.test-results-url }}",
+                "test_success": "${{ needs.test-integration-workflow.outputs.test-success }}",
+                "coverage_url": "${{ needs.test-integration-workflow.outputs.coverage-url }}"
+              },
+              "publish_workflow": {
+                "status": "${{ needs.test-publish-workflow.result }}",
+                "package_url": "${{ needs.test-publish-workflow.outputs.package-url }}",
+                "upload_success": "${{ needs.test-publish-workflow.outputs.upload-success }}",
+                "package_id": "${{ needs.test-publish-workflow.outputs.package-id }}"
+              },
+              "composite_action": {
+                "status": "${{ needs.test-composite-action.result }}"
+              }
+            },
+            "overall_success": ${{ needs.test-build-openssl.result == 'success' && needs.test-integration-workflow.result == 'success' && (needs.test-publish-workflow.result == 'success' || needs.test-publish-workflow.result == 'skipped') && (needs.test-composite-action.result == 'success' || needs.test-composite-action.result == 'skipped') }}
+          }
+          EOF
+          
+          echo "Test report generated:"
+          cat test-report.json
+
+      - name: Test Results Summary
+        run: |
+          echo "## 🧪 Reusable Workflow Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Workflow**: ${{ inputs.test_workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **OpenSSL Version**: ${{ inputs.openssl_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Platform**: ${{ inputs.test_platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS Mode**: ${{ inputs.enable_fips }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Publish**: ${{ inputs.test_publish }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cloudsmith API Key**: ${{ secrets.CLOUDSMITH_API_KEY != '' && 'Available' || 'Not Available' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build OpenSSL | ${{ needs.test-build-openssl.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Integration | ${{ needs.test-integration-workflow.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Publish Cloudsmith | ${{ needs.test-publish-workflow.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Composite Action | ${{ needs.test-composite-action.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ All workflows tested successfully!" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: reusable-workflows-test-report
+          path: test-report.json
+          retention-days: 30

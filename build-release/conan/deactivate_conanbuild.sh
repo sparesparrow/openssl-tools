@@ -1,0 +1,1 @@
+. "/home/sparrow/projects/openssl-devenv/openssl-tools/build-release/conan/deactivate_conanbuildenv-release-x86_64.sh"

@@ -1,0 +1,70 @@
+# Example: How downstream repositories use the OpenSSL CI/CD workflow
+# This file shows how to call the reusable workflow from openssl-tools
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scans weekly
+    - cron: '0 2 * * 1'
+
+jobs:
+  # Call the reusable OpenSSL CI/CD workflow
+  openssl-ci:
+    uses: sparesparrow/openssl-tools/.github/workflows/openssl-ci.yaml@main
+    with:
+      # Platform matrix - build on multiple platforms
+      platforms: 'ubuntu-22.04,windows-2022,macos-14'
+      
+      # Build types to test
+      build_types: 'Release,Debug'
+      
+      # Enable security scanning
+      enable_security: true
+      
+      # Enable performance benchmarks (only on main branch)
+      enable_benchmarks: ${{ github.ref == 'refs/heads/main' }}
+      
+      # Enable SBOM generation
+      enable_sbom: true
+      
+      # Upload artifacts to registries
+      upload_artifacts: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
+      
+      # Use specific Conan profile
+      conan_profile: 'ci-linux-gcc'
+    secrets:
+      # Conan remote credentials (optional)
+      CONAN_REMOTE_URL: ${{ secrets.CONAN_REMOTE_URL }}
+      CONAN_USER: ${{ secrets.CONAN_USER }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
+      
+      # Cursor AI for automated failure analysis (optional)
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      
+      # Database connection for build tracking (optional)
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Additional downstream-specific jobs can be added here
+  downstream-specific:
+    needs: openssl-ci
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check OpenSSL CI status
+        run: |
+          if [[ "${{ needs.openssl-ci.result }}" == "success" ]]; then
+            echo "✅ OpenSSL CI passed - proceeding with downstream tasks"
+          else
+            echo "❌ OpenSSL CI failed - skipping downstream tasks"
+            exit 1
+          fi
+          
+      - name: Run downstream-specific tests
+        run: |
+          echo "Running downstream-specific tests..."
+          # Add your downstream-specific test commands here

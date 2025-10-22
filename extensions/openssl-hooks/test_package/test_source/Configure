@@ -1,0 +1,2 @@
+#!/bin/sh
+echo 'OpenSSL Configure script'

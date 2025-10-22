@@ -1,0 +1,142 @@
+name: 'Setup OpenSSL Build Environment'
+description: 'Standardized OpenSSL build environment setup with Conan integration'
+inputs:
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.12'
+  conan-version:
+    description: 'Conan version to install'
+    required: false
+    default: '>=2.0'
+  cache-key:
+    description: 'Cache key for build artifacts'
+    required: false
+    default: 'openssl-build-${{ runner.os }}-${{ hashFiles(''conanfile.py'', ''VERSION.dat'') }}'
+  enable-cache:
+    description: 'Enable build caching'
+    required: false
+    default: 'true'
+  build-type:
+    description: 'Build type (Debug, Release, RelWithDebInfo)'
+    required: false
+    default: 'Release'
+  conan-options:
+    description: 'Additional Conan options'
+    required: false
+    default: ''
+
+outputs:
+  conan-home:
+    description: 'Conan home directory'
+    value: ${{ steps.setup.outputs.conan-home }}
+  python-path:
+    description: 'Python executable path'
+    value: ${{ steps.setup.outputs.python-path }}
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: 'pip'
+        
+    - name: Install Conan
+      shell: bash
+      run: |
+        pip install conan${{ inputs.conan-version }}
+        conan --version
+        
+    - name: Configure Conan
+      id: setup
+      shell: bash
+      run: |
+        # Set up Conan configuration
+        conan profile detect --force
+        conan config init
+        conan config set general.revisions_enabled=1
+        
+        # Set environment variables
+        export CONAN_USER_HOME="${{ github.workspace }}/.conan2"
+        export CONAN_COLOR_DISPLAY=1
+        export CLICOLOR_FORCE=1
+        export CLICOLOR=1
+        
+        echo "conan-home=$CONAN_USER_HOME" >> $GITHUB_OUTPUT
+        echo "python-path=$(which python)" >> $GITHUB_OUTPUT
+        
+        # Create conan profile if it doesn't exist
+        if [ ! -f "$CONAN_USER_HOME/profiles/default" ]; then
+          conan profile new default --detect --force
+        fi
+        
+    - name: Cache Conan packages
+      if: inputs.enable-cache == 'true'
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/.conan2
+        key: ${{ inputs.cache-key }}
+        restore-keys: |
+          openssl-build-${{ runner.os }}-
+          openssl-build-
+          
+    - name: Validate OpenSSL source structure
+      shell: bash
+      run: |
+        echo "🔍 Validating OpenSSL source structure..."
+        
+        # Check for essential OpenSSL files
+        if [ -f "VERSION.dat" ]; then
+          echo "✅ VERSION.dat found"
+          head -5 VERSION.dat
+        else
+          echo "❌ VERSION.dat missing"
+          exit 1
+        fi
+        
+        if [ -f "config" ] || [ -f "Configure" ]; then
+          echo "✅ Configure script found"
+        else
+          echo "❌ Configure script missing"
+          exit 1
+        fi
+        
+        # Check for source directories
+        for dir in crypto ssl apps include; do
+          if [ -d "$dir" ]; then
+            echo "✅ $dir directory found"
+          else
+            echo "❌ $dir directory missing"
+            exit 1
+          fi
+        done
+        
+    - name: Set up build environment
+      shell: bash
+      run: |
+        echo "🔧 Setting up build environment..."
+        
+        # Set build type
+        echo "BUILD_TYPE=${{ inputs.build-type }}" >> $GITHUB_ENV
+        
+        # Set Conan options
+        if [ -n "${{ inputs.conan-options }}" ]; then
+          echo "CONAN_OPTIONS=${{ inputs.conan-options }}" >> $GITHUB_ENV
+        else
+          echo "CONAN_OPTIONS=-o shared=False -o fips=False -o enable_unit_test=False" >> $GITHUB_ENV
+        fi
+        
+        # Set parallel build jobs
+        echo "CONAN_CPU_COUNT=$(nproc)" >> $GITHUB_ENV
+        
+        echo "✅ Build environment configured"
+        echo "Build type: ${{ inputs.build-type }}"
+        echo "Conan options: $CONAN_OPTIONS"
+        echo "CPU count: $CONAN_CPU_COUNT"

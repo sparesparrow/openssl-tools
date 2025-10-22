@@ -1,0 +1,258 @@
+name: Demo Reusable Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      openssl-version:
+        description: 'OpenSSL version to build and test'
+        required: true
+        type: string
+        default: '3.2.0'
+      enable-fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      test-platforms:
+        description: 'Platforms to test on'
+        required: false
+        type: string
+        default: 'ubuntu-latest,windows-latest,macos-latest'
+      publish-package:
+        description: 'Publish package to Cloudsmith'
+        required: false
+        type: boolean
+        default: false
+      cloudsmith-org:
+        description: 'Cloudsmith organization'
+        required: false
+        type: string
+        default: 'sparesparrow'
+      cloudsmith-repo:
+        description: 'Cloudsmith repository'
+        required: false
+        type: string
+        default: 'openssl-packages'
+
+jobs:
+  build-openssl-standard:
+    uses: ./.github/workflows/build-openssl.yml
+    with:
+      version: ${{ inputs.openssl-version }}
+      platform: 'ubuntu-latest'
+      fips: false
+      conan-version: '2.0.17'
+      build-type: 'Release'
+      shared: true
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  build-openssl-fips:
+    if: inputs.enable-fips
+    uses: ./.github/workflows/build-openssl.yml
+    with:
+      version: ${{ inputs.openssl-version }}
+      platform: 'ubuntu-latest'
+      fips: true
+      conan-version: '2.0.17'
+      build-type: 'Release'
+      shared: true
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  test-integration:
+    needs: [build-openssl-standard, build-openssl-fips]
+    if: always() && (needs.build-openssl-standard.result == 'success' || needs.build-openssl-fips.result == 'success')
+    uses: ./.github/workflows/test-integration.yml
+    with:
+      openssl-version: ${{ inputs.openssl-version }}
+      test-type: 'full'
+      platforms: ${{ inputs.test-platforms }}
+      python-versions: '3.8,3.9,3.10,3.11,3.12'
+      conan-version: '2.0.17'
+      fips-enabled: ${{ inputs.enable-fips }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-standard:
+    if: inputs.publish-package && needs.build-openssl-standard.result == 'success'
+    needs: [build-openssl-standard, test-integration]
+    uses: ./.github/workflows/publish-cloudsmith.yml
+    with:
+      package-name: 'openssl'
+      package-version: ${{ inputs.openssl-version }}
+      package-type: 'raw'
+      repository: ${{ inputs.cloudsmith-repo }}
+      organization: ${{ inputs.cloudsmith-org }}
+      distribution: 'stable'
+      artifact-path: 'openssl-${{ inputs.openssl-version }}-ubuntu-latest-standard'
+      tags: 'openssl,security,crypto,standard'
+      description: 'OpenSSL cryptographic library (standard build)'
+      publish: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+
+  publish-fips:
+    if: inputs.publish-package && inputs.enable-fips && needs.build-openssl-fips.result == 'success'
+    needs: [build-openssl-fips, test-integration]
+    uses: ./.github/workflows/publish-cloudsmith.yml
+    with:
+      package-name: 'openssl-fips'
+      package-version: ${{ inputs.openssl-version }}
+      package-type: 'raw'
+      repository: ${{ inputs.cloudsmith-repo }}
+      organization: ${{ inputs.cloudsmith-org }}
+      distribution: 'stable'
+      artifact-path: 'openssl-${{ inputs.openssl-version }}-ubuntu-latest-fips'
+      tags: 'openssl,security,crypto,fips'
+      description: 'OpenSSL cryptographic library (FIPS build)'
+      publish: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+
+  publish-conan:
+    if: inputs.publish-package && needs.build-openssl-standard.result == 'success'
+    needs: [build-openssl-standard, test-integration]
+    uses: ./.github/workflows/publish-cloudsmith.yml
+    with:
+      package-name: 'openssl'
+      package-version: ${{ inputs.openssl-version }}
+      package-type: 'conan'
+      repository: ${{ inputs.cloudsmith-repo }}
+      organization: ${{ inputs.cloudsmith-org }}
+      distribution: 'stable'
+      artifact-path: 'openssl-${{ inputs.openssl-version }}-ubuntu-latest-standard'
+      tags: 'openssl,security,crypto,conan'
+      description: 'OpenSSL cryptographic library (Conan package)'
+      publish: true
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_USERNAME: ${{ secrets.CLOUDSMITH_USERNAME }}
+
+  generate-report:
+    needs: [build-openssl-standard, build-openssl-fips, test-integration, publish-standard, publish-fips, publish-conan]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Generate workflow report
+      run: |
+        cat > workflow_report.md << 'EOF'
+        # Reusable Workflows Demo Report
+        
+        ## Configuration
+        - OpenSSL Version: ${{ inputs.openssl-version }}
+        - FIPS Enabled: ${{ inputs.enable-fips }}
+        - Test Platforms: ${{ inputs.test-platforms }}
+        - Publish Package: ${{ inputs.publish-package }}
+        - Cloudsmith Org: ${{ inputs.cloudsmith-org }}
+        - Cloudsmith Repo: ${{ inputs.cloudsmith-repo }}
+        
+        ## Build Results
+        
+        ### Standard Build
+        - Status: ${{ needs.build-openssl-standard.result }}
+        - Artifact URL: ${{ needs.build-openssl-standard.outputs.artifact-url }}
+        - Build Hash: ${{ needs.build-openssl-standard.outputs.build-hash }}
+        
+        ### FIPS Build
+        - Status: ${{ needs.build-openssl-fips.result }}
+        - Artifact URL: ${{ needs.build-openssl-fips.outputs.artifact-url }}
+        - Build Hash: ${{ needs.build-openssl-fips.outputs.build-hash }}
+        
+        ## Test Results
+        
+        ### Integration Tests
+        - Status: ${{ needs.test-integration.result }}
+        - Test Results: ${{ needs.test-integration.outputs.test-results }}
+        - Coverage Report: ${{ needs.test-integration.outputs.coverage-report }}
+        
+        ## Publish Results
+        
+        ### Standard Package
+        - Status: ${{ needs.publish-standard.result }}
+        - Package URL: ${{ needs.publish-standard.outputs.package-url }}
+        - Upload Status: ${{ needs.publish-standard.outputs.upload-status }}
+        
+        ### FIPS Package
+        - Status: ${{ needs.publish-fips.result }}
+        - Package URL: ${{ needs.publish-fips.outputs.package-url }}
+        - Upload Status: ${{ needs.publish-fips.outputs.upload-status }}
+        
+        ### Conan Package
+        - Status: ${{ needs.publish-conan.result }}
+        - Package URL: ${{ needs.publish-conan.outputs.package-url }}
+        - Upload Status: ${{ needs.publish-conan.outputs.upload-status }}
+        
+        ## Summary
+        
+        EOF
+        
+        # Add status summary
+        echo "" >> workflow_report.md
+        echo "## Status Summary" >> workflow_report.md
+        echo "" >> workflow_report.md
+        
+        if [ "${{ needs.build-openssl-standard.result }}" == "success" ]; then
+          echo "✅ Standard build completed successfully" >> workflow_report.md
+        else
+          echo "❌ Standard build failed" >> workflow_report.md
+        fi
+        
+        if [ "${{ needs.build-openssl-fips.result }}" == "success" ]; then
+          echo "✅ FIPS build completed successfully" >> workflow_report.md
+        elif [ "${{ needs.build-openssl-fips.result }}" == "skipped" ]; then
+          echo "⏭️ FIPS build skipped (not enabled)" >> workflow_report.md
+        else
+          echo "❌ FIPS build failed" >> workflow_report.md
+        fi
+        
+        if [ "${{ needs.test-integration.result }}" == "success" ]; then
+          echo "✅ Integration tests passed" >> workflow_report.md
+        else
+          echo "❌ Integration tests failed" >> workflow_report.md
+        fi
+        
+        if [ "${{ needs.publish-standard.result }}" == "success" ]; then
+          echo "✅ Standard package published successfully" >> workflow_report.md
+        elif [ "${{ needs.publish-standard.result }}" == "skipped" ]; then
+          echo "⏭️ Standard package publish skipped" >> workflow_report.md
+        else
+          echo "❌ Standard package publish failed" >> workflow_report.md
+        fi
+        
+        if [ "${{ needs.publish-fips.result }}" == "success" ]; then
+          echo "✅ FIPS package published successfully" >> workflow_report.md
+        elif [ "${{ needs.publish-fips.result }}" == "skipped" ]; then
+          echo "⏭️ FIPS package publish skipped" >> workflow_report.md
+        else
+          echo "❌ FIPS package publish failed" >> workflow_report.md
+        fi
+        
+        if [ "${{ needs.publish-conan.result }}" == "success" ]; then
+          echo "✅ Conan package published successfully" >> workflow_report.md
+        elif [ "${{ needs.publish-conan.result }}" == "skipped" ]; then
+          echo "⏭️ Conan package publish skipped" >> workflow_report.md
+        else
+          echo "❌ Conan package publish failed" >> workflow_report.md
+        fi
+        
+    - name: Upload workflow report
+      uses: actions/upload-artifact@v4
+      with:
+        name: workflow-report
+        path: workflow_report.md
+        retention-days: 30
+        
+    - name: Display report
+      run: |
+        echo "Workflow execution completed!"
+        echo "Report generated: workflow_report.md"
+        cat workflow_report.md

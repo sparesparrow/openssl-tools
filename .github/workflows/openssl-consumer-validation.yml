@@ -1,0 +1,31 @@
+name: OpenSSL Consumer Validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "conanfile.py"
+      - "VERSION.dat"
+  pull_request:
+    paths:
+      - "conanfile.py"
+      - "VERSION.dat"
+  workflow_dispatch:
+
+jobs:
+  validate-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Conan
+        run: |
+          pip install conan>=2.0.0
+          conan profile detect --force
+      - name: Test OpenSSL consumer
+        run: |
+          echo "Testing OpenSSL consumer validation"
+          conan install --requires=openssl/3.6.0 --build=missing

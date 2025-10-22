@@ -1,0 +1,53 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "openssl-tools-SBOM",
+  "creationInfo": {
+    "created": "2025-10-17T00:00:00Z",
+    "creators": ["Tool: mock-sbom-generator-1.0.0"],
+    "licenseListVersion": "3.16"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-openssl-tools",
+      "name": "openssl-tools",
+      "versionInfo": "0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "supplier": "Organization: sparesparrow",
+      "originator": "Organization: sparesparrow",
+      "copyrightText": "Apache-2.0",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "description": "OpenSSL development and build tools with Python environment management"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-python",
+      "name": "python",
+      "versionInfo": "3.8+",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "supplier": "Organization: Python Software Foundation",
+      "licenseConcluded": "Python-2.0",
+      "licenseDeclared": "Python-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-conan",
+      "name": "conan",
+      "versionInfo": "2.0.17",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "supplier": "Organization: JFrog",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relatedSpdxElement": "SPDXRef-Package-openssl-tools",
+      "relationshipType": "DESCRIBES"
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+name: Performance Optimization Workflow
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      trigger_reason:
+        description: 'Reason for performance optimization'
+        required: true
+        default: 'manual'
+        type: choice
+        options:
+          - manual
+          - regression_detected
+          - scheduled_optimization
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  push:
+    branches: [main, master]
+    paths:
+      - '**/performance/**'
+      - '**/benchmark/**'
+      - 'build_optimizer.py'
+      - '**/optimization/**'
+
+jobs:
+  baseline-measurement:
+    name: Baseline Measurement
+    runs-on: ubuntu-latest
+    outputs:
+      baseline-complete: ${{ steps.baseline.outputs.complete }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run performance benchmarks
+        run: |
+          echo "Running performance benchmarks..."
+          python -m pytest tests/performance/ -v --benchmark-only
+          echo "Performance benchmarks completed"
+
+      - name: Profile CPU usage
+        run: |
+          echo "Profiling CPU usage..."
+          python scripts/performance_analyzer.py --profile-cpu
+          echo "CPU usage profiled"
+
+      - name: Analyze memory consumption
+        run: |
+          echo "Analyzing memory consumption..."
+          python scripts/performance_analyzer.py --profile-memory
+          echo "Memory consumption analyzed"
+
+      - name: Measure build times
+        run: |
+          echo "Measuring build times..."
+          time conan create . --build=missing
+          echo "Build times measured"
+
+      - name: Baseline complete
+        id: baseline
+        run: echo "complete=true" >> $GITHUB_OUTPUT
+
+  optimization-implementation:
+    name: Optimization Implementation
+    needs: baseline-measurement
+    if: needs.baseline-measurement.outputs.baseline-complete == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Identify bottlenecks
+        run: |
+          echo "Identifying bottlenecks..."
+          python build_optimizer.py --analyze
+          echo "Bottlenecks identified"
+
+      - name: Implement optimizations
+        run: |
+          echo "Implementing optimizations..."
+          # Optimization implementation would go here
+          python build_optimizer.py --optimize
+          echo "Optimizations implemented"
+
+      - name: Validate correctness
+        run: |
+          echo "Validating correctness..."
+          python -m pytest tests/ -v
+          echo "Correctness validated"
+
+      - name: Measure improvements
+        run: |
+          echo "Measuring improvements..."
+          python scripts/performance_analyzer.py --compare
+          echo "Improvements measured"
+
+  validation:
+    name: Validation
+    needs: optimization-implementation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run regression tests
+        run: |
+          echo "Running regression tests..."
+          python -m pytest tests/ -v --benchmark-compare
+          echo "Regression tests completed"
+
+      - name: Verify security not compromised
+        run: |
+          echo "Verifying security not compromised..."
+          bandit -r . -f json -o security-check.json
+          echo "Security verification completed"
+
+      - name: Validate API compatibility
+        run: |
+          echo "Validating API compatibility..."
+          # API compatibility validation would go here
+          echo "API compatibility validated"
+
+      - name: Confirm performance gains
+        run: |
+          echo "Confirming performance gains..."
+          python scripts/performance_analyzer.py --validate-gains
+          echo "Performance gains confirmed"
+
+  performance-regression-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.trigger_reason == 'regression_detected'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect performance regression
+        run: |
+          echo "Detecting performance regression..."
+          python scripts/performance_analyzer.py --detect-regression
+          if [ $? -ne 0 ]; then
+            echo "Performance regression detected!"
+            echo "PERFORMANCE_REGRESSION=true" >> $GITHUB_ENV
+          else
+            echo "No performance regression detected."
+            echo "PERFORMANCE_REGRESSION=false" >> $GITHUB_ENV
+          fi
+
+      - name: Trigger optimization workflow
+        if: env.PERFORMANCE_REGRESSION == 'true'
+        run: |
+          echo "Triggering performance optimization workflow..."
+          gh workflow run performance-optimization.yml --ref ${{ github.ref }} -f trigger_reason=regression_detected
+
+  performance-summary:
+    name: Performance Summary
+    needs: [baseline-measurement, optimization-implementation, validation]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate performance summary
+        run: |
+          echo "## Performance Optimization Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Baseline Measurement: ${{ needs.baseline-measurement.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Optimization Implementation: ${{ needs.optimization-implementation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Validation: ${{ needs.validation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Performance Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- Build time improvement: TBD" >> $GITHUB_STEP_SUMMARY
+          echo "- Memory usage improvement: TBD" >> $GITHUB_STEP_SUMMARY
+          echo "- CPU usage improvement: TBD" >> $GITHUB_STEP_SUMMARY

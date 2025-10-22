@@ -1,0 +1,252 @@
+name: Conan Branch Compilation
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'conanfile.py'
+      - 'conanfile.txt'
+      - 'conan-profiles/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'include/**'
+      - 'test/**'
+  workflow_dispatch:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      conan-changed: ${{ steps.changes.outputs.conan }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changes
+        uses: dorny/paths-filter@v2.2.0
+        id: changes
+        with:
+          filters: |
+            openssl:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-profiles/**'
+            conan:
+              - 'conanfile.py'
+              - 'conanfile.txt'
+              - 'conan-profiles/**'
+            tests:
+              - 'test/**'
+              - 'scripts/**'
+
+  compile-changes:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.openssl-changed == 'true' || needs.detect-changes.outputs.conan-changed == 'true'
+    runs-on: ${{ matrix.os }}
+    env:
+      CONAN_USER_HOME: ${{ github.workspace }}/.conan2
+      CONAN_COLOR_DISPLAY: 1
+      CLICOLOR_FORCE: 1
+      CLICOLOR: 1
+      ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
+      ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+      ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 GCC
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o enable_demos=True -o enable_quic=True
+            test: true
+          - name: Linux x86_64 Clang
+            os: ubuntu-latest
+            profile: linux-clang15
+            conan_options: -o fips=False -o enable_demos=True
+            test: true
+          - name: Linux ARM64 GCC
+            os: ubuntu-24.04-arm
+            profile: ubuntu-22.04-arm-gcc
+            conan_options: -o fips=True -o enable_ec_nistp_64_gcc_128=True
+            test: true
+          - name: macOS x86_64
+            os: macos-13
+            profile: macos-x86_64
+            conan_options: -o fips=True -o enable_demos=True
+            test: true
+          - name: macOS ARM64
+            os: macos-14
+            profile: macos-arm64
+            conan_options: -o fips=True -o enable_demos=True
+            test: true
+          - name: Minimal Build
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o no_bulk=True -o no_asm=True
+            test: true
+          - name: No Deprecated
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o no_deprecated=True
+            test: true
+          - name: Static Build
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o shared=False -o fips=False
+            test: true
+          - name: Full Featured
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o enable_ktls=True -o enable_zlib=True -o enable_zstd=True -o enable_sctp=True
+            test: true
+          - name: No Legacy
+            os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o no_legacy=True
+            test: true
+          - name: Address & UB Sanitizer
+            os: ubuntu-latest
+            profile: linux-gcc11-debug
+            build_type: Debug
+            conan_options: -o fips=True -o enable_asan=True -o enable_ubsan=True
+            test: true
+          - name: Memory Sanitizer
+            os: ubuntu-latest
+            profile: linux-clang15-debug
+            build_type: Debug
+            conan_options: -o fips=True -o shared=False -o enable_msan=True
+            test: true
+          - name: Thread Sanitizer
+            os: ubuntu-latest
+            profile: linux-clang15-debug
+            build_type: Debug
+            conan_options: -o fips=False -o shared=False -o enable_tsan=True
+            test: false
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Set up Conan Python Environment
+        run: |
+          python scripts/setup-ci-environment.py
+      
+      - name: Pre-build validation
+        run: |
+          python scripts/validation/pre-build-validation.py --config conan-dev/validation-config.yml
+      
+      - name: Cache optimization
+        run: |
+          python scripts/validation/cache-optimization.py --config conan-dev/cache-optimization.yml
+      
+      - name: Authentication setup
+        run: |
+          python scripts/validation/auth-token-manager.py --config conan-dev/package-registries.yml
+      
+      - name: Conan install
+        run: |
+          python scripts/conan/conan_cli.py install --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Conan build
+        run: |
+          python scripts/conan/conan_cli.py build --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Conan test
+        if: ${{ matrix.test }}
+        run: |
+          conan test . --profile=conan-dev/profiles/${{ matrix.profile }}.profile ${{ matrix.conan_options }}
+      
+      - name: Upload packages to Artifactory
+        if: env.ARTIFACTORY_URL != ''
+        run: |
+          conan remote add artifactory ${{ env.ARTIFACTORY_URL }}/conan-local
+          conan remote login -p ${{ secrets.ARTIFACTORY_TOKEN }} artifactory ${{ secrets.ARTIFACTORY_USERNAME }}
+          conan upload "openssl/*" -r=artifactory --all --confirm || true
+      
+      - name: Upload packages to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Configure GitHub Packages remote with proper authentication
+          conan remote add github-packages https://maven.pkg.github.com/${{ github.repository }} || true
+          conan remote update github-packages https://maven.pkg.github.com/${{ github.repository }}
+          
+          # Authenticate with GitHub Packages using proper token format
+          conan remote login -p ${{ secrets.GITHUB_TOKEN }} github-packages ${{ github.actor }}
+          
+          # Upload packages with retry logic and proper error handling
+          conan upload "openssl/*" -r=github-packages --all --confirm --retry=3 --retry-wait=10 || {
+            echo "GitHub Packages upload failed, but continuing with build"
+            exit 0
+          }
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: conan-build-${{ matrix.profile }}
+          path: |
+            build/
+            package/
+            ~/.conan2/p/*/p/
+
+  workflow-analysis:
+    needs: compile-changes
+    if: failure() || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+        
+      - name: Install MCP dependencies
+        run: |
+          pip install -r scripts/mcp/requirements.txt
+          pip install -r requirements.txt
+        
+      - name: Analyze workflow failures
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "
+          import asyncio
+          import sys
+          sys.path.insert(0, 'scripts')
+          from unified_workflow_manager import UnifiedWorkflowManager
+          
+          async def analyze():
+              manager = UnifiedWorkflowManager('${{ github.repository }}')
+              report = await manager.analyze_and_fix(limit=10)
+              print(report)
+              # Save report for PR comment
+              with open('/tmp/workflow-analysis.md', 'w') as f:
+                  f.write(report)
+          
+          asyncio.run(analyze())
+          "
+        
+      - name: Post analysis to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const report = fs.readFileSync('/tmp/workflow-analysis.md', 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🔧 Workflow Analysis Report\n\n${report}`
+              });
+            } catch (error) {
+              console.log('Could not read analysis report:', error.message);
+            }

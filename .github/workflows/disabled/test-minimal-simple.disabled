@@ -1,0 +1,18 @@
+name: Test Minimal Simple
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Test
+        run: |
+          echo "✅ Test Minimal Simple - Running"
+          echo "Current time: $(date)"
+          echo "GitHub runner: $RUNNER_OS"
+          echo "Test completed successfully"

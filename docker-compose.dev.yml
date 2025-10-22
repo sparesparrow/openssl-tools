@@ -1,0 +1,151 @@
+# Docker Compose for OpenSSL development environment
+# Provides complete development setup with Conan
+
+version: '3.8'
+
+services:
+  # Main development environment
+  openssl-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: openssl-dev
+    volumes:
+      - .:/workspace:cached
+      - conan-cache:/workspace/.conan2
+      - build-cache:/workspace/build
+    environment:
+      - CONAN_HOME=/workspace/.conan2
+      - CONAN_USER_HOME=/workspace
+      - OSSL_RUN_CI_TESTS=1
+      - HARNESS_JOBS=4
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    networks:
+      - openssl-dev
+
+  # Conan server for local artifact caching
+  conan-server:
+    image: conanio/conan-server:2.0
+    container_name: conan-server
+    ports:
+      - "9300:9300"
+    volumes:
+      - conan-server-data:/root/.conan_server
+    environment:
+      - CONAN_SERVER_PORT=9300
+    networks:
+      - openssl-dev
+
+  # Test environment for integration testing
+  openssl-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: openssl-test
+    volumes:
+      - .:/workspace:cached
+      - conan-cache:/workspace/.conan2
+    environment:
+      - CONAN_HOME=/workspace/.conan2
+      - CONAN_USER_HOME=/workspace
+      - OSSL_RUN_CI_TESTS=1
+      - OPENSSL_TEST_RAND_ORDER=0
+    working_dir: /workspace
+    command: >
+      bash -c "
+        conan install . --profile=conan-profiles/ci-linux-gcc.profile --build=missing &&
+        conan create . --profile=conan-profiles/ci-linux-gcc.profile
+      "
+    depends_on:
+      - conan-server
+    networks:
+      - openssl-dev
+
+  # Sanitizer testing environment
+  openssl-sanitizers:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: openssl-sanitizers
+    volumes:
+      - .:/workspace:cached
+      - conan-cache:/workspace/.conan2
+    environment:
+      - CONAN_HOME=/workspace/.conan2
+      - CONAN_USER_HOME=/workspace
+      - ASAN_OPTIONS=detect_leaks=1:abort_on_error=1
+      - UBSAN_OPTIONS=print_stacktrace=1:abort_on_error=1
+    working_dir: /workspace
+    command: >
+      bash -c "
+        conan create . --profile=conan-profiles/ci-sanitizers.profile --build=missing
+      "
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    networks:
+      - openssl-dev
+
+  # Documentation generation
+  openssl-docs:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: openssl-docs
+    volumes:
+      - .:/workspace:cached
+      - ./docs:/workspace/docs
+    working_dir: /workspace
+    command: >
+      bash -c "
+        make doc-nits &&
+        make help &&
+        doxygen doc/Doxyfile
+      "
+    networks:
+      - openssl-dev
+
+  # Performance testing environment
+  openssl-perf:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: openssl-perf
+    volumes:
+      - .:/workspace:cached
+      - conan-cache:/workspace/.conan2
+    environment:
+      - CONAN_HOME=/workspace/.conan2
+      - CONAN_USER_HOME=/workspace
+    working_dir: /workspace
+    command: >
+      bash -c "
+        # Create performance-optimized build
+        cp conan-profiles/ci-linux-gcc.profile conan-profiles/ci-performance.profile &&
+        echo 'CFLAGS=-O3 -march=native -DNDEBUG' >> conan-profiles/ci-performance.profile &&
+        conan create . --profile=conan-profiles/ci-performance.profile --build=missing &&
+        # Run performance tests
+        apps/openssl speed
+      "
+    networks:
+      - openssl-dev
+
+networks:
+  openssl-dev:
+    driver: bridge
+
+volumes:
+  conan-cache:
+    driver: local
+  build-cache:
+    driver: local
+  conan-server-data:
+    driver: local

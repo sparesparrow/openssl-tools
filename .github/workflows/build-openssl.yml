@@ -1,0 +1,317 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform (ubuntu-latest, windows-latest, macos-latest)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      conan-version:
+        description: 'Conan version to use'
+        required: false
+        type: string
+        default: '2.0.17'
+      build_type:
+        description: 'Build type (Release, Debug, RelWithDebInfo)'
+        required: false
+        type: string
+        default: 'Release'
+      shared:
+        description: 'Build shared libraries'
+        required: false
+        type: boolean
+        default: true
+      conan_profile:
+        description: 'Conan profile to use for build'
+        required: false
+        type: string
+        default: 'default'
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+      build-success:
+        description: 'Build success status'
+        value: ${{ jobs.build.outputs.build-success }}
+      sbom-url:
+        description: 'URL of generated SBOM'
+        value: ${{ jobs.build.outputs.sbom-url }}
+      build-hash:
+        description: 'SHA256 hash of the built package'
+        value: ${{ jobs.build.outputs.build-hash }}
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub token for artifact upload'
+        required: true
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for package upload'
+        required: false
+      CLOUDSMITH_REPOSITORY:
+        description: 'Cloudsmith repository name'
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+      build-success: ${{ steps.build.outputs.success }}
+      sbom-url: ${{ steps.sbom.outputs.sbom-url }}
+      build-hash: ${{ steps.build-hash.outputs.hash }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install Conan
+        run: |
+          pip install conan==${{ inputs.conan-version }}
+          conan config init
+
+      - name: Set up Conan profiles
+        run: |
+          conan profile detect --force
+          if [ "${{ inputs.conan_profile }}" != "default" ]; then
+            conan profile show ${{ inputs.conan_profile }} || conan profile new ${{ inputs.conan_profile }} --detect
+          fi
+
+      - name: Install system dependencies
+        run: |
+          # Export this repo as python_requires if it contains conanfile.py
+          if [ -f "conanfile.py" ]; then
+            conan export . openssl-tools/1.2.0@
+          fi
+
+          # Install extensions if they exist
+          if [ -f "install-extensions.sh" ]; then
+            ./install-extensions.sh
+          elif [ -d "extensions" ]; then
+            mkdir -p ~/.conan2/extensions
+            cp -r extensions/* ~/.conan2/extensions/
+          fi
+
+      - name: Configure OpenSSL build
+        id: configure
+        run: |
+          mkdir -p build-${{ inputs.platform }}
+          cd build-${{ inputs.platform }}
+          
+          # Configure OpenSSL with appropriate options
+          OPENSSL_OPTIONS="--prefix=/usr/local/openssl-${{ inputs.version }}"
+          
+          if [ "${{ inputs.fips }}" == "true" ]; then
+            OPENSSL_OPTIONS="$OPENSSL_OPTIONS --enable-fips"
+          fi
+          
+          # Platform-specific configuration
+          case "${{ inputs.platform }}" in
+            "ubuntu-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=/usr/local/ssl"
+              ;;
+            "windows-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=C:/OpenSSL"
+              ;;
+            "macos-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=/usr/local/ssl"
+              ;;
+          esac
+          
+          echo "OPENSSL_OPTIONS=$OPENSSL_OPTIONS" >> $GITHUB_ENV
+          echo "BUILD_DIR=$(pwd)" >> $GITHUB_ENV
+
+      - name: Download OpenSSL source
+        run: |
+          cd build-${{ inputs.platform }}
+          wget https://www.openssl.org/source/openssl-${{ inputs.version }}.tar.gz
+          tar -xzf openssl-${{ inputs.version }}.tar.gz
+          cd openssl-${{ inputs.version }}
+
+      - name: Configure OpenSSL
+        run: |
+          cd build-${{ inputs.platform }}/openssl-${{ inputs.version }}
+          ./config $OPENSSL_OPTIONS
+
+      - name: Build OpenSSL
+        id: build
+        run: |
+          echo "🔨 Building OpenSSL ${{ inputs.version }}"
+          echo "Platform: ${{ inputs.platform }}"
+          echo "FIPS: ${{ inputs.fips }}"
+          echo "Shared: ${{ inputs.shared }}"
+          echo "Profile: ${{ inputs.conan_profile }}"
+
+          cd build-${{ inputs.platform }}/openssl-${{ inputs.version }}
+          
+          # Build with parallel jobs
+          make -j$(nproc)
+          
+          # Run tests
+          make test
+          
+          # Install to build directory
+          make DESTDIR=../install install
+          
+          # Generate build metadata
+          mkdir -p ../install/metadata
+          cat > ../install/metadata/build-info.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "version": "${{ inputs.version }}",
+            "platform": "${{ inputs.platform }}",
+            "profile": "${{ inputs.conan_profile }}",
+            "shared": ${{ inputs.shared }},
+            "fips_enabled": ${{ inputs.fips }},
+            "build_type": "${{ inputs.build_type }}",
+            "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}"
+          }
+          EOF
+
+          # Set outputs
+          ARTIFACT_NAME="openssl-${{ inputs.version }}-${{ inputs.platform }}"
+          if [ "${{ inputs.fips }}" = "true" ]; then
+            ARTIFACT_NAME="${ARTIFACT_NAME}-fips"
+          fi
+          if [ "${{ inputs.shared }}" = "true" ]; then
+            ARTIFACT_NAME="${ARTIFACT_NAME}-shared"
+          fi
+          ARTIFACT_NAME="${ARTIFACT_NAME}-${{ inputs.build_type }}"
+
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "build-path=$(pwd)/../install" >> $GITHUB_OUTPUT
+          echo "success=true" >> $GITHUB_OUTPUT
+
+          echo "✅ Build completed successfully"
+          echo "Artifact name: $ARTIFACT_NAME"
+          echo "Build path: $(pwd)/../install"
+
+      - name: Generate SBOM
+        id: sbom
+        run: |
+          echo "📋 Generating SBOM with Syft..."
+          
+          # Install Syft for SBOM generation
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Generate SBOM for the built OpenSSL
+          cd build-${{ inputs.platform }}/install
+          syft packages . -o spdx-json=openssl-${{ inputs.version }}-sbom.json
+          syft packages . -o cyclonedx-json=openssl-${{ inputs.version }}-cyclonedx.json
+          
+          # Generate human-readable summary
+          syft packages . -o table=openssl-${{ inputs.version }}-sbom-summary.txt
+          
+          # Upload SBOM as artifact
+          if [ "${{ inputs.upload_artifacts }}" == "true" ]; then
+            echo "sbom-url=openssl-${{ inputs.version }}-sbom" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "generated=true" >> $GITHUB_OUTPUT
+          echo "✅ SBOM generated successfully"
+
+      - name: Security scan with Trivy
+        run: |
+          # Install Trivy
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Scan the built binaries
+          cd build-${{ inputs.platform }}/install
+          trivy fs . --format table --exit-code 1 --severity HIGH,CRITICAL
+          
+          # Generate vulnerability report
+          trivy fs . --format json --output trivy-report.json
+
+      - name: Calculate build hash
+        id: build-hash
+        run: |
+          # Calculate SHA256 hash of the built package
+          find build-${{ inputs.platform }}/install -type f -name "*.so*" -o -name "*.a" | \
+          xargs sha256sum | \
+          sha256sum | \
+          cut -d' ' -f1 > build_hash.txt
+          echo "hash=$(cat build_hash.txt)" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        id: upload
+        if: inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact-name }}
+          path: |
+            build-${{ inputs.platform }}/install/
+            build-${{ inputs.platform }}/openssl-${{ inputs.version }}-sbom.json
+            build-${{ inputs.platform }}/openssl-${{ inputs.version }}-cyclonedx.json
+            build-${{ inputs.platform }}/openssl-${{ inputs.version }}-sbom-summary.txt
+            build-${{ inputs.platform }}/trivy-report.json
+            build_hash.txt
+          retention-days: 30
+
+      - name: Set artifact URL
+        if: inputs.upload_artifacts == 'true'
+        run: |
+          echo "artifact-url=${{ steps.build.outputs.artifact-name }}" >> $GITHUB_OUTPUT
+
+      - name: Publish to Cloudsmith (if secrets provided)
+        if: inputs.upload_artifacts == 'true'
+        uses: ./.github/actions/cloudsmith-publish
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          namespace: 'sparesparrow'
+          repository: ${{ secrets.CLOUDSMITH_REPOSITORY }}
+          package-name: openssl
+          package-version: ${{ inputs.version }}
+          package-path: build-${{ inputs.platform }}/install/
+          package-type: raw
+          description: "OpenSSL ${{ inputs.version }} build for ${{ inputs.platform }}"
+          tags: "openssl,security,crypto,${{ inputs.platform }}"
+          publish: true
+
+      - name: Build summary
+        run: |
+          echo "## 🔨 OpenSSL Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: ${{ inputs.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS Mode**: ${{ inputs.fips }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Shared Libraries**: ${{ inputs.shared }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Profile**: ${{ inputs.conan_profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ inputs.build_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ steps.sbom.outputs.generated }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: ${{ steps.build.outputs.artifact-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Path**: ${{ steps.build.outputs.build-path }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ steps.sbom.outputs.generated }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner Arch**: ${{ runner.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conan Version**: $(conan --version)" >> $GITHUB_STEP_SUMMARY

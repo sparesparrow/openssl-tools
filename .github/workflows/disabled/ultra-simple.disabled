@@ -1,0 +1,14 @@
+name: Ultra Simple
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+
+jobs:
+  ultra-simple:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Ultra Simple Success
+        run: echo "✅ Ultra Simple - Success"
