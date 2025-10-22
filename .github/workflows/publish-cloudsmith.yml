@@ -1,0 +1,283 @@
+name: Reusable Cloudsmith Publishing
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        description: 'Name of the package to publish'
+        required: true
+        type: string
+      package-version:
+        description: 'Version of the package'
+        required: true
+        type: string
+      package-format:
+        description: 'Package format (raw, conan, maven, npm, etc.)'
+        required: true
+        type: string
+        default: 'raw'
+      repository:
+        description: 'Cloudsmith repository name'
+        required: true
+        type: string
+      organization:
+        description: 'Cloudsmith organization name'
+        required: true
+        type: string
+      artifact-path:
+        description: 'Path to the artifact to publish'
+        required: true
+        type: string
+      distribution:
+        description: 'Distribution name (for raw packages)'
+        required: false
+        type: string
+        default: 'any'
+      architecture:
+        description: 'Architecture (for raw packages)'
+        required: false
+        type: string
+        default: 'any'
+      tags:
+        description: 'Comma-separated list of tags'
+        required: false
+        type: string
+        default: ''
+      description:
+        description: 'Package description'
+        required: false
+        type: string
+        default: ''
+      license:
+        description: 'Package license'
+        required: false
+        type: string
+        default: 'MIT'
+      homepage:
+        description: 'Package homepage URL'
+        required: false
+        type: string
+        default: ''
+      documentation-url:
+        description: 'Documentation URL'
+        required: false
+        type: string
+        default: ''
+      source-url:
+        description: 'Source code URL'
+        required: false
+        type: string
+        default: ''
+      changelog:
+        description: 'Changelog content'
+        required: false
+        type: string
+        default: ''
+      publish-now:
+        description: 'Publish immediately (vs. stage for review)'
+        required: false
+        type: boolean
+        default: true
+      replace-existing:
+        description: 'Replace existing package version'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      package-url:
+        description: 'URL of the published package'
+        value: ${{ jobs.publish.outputs.package-url }}
+      package-id:
+        description: 'Cloudsmith package ID'
+        value: ${{ jobs.publish.outputs.package-id }}
+      publish-status:
+        description: 'Publishing status'
+        value: ${{ jobs.publish.outputs.publish-status }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for authentication'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      package-url: ${{ steps.publish.outputs.package-url }}
+      package-id: ${{ steps.publish.outputs.package-id }}
+      publish-status: ${{ steps.publish.outputs.publish-status }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Cloudsmith CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install cloudsmith-cli
+
+      - name: Configure Cloudsmith CLI
+        run: |
+          cloudsmith config set-api-key ${{ secrets.CLOUDSMITH_API_KEY }}
+          cloudsmith config set-default-org ${{ inputs.organization }}
+
+      - name: Validate artifact exists
+        run: |
+          if [ ! -f "${{ inputs.artifact-path }}" ] && [ ! -d "${{ inputs.artifact-path }}" ]; then
+            echo "❌ Artifact path does not exist: ${{ inputs.artifact-path }}"
+            exit 1
+          fi
+          echo "✅ Artifact found: ${{ inputs.artifact-path }}"
+
+      - name: Prepare package metadata
+        run: |
+          # Create metadata file for the package
+          cat > package-metadata.json << EOF
+          {
+            "name": "${{ inputs.package-name }}",
+            "version": "${{ inputs.package-version }}",
+            "format": "${{ inputs.package-format }}",
+            "repository": "${{ inputs.repository }}",
+            "organization": "${{ inputs.organization }}",
+            "distribution": "${{ inputs.distribution }}",
+            "architecture": "${{ inputs.architecture }}",
+            "tags": "${{ inputs.tags }}",
+            "description": "${{ inputs.description }}",
+            "license": "${{ inputs.license }}",
+            "homepage": "${{ inputs.homepage }}",
+            "documentation_url": "${{ inputs.documentation-url }}",
+            "source_url": "${{ inputs.source-url }}",
+            "changelog": "${{ inputs.changelog }}",
+            "publish_now": ${{ inputs.publish-now }},
+            "replace_existing": ${{ inputs.replace-existing }},
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "publish_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_ref": "${{ github.workflow_ref }}",
+            "workflow_sha": "${{ github.sha }}"
+          }
+          EOF
+
+      - name: Publish package to Cloudsmith
+        id: publish
+        run: |
+          echo "Publishing package to Cloudsmith..."
+          
+          # Prepare Cloudsmith CLI command
+          CLOUDSMITH_CMD="cloudsmith push ${{ inputs.package-format }} ${{ inputs.organization }}/${{ inputs.repository }}"
+          
+          # Add the artifact path
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD ${{ inputs.artifact-path }}"
+          
+          # Add version
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --version ${{ inputs.package-version }}"
+          
+          # Add name if specified
+          if [ -n "${{ inputs.package-name }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --name ${{ inputs.package-name }}"
+          fi
+          
+          # Add description if specified
+          if [ -n "${{ inputs.description }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --description '${{ inputs.description }}'"
+          fi
+          
+          # Add tags if specified
+          if [ -n "${{ inputs.tags }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --tags ${{ inputs.tags }}"
+          fi
+          
+          # Add distribution and architecture for raw packages
+          if [ "${{ inputs.package-format }}" = "raw" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --distribution ${{ inputs.distribution }}"
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --architecture ${{ inputs.architecture }}"
+          fi
+          
+          # Add license if specified
+          if [ -n "${{ inputs.license }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --license ${{ inputs.license }}"
+          fi
+          
+          # Add homepage if specified
+          if [ -n "${{ inputs.homepage }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --homepage ${{ inputs.homepage }}"
+          fi
+          
+          # Add documentation URL if specified
+          if [ -n "${{ inputs.documentation-url }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --documentation-url ${{ inputs.documentation-url }}"
+          fi
+          
+          # Add source URL if specified
+          if [ -n "${{ inputs.source-url }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --source-url ${{ inputs.source-url }}"
+          fi
+          
+          # Add changelog if specified
+          if [ -n "${{ inputs.changelog }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --changelog '${{ inputs.changelog }}'"
+          fi
+          
+          # Add publish now flag
+          if [ "${{ inputs.publish-now }}" = "true" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --publish"
+          fi
+          
+          # Add replace existing flag
+          if [ "${{ inputs.replace-existing }}" = "true" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --replace"
+          fi
+          
+          echo "Executing: $CLOUDSMITH_CMD"
+          
+          # Execute the command and capture output
+          if PUBLISH_OUTPUT=$(eval $CLOUDSMITH_CMD 2>&1); then
+            echo "✅ Package published successfully"
+            echo "$PUBLISH_OUTPUT"
+            
+            # Extract package URL and ID from output
+            PACKAGE_URL=$(echo "$PUBLISH_OUTPUT" | grep -o 'https://cloudsmith.io/[^[:space:]]*' | head -1 || echo "")
+            PACKAGE_ID=$(echo "$PUBLISH_OUTPUT" | grep -o 'Package ID: [^[:space:]]*' | cut -d' ' -f3 || echo "")
+            
+            echo "package-url=$PACKAGE_URL" >> $GITHUB_OUTPUT
+            echo "package-id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+            echo "publish-status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Failed to publish package"
+            echo "$PUBLISH_OUTPUT"
+            echo "publish-status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Verify package publication
+        if: steps.publish.outputs.publish-status == 'success'
+        run: |
+          echo "Verifying package publication..."
+          
+          # Get package details
+          if [ -n "${{ steps.publish.outputs.package-id }}" ]; then
+            cloudsmith show package ${{ inputs.organization }}/${{ inputs.repository }}/${{ steps.publish.outputs.package-id }}
+          else
+            echo "Package ID not available, skipping verification"
+          fi
+
+      - name: Upload publication logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudsmith-publish-logs-${{ github.run_id }}
+          path: |
+            package-metadata.json
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Cloudsmith publishing failed"
+          echo "Package: ${{ inputs.package-name }}"
+          echo "Version: ${{ inputs.package-version }}"
+          echo "Repository: ${{ inputs.organization }}/${{ inputs.repository }}"
+          echo "Format: ${{ inputs.package-format }}"

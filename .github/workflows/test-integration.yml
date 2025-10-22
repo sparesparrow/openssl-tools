@@ -1,0 +1,375 @@
+name: Reusable Integration Tests
+
+on:
+  workflow_call:
+    inputs:
+      openssl-version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+      test-matrix:
+        description: 'JSON string defining test matrix (os, compiler, arch)'
+        required: false
+        type: string
+        default: |
+          {
+            "os": ["ubuntu-latest", "windows-latest", "macos-latest"],
+            "compiler": ["gcc", "clang", "msvc"],
+            "arch": ["x64", "arm64"]
+          }
+      test-suites:
+        description: 'Comma-separated list of test suites to run'
+        required: false
+        type: string
+        default: 'unit,integration,performance,security'
+      fips-mode:
+        description: 'Enable FIPS mode testing'
+        required: false
+        type: boolean
+        default: false
+      conan-profiles:
+        description: 'Comma-separated list of Conan profiles to test'
+        required: false
+        type: string
+        default: 'default'
+      test-timeout:
+        description: 'Test timeout in minutes'
+        required: false
+        type: number
+        default: 30
+      parallel-jobs:
+        description: 'Number of parallel test jobs'
+        required: false
+        type: number
+        default: 4
+    outputs:
+      test-results-url:
+        description: 'URL to test results'
+        value: ${{ jobs.test-results.outputs.results-url }}
+      test-summary:
+        description: 'Test summary JSON'
+        value: ${{ jobs.test-results.outputs.summary }}
+      coverage-report:
+        description: 'Coverage report URL'
+        value: ${{ jobs.coverage.outputs.report-url }}
+    secrets:
+      TEST_DATABASE_URL:
+        description: 'Test database connection string'
+        required: false
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for downloading test artifacts'
+        required: false
+
+jobs:
+  test-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            arch: x64
+            conan-profile: ci-linux-gcc
+          - os: ubuntu-latest
+            compiler: clang
+            arch: x64
+            conan-profile: ci-linux-clang
+          - os: windows-latest
+            compiler: msvc
+            arch: x64
+            conan-profile: ci-windows-msvc
+          - os: macos-latest
+            compiler: clang
+            arch: x64
+            conan-profile: ci-macos-x64
+          - os: macos-latest
+            compiler: clang
+            arch: arm64
+            conan-profile: ci-macos-arm64
+          - os: ubuntu-latest
+            compiler: gcc
+            arch: x64
+            conan-profile: fips-linux
+            fips: true
+          - os: windows-latest
+            compiler: msvc
+            arch: x64
+            conan-profile: fips-windows
+            fips: true
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install pytest pytest-cov pytest-xdist pytest-html
+
+      - name: Set up Conan
+        run: |
+          pip install conan
+          conan config init
+          conan profile detect --force
+
+      - name: Configure test environment
+        run: |
+          export OPENSSL_VERSION="${{ inputs.openssl-version }}"
+          export COMPILER="${{ matrix.compiler }}"
+          export ARCH="${{ matrix.arch }}"
+          export CONAN_PROFILE="${{ matrix.conan-profile }}"
+          export FIPS_MODE="${{ matrix.fips || inputs.fips-mode }}"
+          export TEST_SUITES="${{ inputs.test-suites }}"
+          export PARALLEL_JOBS="${{ inputs.parallel-jobs }}"
+          
+          echo "OPENSSL_VERSION=$OPENSSL_VERSION" >> $GITHUB_ENV
+          echo "COMPILER=$COMPILER" >> $GITHUB_ENV
+          echo "ARCH=$ARCH" >> $GITHUB_ENV
+          echo "CONAN_PROFILE=$CONAN_PROFILE" >> $GITHUB_ENV
+          echo "FIPS_MODE=$FIPS_MODE" >> $GITHUB_ENV
+          echo "TEST_SUITES=$TEST_SUITES" >> $GITHUB_ENV
+          echo "PARALLEL_JOBS=$PARALLEL_JOBS" >> $GITHUB_ENV
+
+      - name: Download test artifacts
+        if: ${{ secrets.CLOUDSMITH_API_KEY != '' }}
+        run: |
+          echo "Downloading test artifacts from Cloudsmith..."
+          # This would use the Cloudsmith composite action
+          echo "CLOUDSMITH_API_KEY is available: ${{ secrets.CLOUDSMITH_API_KEY != '' }}"
+
+      - name: Set up test database
+        if: ${{ secrets.TEST_DATABASE_URL != '' }}
+        run: |
+          echo "Setting up test database..."
+          echo "TEST_DATABASE_URL is available: ${{ secrets.TEST_DATABASE_URL != '' }}"
+
+      - name: Run unit tests
+        if: contains(inputs.test-suites, 'unit')
+        run: |
+          echo "Running unit tests..."
+          mkdir -p test-results
+          python -m pytest tests/unit/ \
+            --junitxml=test-results/unit-tests.xml \
+            --html=test-results/unit-report.html \
+            --self-contained-html \
+            --cov=src \
+            --cov-report=xml:test-results/coverage.xml \
+            --cov-report=html:test-results/coverage-html \
+            -n ${{ inputs.parallel-jobs }} \
+            --timeout=${{ inputs.test-timeout * 60 }}
+
+      - name: Run integration tests
+        if: contains(inputs.test-suites, 'integration')
+        run: |
+          echo "Running integration tests..."
+          python -m pytest tests/integration/ \
+            --junitxml=test-results/integration-tests.xml \
+            --html=test-results/integration-report.html \
+            --self-contained-html \
+            -n ${{ inputs.parallel-jobs }} \
+            --timeout=${{ inputs.test-timeout * 60 }}
+
+      - name: Run performance tests
+        if: contains(inputs.test-suites, 'performance')
+        run: |
+          echo "Running performance tests..."
+          python -m pytest tests/performance/ \
+            --junitxml=test-results/performance-tests.xml \
+            --html=test-results/performance-report.html \
+            --self-contained-html \
+            --benchmark-only \
+            --benchmark-save=performance-benchmark \
+            --timeout=${{ inputs.test-timeout * 60 }}
+
+      - name: Run security tests
+        if: contains(inputs.test-suites, 'security')
+        run: |
+          echo "Running security tests..."
+          python -m pytest tests/security/ \
+            --junitxml=test-results/security-tests.xml \
+            --html=test-results/security-report.html \
+            --self-contained-html \
+            --timeout=${{ inputs.test-timeout * 60 }}
+
+      - name: Run FIPS validation tests
+        if: ${{ matrix.fips || inputs.fips-mode }}
+        run: |
+          echo "Running FIPS validation tests..."
+          python -m pytest tests/fips/ \
+            --junitxml=test-results/fips-tests.xml \
+            --html=test-results/fips-report.html \
+            --self-contained-html \
+            --timeout=${{ inputs.test-timeout * 60 }}
+
+      - name: Run OpenSSL test suite
+        run: |
+          echo "Running OpenSSL test suite..."
+          if [ -f "./scripts/run-openssl-tests.sh" ]; then
+            ./scripts/run-openssl-tests.sh \
+              --version "${{ inputs.openssl-version }}" \
+              --profile "${{ matrix.conan-profile }}" \
+              --fips "${{ matrix.fips || inputs.fips-mode }}" \
+              --output-dir "./test-results"
+          else
+            echo "OpenSSL test script not found, skipping..."
+          fi
+
+      - name: Generate test report
+        run: |
+          echo "Generating test report..."
+          cat > test-results/test-summary.json << EOF
+          {
+            "openssl_version": "${{ inputs.openssl-version }}",
+            "platform": "${{ matrix.os }}",
+            "compiler": "${{ matrix.compiler }}",
+            "arch": "${{ matrix.arch }}",
+            "conan_profile": "${{ matrix.conan-profile }}",
+            "fips_mode": ${{ matrix.fips || inputs.fips-mode }},
+            "test_suites": "${{ inputs.test-suites }}",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "test_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_ref": "${{ github.workflow_ref }}",
+            "workflow_sha": "${{ github.sha }}"
+          }
+          EOF
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ github.run_id }}
+          path: test-results/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  test-results:
+    needs: test-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    outputs:
+      results-url: ${{ steps.consolidate.outputs.results-url }}
+      summary: ${{ steps.consolidate.outputs.summary }}
+    
+    steps:
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: ./all-test-results
+
+      - name: Consolidate test results
+        id: consolidate
+        run: |
+          echo "Consolidating test results..."
+          mkdir -p consolidated-results
+          
+          # Merge all JUnit XML files
+          find ./all-test-results -name "*.xml" -exec cp {} ./consolidated-results/ \;
+          
+          # Create consolidated HTML report
+          cat > consolidated-results/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>OpenSSL Integration Test Results</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 20px; }
+                  .summary { background: #f5f5f5; padding: 20px; border-radius: 5px; }
+                  .test-matrix { margin: 20px 0; }
+                  .test-result { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 3px; }
+                  .success { background: #d4edda; border-color: #c3e6cb; }
+                  .failure { background: #f8d7da; border-color: #f5c6cb; }
+              </style>
+          </head>
+          <body>
+              <h1>OpenSSL Integration Test Results</h1>
+              <div class="summary">
+                  <h2>Test Summary</h2>
+                  <p>OpenSSL Version: ${{ inputs.openssl-version }}</p>
+                  <p>Test Suites: ${{ inputs.test-suites }}</p>
+                  <p>FIPS Mode: ${{ inputs.fips-mode }}</p>
+                  <p>Generated: $(date)</p>
+              </div>
+              <div class="test-matrix">
+                  <h2>Test Matrix Results</h2>
+                  <!-- Test results will be populated here -->
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Generate summary JSON
+          cat > consolidated-results/summary.json << EOF
+          {
+            "openssl_version": "${{ inputs.openssl-version }}",
+            "test_suites": "${{ inputs.test-suites }}",
+            "fips_mode": ${{ inputs.fips-mode }},
+            "total_platforms": $(find ./all-test-results -name "test-summary.json" | wc -l),
+            "consolidation_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}"
+          }
+          EOF
+          
+          echo "results-url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "summary=$(cat consolidated-results/summary.json)" >> $GITHUB_OUTPUT
+
+      - name: Upload consolidated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-test-results-${{ github.run_id }}
+          path: consolidated-results/
+          retention-days: 30
+
+  coverage:
+    needs: test-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    outputs:
+      report-url: ${{ steps.coverage-report.outputs.report-url }}
+    
+    steps:
+      - name: Download test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: ./coverage-data
+
+      - name: Generate coverage report
+        id: coverage-report
+        run: |
+          echo "Generating coverage report..."
+          mkdir -p coverage-results
+          
+          # Find all coverage.xml files and merge them
+          find ./coverage-data -name "coverage.xml" -exec cp {} ./coverage-results/ \;
+          
+          # Generate HTML coverage report
+          if command -v coverage &> /dev/null; then
+            coverage combine ./coverage-results/*.xml
+            coverage html -d ./coverage-results/html-report
+          else
+            echo "Coverage tool not available, skipping HTML report generation"
+          fi
+          
+          echo "report-url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_id }}
+          path: coverage-results/
+          retention-days: 30

@@ -1,0 +1,109 @@
+name: Example OpenSSL Build and Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      openssl-version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+        default: '3.1.4'
+      enable-fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      test-platforms:
+        description: 'Platforms to test on'
+        required: false
+        type: choice
+        options:
+          - 'ubuntu-latest'
+          - 'windows-latest'
+          - 'macos-latest'
+          - 'all'
+        default: 'ubuntu-latest'
+      publish-to-cloudsmith:
+        description: 'Publish to Cloudsmith'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-openssl:
+    uses: ./.github/workflows/build-openssl.yml@v1
+    with:
+      version: ${{ inputs.openssl-version }}
+      platform: ubuntu-latest
+      fips: ${{ inputs.enable-fips }}
+      build-type: 'Release'
+      enable-tests: true
+      conan-profile: 'ci-linux-gcc'
+      cloudsmith-org: 'openssl'
+      cloudsmith-repo: 'openssl-packages'
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  test-integration:
+    needs: build-openssl
+    uses: ./.github/workflows/test-integration.yml@v1
+    with:
+      openssl-version: ${{ inputs.openssl-version }}
+      test-matrix: |
+        {
+          "os": ["ubuntu-latest", "windows-latest", "macos-latest"],
+          "compiler": ["gcc", "clang", "msvc"],
+          "arch": ["x64", "arm64"]
+        }
+      test-suites: 'unit,integration,performance,security'
+      fips-mode: ${{ inputs.enable-fips }}
+      conan-profiles: 'ci-linux-gcc,ci-linux-clang,ci-windows-msvc,ci-macos-x64,ci-macos-arm64'
+      test-timeout: 30
+      parallel-jobs: 4
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  publish-cloudsmith:
+    needs: [build-openssl, test-integration]
+    if: ${{ inputs.publish-to-cloudsmith && success() }}
+    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    with:
+      package-name: 'openssl-${{ inputs.openssl-version }}'
+      package-version: '${{ inputs.openssl-version }}-${{ needs.build-openssl.outputs.build-hash }}'
+      package-format: 'raw'
+      repository: 'openssl-packages'
+      organization: 'openssl'
+      artifact-path: './artifacts'
+      distribution: 'ubuntu-latest'
+      architecture: 'x64'
+      tags: 'openssl,${{ inputs.openssl-version }},ubuntu-latest,${{ inputs.enable-fips && "fips" || "" }}'
+      description: 'OpenSSL ${{ inputs.openssl-version }} build for Ubuntu'
+      license: 'Apache-2.0'
+      homepage: 'https://www.openssl.org/'
+      source-url: 'https://github.com/openssl/openssl'
+      changelog: 'OpenSSL ${{ inputs.openssl-version }} build with FIPS=${{ inputs.enable-fips }}'
+      publish-now: true
+      replace-existing: false
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+  build-summary:
+    needs: [build-openssl, test-integration, publish-cloudsmith]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build Summary
+        run: |
+          echo "=== OpenSSL Build Summary ==="
+          echo "OpenSSL Version: ${{ inputs.openssl-version }}"
+          echo "FIPS Mode: ${{ inputs.enable-fips }}"
+          echo "Build Status: ${{ needs.build-openssl.result }}"
+          echo "Test Status: ${{ needs.test-integration.result }}"
+          echo "Publish Status: ${{ needs.publish-cloudsmith.result }}"
+          echo "Build Hash: ${{ needs.build-openssl.outputs.build-hash }}"
+          echo "Artifact URL: ${{ needs.build-openssl.outputs.artifact-url }}"
+          echo "Test Results: ${{ needs.test-integration.outputs.test-results-url }}"
+          if [ "${{ needs.publish-cloudsmith.result }}" = "success" ]; then
+            echo "Package URL: ${{ needs.publish-cloudsmith.outputs.package-url }}"
+          fi
+          echo "============================="

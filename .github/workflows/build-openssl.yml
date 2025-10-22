@@ -1,0 +1,244 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform for build'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      build-type:
+        description: 'Build type (Debug, Release, RelWithDebInfo)'
+        required: false
+        type: string
+        default: 'Release'
+      enable-tests:
+        description: 'Run tests during build'
+        required: false
+        type: boolean
+        default: true
+      conan-profile:
+        description: 'Conan profile to use for build'
+        required: false
+        type: string
+        default: 'default'
+      cloudsmith-org:
+        description: 'Cloudsmith organization for publishing'
+        required: false
+        type: string
+        default: 'openssl'
+      cloudsmith-repo:
+        description: 'Cloudsmith repository for publishing'
+        required: false
+        type: string
+        default: 'openssl-packages'
+    outputs:
+      artifact-url:
+        description: 'URL of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      artifact-name:
+        description: 'Name of the generated artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+      build-hash:
+        description: 'Build hash for tracking'
+        value: ${{ jobs.build.outputs.build-hash }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for publishing'
+        required: false
+      ARTIFACTORY_API_KEY:
+        description: 'Artifactory API key for publishing'
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      artifact-name: ${{ steps.upload.outputs.artifact-name }}
+      build-hash: ${{ steps.generate-hash.outputs.hash }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Generate build hash
+        id: generate-hash
+        run: |
+          BUILD_HASH=$(echo "${{ github.run_id }}-${{ github.run_number }}-$(date +%s)" | sha256sum | cut -d' ' -f1)
+          echo "hash=$BUILD_HASH" >> $GITHUB_OUTPUT
+          echo "Generated build hash: $BUILD_HASH"
+
+      - name: Set up Conan
+        run: |
+          pip install conan
+          conan config init
+          conan profile detect --force
+
+      - name: Configure build environment
+        run: |
+          export OPENSSL_VERSION="${{ inputs.version }}"
+          export FIPS_MODE="${{ inputs.fips }}"
+          export BUILD_TYPE="${{ inputs.build-type }}"
+          export ENABLE_TESTS="${{ inputs.enable-tests }}"
+          export CONAN_PROFILE="${{ inputs.conan-profile }}"
+          export BUILD_HASH="${{ steps.generate-hash.outputs.hash }}"
+          
+          echo "OPENSSL_VERSION=$OPENSSL_VERSION" >> $GITHUB_ENV
+          echo "FIPS_MODE=$FIPS_MODE" >> $GITHUB_ENV
+          echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
+          echo "ENABLE_TESTS=$ENABLE_TESTS" >> $GITHUB_ENV
+          echo "CONAN_PROFILE=$CONAN_PROFILE" >> $GITHUB_ENV
+          echo "BUILD_HASH=$BUILD_HASH" >> $GITHUB_ENV
+
+      - name: Build OpenSSL
+        run: |
+          # Create build directory
+          mkdir -p build artifacts
+          
+          # Run the build script
+          if [ -f "./scripts/build-openssl.sh" ]; then
+            ./scripts/build-openssl.sh \
+              --version "${{ inputs.version }}" \
+              --fips "${{ inputs.fips }}" \
+              --build-type "${{ inputs.build-type }}" \
+              --enable-tests "${{ inputs.enable-tests }}" \
+              --conan-profile "${{ inputs.conan-profile }}" \
+              --output-dir "./artifacts"
+          else
+            # Fallback to conan build if script doesn't exist
+            conan create . --profile="${{ inputs.conan-profile }}" \
+              -o openssl:version="${{ inputs.version }}" \
+              -o openssl:fips="${{ inputs.fips }}" \
+              -o openssl:build_type="${{ inputs.build-type }}" \
+              -o openssl:enable_tests="${{ inputs.enable-tests }}"
+            
+            # Copy artifacts
+            conan export-pkg . --profile="${{ inputs.conan-profile }}" \
+              -o openssl:version="${{ inputs.version }}" \
+              -o openssl:fips="${{ inputs.fips }}" \
+              -o openssl:build_type="${{ inputs.build-type }}" \
+              -o openssl:enable_tests="${{ inputs.enable-tests }}" \
+              --package-folder="./artifacts"
+          fi
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./artifacts
+          format: spdx-json
+          output-file: ./artifacts/sbom.spdx.json
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './artifacts'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check for high-severity vulnerabilities
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            # Check if there are any CRITICAL or HIGH severity findings
+            HIGH_SEVERITY_COUNT=$(jq -r '.runs[0].results[] | select(.level == "error" or .level == "warning") | .level' trivy-results.sarif | wc -l)
+            if [ "$HIGH_SEVERITY_COUNT" -gt 0 ]; then
+              echo "❌ High-severity vulnerabilities found: $HIGH_SEVERITY_COUNT"
+              echo "::error::Build failed due to high-severity vulnerabilities"
+              exit 1
+            else
+              echo "✅ No high-severity vulnerabilities found"
+            fi
+          fi
+
+      - name: Create artifact metadata
+        run: |
+          cat > ./artifacts/metadata.json << EOF
+          {
+            "openssl_version": "${{ inputs.version }}",
+            "platform": "${{ inputs.platform }}",
+            "fips_enabled": ${{ inputs.fips }},
+            "build_type": "${{ inputs.build-type }}",
+            "tests_enabled": ${{ inputs.enable-tests }},
+            "conan_profile": "${{ inputs.conan-profile }}",
+            "build_hash": "${{ steps.generate-hash.outputs.hash }}",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "build_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_ref": "${{ github.workflow_ref }}",
+            "workflow_sha": "${{ github.sha }}"
+          }
+          EOF
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ steps.generate-hash.outputs.hash }}
+          path: ./artifacts/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Set artifact outputs
+        run: |
+          echo "artifact-url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "artifact-name=openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ steps.generate-hash.outputs.hash }}" >> $GITHUB_OUTPUT
+
+      - name: Publish to Cloudsmith (if API key provided)
+        if: ${{ secrets.CLOUDSMITH_API_KEY != '' }}
+        uses: ./.github/actions/cloudsmith-publish
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          organization: ${{ inputs.cloudsmith-org || 'openssl' }}
+          repository: ${{ inputs.cloudsmith-repo || 'openssl-packages' }}
+          package-format: 'raw'
+          artifact-path: './artifacts'
+          package-name: 'openssl-${{ inputs.version }}'
+          package-version: '${{ inputs.version }}-${{ steps.generate-hash.outputs.hash }}'
+          distribution: '${{ inputs.platform }}'
+          architecture: '${{ matrix.arch || "x64" }}'
+          tags: 'openssl,${{ inputs.version }},${{ inputs.platform }},${{ inputs.fips && "fips" || "" }}'
+          description: 'OpenSSL ${{ inputs.version }} build for ${{ inputs.platform }}'
+          license: 'Apache-2.0'
+          homepage: 'https://www.openssl.org/'
+          source-url: 'https://github.com/openssl/openssl'
+          changelog: 'OpenSSL ${{ inputs.version }} build with FIPS=${{ inputs.fips }}'
+          publish-now: 'true'
+          replace-existing: 'false'
+
+      - name: Publish to Artifactory (if API key provided)
+        if: ${{ secrets.ARTIFACTORY_API_KEY != '' }}
+        run: |
+          # This would be implemented with Artifactory publishing
+          echo "Publishing to Artifactory would happen here"
+          echo "ARTIFACTORY_API_KEY is available: ${{ secrets.ARTIFACTORY_API_KEY != '' }}"
