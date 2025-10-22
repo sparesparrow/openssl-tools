@@ -1,0 +1,125 @@
+name: Tools Workflow Dispatcher
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  analyze-changes:
+    name: Analyze Changes
+    runs-on: ubuntu-latest
+    outputs:
+      has-python-changes: ${{ steps.changes.outputs.python }}
+      has-conan-changes: ${{ steps.changes.outputs.conan }}
+      has-workflow-changes: ${{ steps.changes.outputs.workflow }}
+      has-docs-changes: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyze file changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # For PRs, check changed files
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          else
+            # For pushes, check recent commits
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+          
+          echo "Changed files: $CHANGED_FILES"
+          
+          # Check for Python changes
+          if echo "$CHANGED_FILES" | grep -E "\.(py)$" > /dev/null; then
+            echo "python=true" >> $GITHUB_OUTPUT
+          else
+            echo "python=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for Conan changes
+          if echo "$CHANGED_FILES" | grep -E "(conanfile\.py|conan-.*\.yml|conan-.*\.yaml)" > /dev/null; then
+            echo "conan=true" >> $GITHUB_OUTPUT
+          else
+            echo "conan=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for workflow changes
+          if echo "$CHANGED_FILES" | grep -E "\.github/workflows/.*\.yml$" > /dev/null; then
+            echo "workflow=true" >> $GITHUB_OUTPUT
+          else
+            echo "workflow=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for documentation changes
+          if echo "$CHANGED_FILES" | grep -E "\.(md|rst|txt)$" > /dev/null; then
+            echo "docs=true" >> $GITHUB_OUTPUT
+          else
+            echo "docs=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-ci:
+    name: Trigger CI
+    needs: analyze-changes
+    if: |
+      needs.analyze-changes.outputs.has-python-changes == 'true' ||
+      needs.analyze-changes.outputs.has-conan-changes == 'true' ||
+      needs.analyze-changes.outputs.has-workflow-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger CI Workflow
+        run: |
+          echo "Triggering CI Workflow..."
+          if gh workflow list | grep -q "ci-tools"; then
+            gh workflow run ci-tools.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ CI Tools Workflow not found, skipping trigger"
+          fi
+
+  trigger-security-scan:
+    name: Trigger Security Scan
+    needs: analyze-changes
+    if: |
+      needs.analyze-changes.outputs.has-python-changes == 'true' ||
+      needs.analyze-changes.outputs.has-conan-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Security Scan
+        run: |
+          echo "Triggering Security Scan..."
+          if gh workflow list | grep -q "security-scan"; then
+            gh workflow run security-scan.yml --ref ${{ github.ref }}
+          else
+            echo "⚠️ Security Scan Workflow not found, skipping trigger"
+          fi
+
+  workflow-summary:
+    name: Workflow Summary
+    needs: [analyze-changes, trigger-ci, trigger-security-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "## Tools Workflow Dispatcher Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Change Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- Python changes: ${{ needs.analyze-changes.outputs.has-python-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Conan changes: ${{ needs.analyze-changes.outputs.has-conan-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow changes: ${{ needs.analyze-changes.outputs.has-workflow-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Documentation changes: ${{ needs.analyze-changes.outputs.has-docs-changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Triggered Workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- CI Tools: ${{ needs.trigger-ci.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Scan: ${{ needs.trigger-security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Repository Type" >> $GITHUB_STEP_SUMMARY
+          echo "This is an OpenSSL tools repository. Workflows are focused on:" >> $GITHUB_STEP_SUMMARY
+          echo "- Python tooling validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Conan package management" >> $GITHUB_STEP_SUMMARY
+          echo "- Security scanning of tooling" >> $GITHUB_STEP_SUMMARY
