@@ -9,7 +9,7 @@ on:
         type: string
       platform:
         description: 'Target platform (ubuntu-latest, windows-latest, macos-latest)'
-        required: true
+        required: false
         type: string
         default: 'ubuntu-latest'
       fips:
@@ -74,7 +74,7 @@ jobs:
     runs-on: ${{ inputs.platform }}
     outputs:
       artifact-url: ${{ steps.upload.outputs.artifact-url }}
-      artifact-name: ${{ steps.upload.outputs.artifact-name }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
       build-success: ${{ steps.build.outputs.success }}
       sbom-url: ${{ steps.sbom.outputs.sbom-url }}
       build-hash: ${{ steps.build-hash.outputs.hash }}
@@ -86,7 +86,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -249,14 +249,14 @@ jobs:
           trivy fs . --format json --output trivy-report.json
 
       - name: Calculate build hash
-      id: build-hash
-      run: |
-        # Calculate SHA256 hash of the built package
-        find build-${{ inputs.platform }}/install -type f -name "*.so*" -o -name "*.a" | \
-        xargs sha256sum | \
-        sha256sum | \
-        cut -d' ' -f1 > build_hash.txt
-        echo "hash=$(cat build_hash.txt)" >> $GITHUB_OUTPUT
+        id: build-hash
+        run: |
+          # Calculate SHA256 hash of the built package
+          find build-${{ inputs.platform }}/install -type f -name "*.so*" -o -name "*.a" | \
+          xargs sha256sum | \
+          sha256sum | \
+          cut -d' ' -f1 > build_hash.txt
+          echo "hash=$(cat build_hash.txt)" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
         id: upload
@@ -279,11 +279,11 @@ jobs:
           echo "artifact-url=${{ steps.build.outputs.artifact-name }}" >> $GITHUB_OUTPUT
 
       - name: Publish to Cloudsmith (if secrets provided)
-        if: inputs.upload_artifacts == 'true' && secrets.CLOUDSMITH_API_KEY != '' && secrets.CLOUDSMITH_REPOSITORY != ''
+        if: inputs.upload_artifacts == 'true'
         uses: ./.github/actions/cloudsmith-publish
         with:
           api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
-          namespace: ${{ secrets.CLOUDSMITH_NAMESPACE }}
+          namespace: 'sparesparrow'
           repository: ${{ secrets.CLOUDSMITH_REPOSITORY }}
           package-name: openssl
           package-version: ${{ inputs.version }}
