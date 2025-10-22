@@ -38,7 +38,7 @@ class OpenSSLToolsConan(ConanFile):
     def requirements(self):
         """Require all modular tool packages"""
         # Foundation packages
-        self.requires("openssl-base/1.0.1@sparesparrow/stable")
+        self.requires("openssl-profiles/2.0.0@sparesparrow/stable")
 
         # Original modular packages
         self.requires("openssl-testing/1.0.0@sparesparrow/stable")
@@ -128,7 +128,7 @@ class OpenSSLToolsConan(ConanFile):
                 "analytics_reporting": ["metrics_analyzer", "bi_generator", "executive_reporter"]
             },
             "dependencies": [
-                "openssl-base/1.0.1@sparesparrow/stable",
+                "openssl-profiles/2.0.0@sparesparrow/stable",
                 "openssl-testing/1.0.0@sparesparrow/stable",
                 "openssl-security/1.0.0@sparesparrow/stable",
                 "openssl-automation/1.0.0@sparesparrow/stable",
