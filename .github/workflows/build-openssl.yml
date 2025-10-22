@@ -1,0 +1,195 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform (ubuntu-latest, windows-latest, macos-latest)'
+        required: true
+        type: string
+      fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      build_type:
+        description: 'Build type (Release, Debug, RelWithDebInfo)'
+        required: false
+        type: string
+        default: 'Release'
+      conan_profile:
+        description: 'Conan profile to use for build'
+        required: false
+        type: string
+        default: 'default'
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      build-success:
+        description: 'Build success status'
+        value: ${{ jobs.build.outputs.build-success }}
+      sbom-url:
+        description: 'URL of generated SBOM'
+        value: ${{ jobs.build.outputs.sbom-url }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for publishing'
+        required: false
+      CLOUDSMITH_REPOSITORY:
+        description: 'Cloudsmith repository name'
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      build-success: ${{ steps.build.outputs.success }}
+      sbom-url: ${{ steps.sbom.outputs.sbom-url }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Conan
+        run: |
+          pip install conan==2.0.0
+          conan config init
+
+      - name: Set up Conan profiles
+        run: |
+          conan profile detect --force
+          if [ "${{ inputs.conan_profile }}" != "default" ]; then
+            conan profile show ${{ inputs.conan_profile }} || conan profile new ${{ inputs.conan_profile }} --detect
+          fi
+
+      - name: Configure OpenSSL build
+        id: configure
+        run: |
+          mkdir -p build-${{ inputs.platform }}
+          cd build-${{ inputs.platform }}
+          
+          # Configure OpenSSL with appropriate options
+          OPENSSL_OPTIONS="--prefix=/usr/local/openssl-${{ inputs.version }}"
+          
+          if [ "${{ inputs.fips }}" == "true" ]; then
+            OPENSSL_OPTIONS="$OPENSSL_OPTIONS --enable-fips"
+          fi
+          
+          # Platform-specific configuration
+          case "${{ inputs.platform }}" in
+            "ubuntu-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=/usr/local/ssl"
+              ;;
+            "windows-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=C:/OpenSSL"
+              ;;
+            "macos-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=/usr/local/ssl"
+              ;;
+          esac
+          
+          echo "OPENSSL_OPTIONS=$OPENSSL_OPTIONS" >> $GITHUB_ENV
+          echo "BUILD_DIR=$(pwd)" >> $GITHUB_ENV
+
+      - name: Download OpenSSL source
+        run: |
+          cd build-${{ inputs.platform }}
+          wget https://www.openssl.org/source/openssl-${{ inputs.version }}.tar.gz
+          tar -xzf openssl-${{ inputs.version }}.tar.gz
+          cd openssl-${{ inputs.version }}
+
+      - name: Configure OpenSSL
+        run: |
+          cd build-${{ inputs.platform }}/openssl-${{ inputs.version }}
+          ./config $OPENSSL_OPTIONS
+
+      - name: Build OpenSSL
+        id: build
+        run: |
+          cd build-${{ inputs.platform }}/openssl-${{ inputs.version }}
+          
+          # Build with parallel jobs
+          make -j$(nproc)
+          
+          # Run tests
+          make test
+          
+          # Install to build directory
+          make DESTDIR=../install install
+          
+          echo "success=true" >> $GITHUB_OUTPUT
+
+      - name: Generate SBOM
+        id: sbom
+        run: |
+          # Install Syft for SBOM generation
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Generate SBOM for the built OpenSSL
+          cd build-${{ inputs.platform }}/install
+          syft packages . -o spdx-json=openssl-${{ inputs.version }}-sbom.json
+          syft packages . -o cyclonedx-json=openssl-${{ inputs.version }}-cyclonedx.json
+          
+          # Upload SBOM as artifact
+          if [ "${{ inputs.upload_artifacts }}" == "true" ]; then
+            echo "sbom-url=openssl-${{ inputs.version }}-sbom" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Security scan with Trivy
+        run: |
+          # Install Trivy
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Scan the built binaries
+          cd build-${{ inputs.platform }}/install
+          trivy fs . --format table --exit-code 1 --severity HIGH,CRITICAL
+          
+          # Generate vulnerability report
+          trivy fs . --format json --output trivy-report.json
+
+      - name: Upload build artifacts
+        id: upload
+        if: inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.build_type }}
+          path: |
+            build-${{ inputs.platform }}/install/
+            build-${{ inputs.platform }}/openssl-${{ inputs.version }}-sbom.json
+            build-${{ inputs.platform }}/openssl-${{ inputs.version }}-cyclonedx.json
+            build-${{ inputs.platform }}/trivy-report.json
+          retention-days: 30
+
+      - name: Set artifact URL
+        if: inputs.upload_artifacts == 'true'
+        run: |
+          echo "artifact-url=openssl-${{ inputs.version }}-${{ inputs.platform }}-${{ inputs.build_type }}" >> $GITHUB_OUTPUT
+
+      - name: Publish to Cloudsmith (if secrets provided)
+        if: inputs.upload_artifacts == 'true' && secrets.CLOUDSMITH_API_KEY != '' && secrets.CLOUDSMITH_REPOSITORY != ''
+        uses: ./.github/actions/cloudsmith-publish
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+          repository: ${{ secrets.CLOUDSMITH_REPOSITORY }}
+          package-name: openssl
+          package-version: ${{ inputs.version }}
+          package-path: build-${{ inputs.platform }}/install/
+          package-type: raw

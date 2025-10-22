@@ -1,177 +1,273 @@
-# Development Workflow Documentation
+# Reusable CI/CD Workflows
 
-This directory contains GitHub Actions workflows that implement the development workflow diagram defined in `.cursor/workflows/development-workflow.md`.
+This directory contains reusable GitHub Actions workflows for OpenSSL builds, testing, and publishing. These workflows are designed to be called from other repositories and provide consistent, standardized CI/CD processes.
 
-## Workflow Overview
+## Available Workflows
 
-The workflows are designed to implement the three main development workflows from the diagram:
+### 1. Build OpenSSL (`build-openssl.yml`)
 
-1. **Component Development Workflow** - Full development lifecycle
-2. **Security Review Workflow** - Security-focused review process
-3. **Performance Optimization Workflow** - Performance analysis and optimization
+A reusable workflow for building OpenSSL with support for multiple platforms, FIPS mode, and quality gates.
 
-## Automation Rules
+#### Inputs
 
-The workflows implement the following automation rules from the diagram:
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `version` | string | ✅ | - | OpenSSL version to build |
+| `platform` | string | ✅ | - | Target platform (ubuntu-latest, windows-latest, macos-latest) |
+| `fips` | boolean | ❌ | false | Enable FIPS mode |
+| `build_type` | string | ❌ | 'Release' | Build type (Release, Debug, RelWithDebInfo) |
+| `conan_profile` | string | ❌ | 'default' | Conan profile to use for build |
+| `upload_artifacts` | boolean | ❌ | true | Upload build artifacts |
 
-### Rule 1: PR with Crypto/SSL Changes → Security Review
-- **Trigger**: Pull request created with changes to `*/crypto/*` or `*/ssl/*` files
-- **Workflow**: `security-review.yml`
-- **Condition**: `files_changed_match_pattern('*/crypto/*,*/ssl/*')`
+#### Outputs
 
-### Rule 2: Commit to Main with Successful Build → Component Development
-- **Trigger**: Commit pushed to main branch
-- **Workflow**: `component-development.yml`
-- **Condition**: `build_status_successful`
+| Output | Description |
+|--------|-------------|
+| `artifact-url` | URL of uploaded artifact |
+| `build-success` | Build success status |
+| `sbom-url` | URL of generated SBOM |
 
-### Rule 3: Performance Regression Detected → Performance Optimization
-- **Trigger**: Performance regression detected
-- **Workflow**: `performance-optimization.yml`
-- **Condition**: `performance_regression_detected` with `priority=high`
+#### Secrets
 
-## Workflow Files
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `CLOUDSMITH_API_KEY` | ❌ | Cloudsmith API key for publishing |
+| `CLOUDSMITH_REPOSITORY` | ❌ | Cloudsmith repository name |
 
-### Core Workflows
+#### Usage Example
 
-#### `component-development.yml`
-Implements the complete Component Development Workflow:
-- **Setup Environment**: Load variables, validate dependencies, start database, verify Conan
-- **Code Development**: Create structure, implement functionality, write tests, security analysis, performance validation
-- **Integration Testing**: Build component, run tests, validate dependencies, check API compatibility
-- **Quality Assurance**: Static analysis, security scan, documentation validation, code coverage
-- **Package Preparation**: Create Conan package, generate metadata, create SBOM, sign artifacts
-- **Distribution**: Upload to Artifactory, GitHub Packages, update database, generate release notes
-
-#### `security-review.yml`
-Implements the Security Review Workflow:
-- **Automated Scanning**: SAST tools, dependency vulnerabilities, crypto analysis, input sanitization
-- **Manual Review**: Security sensitive code, threat model, compliance, attack surface
-- **Penetration Testing**: Automated security tests, fuzzing, side channel resistance, crypto correctness
-- **Documentation Review**: Security docs, usage guidelines, vulnerability disclosure, security policies
-
-#### `performance-optimization.yml`
-Implements the Performance Optimization Workflow:
-- **Baseline Measurement**: Performance benchmarks, CPU profiling, memory analysis, build times
-- **Optimization Implementation**: Identify bottlenecks, implement optimizations, validate correctness, measure improvements
-- **Validation**: Regression tests, security verification, API compatibility, performance gains confirmation
-
-### Automation Workflows
-
-#### `workflow-dispatcher.yml`
-Central dispatcher that analyzes changes and triggers appropriate workflows based on the automation rules.
-
-#### `automation-rules.yml`
-Implements the automation rules engine that evaluates conditions and triggers workflows.
-
-#### `automation-triggers.yml`
-Handles the specific trigger conditions for each automation rule.
-
-#### `development-workflow-orchestrator.yml`
-Main orchestrator that combines all workflows and implements the complete automation logic.
-
-### Supporting Workflows
-
-#### `security-scan.yml`
-Enhanced security scanning workflow with:
-- CodeQL analysis
-- Dependency review
-- SAST scanning with Bandit
-- SBOM generation
-- FIPS validation
-
-#### `complete-development-workflow.yml`
-Comprehensive workflow that combines all three main workflows into a single reusable workflow.
-
-## Usage
-
-### Manual Trigger
-```bash
-# Trigger specific workflow
-gh workflow run component-development.yml
-gh workflow run security-review.yml
-gh workflow run performance-optimization.yml
-
-# Trigger orchestrator with specific workflow type
-gh workflow run development-workflow-orchestrator.yml -f workflow_type=security-review
+```yaml
+jobs:
+  build:
+    uses: ./.github/workflows/build-openssl.yml@v1
+    with:
+      version: '3.1.4'
+      platform: 'ubuntu-latest'
+      fips: true
+      build_type: 'Release'
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_REPOSITORY: 'my-repo'
 ```
 
-### Automatic Triggers
+### 2. Integration Tests (`test-integration.yml`)
 
-#### PR with Crypto/SSL Changes
+A reusable workflow for running comprehensive integration tests across multiple platforms and configurations.
+
+#### Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `openssl_version` | string | ✅ | - | OpenSSL version to test |
+| `test_matrix` | string | ❌ | See default | JSON string defining test matrix |
+| `test_suite` | string | ❌ | 'integration' | Test suite to run (unit, integration, fuzz, performance) |
+| `fips_mode` | boolean | ❌ | false | Enable FIPS mode testing |
+| `conan_profile` | string | ❌ | 'default' | Conan profile to use for testing |
+| `upload_results` | boolean | ❌ | true | Upload test results as artifacts |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `test-results-url` | URL of uploaded test results |
+| `test-success` | Overall test success status |
+| `coverage-url` | URL of coverage report |
+
+#### Usage Example
+
 ```yaml
-# Automatically triggers security-review.yml
-on:
-  pull_request:
-    paths:
-      - '**/crypto/**'
-      - '**/ssl/**'
+jobs:
+  test:
+    uses: ./.github/workflows/test-integration.yml@v1
+    with:
+      openssl_version: '3.1.4'
+      test_matrix: '{"os": ["ubuntu-latest", "windows-latest"], "compiler": ["gcc", "clang"], "arch": ["x64"]}'
+      test_suite: 'all'
+      fips_mode: true
 ```
 
-#### Commit to Main
+### 3. Publish to Cloudsmith (`publish-cloudsmith.yml`)
+
+A reusable workflow for publishing packages to Cloudsmith with OIDC authentication and support for multiple package types.
+
+#### Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `package_name` | string | ✅ | - | Name of the package to publish |
+| `package_version` | string | ✅ | - | Version of the package |
+| `package_path` | string | ✅ | - | Path to the package files |
+| `package_type` | string | ✅ | - | Type of package (raw, conan, maven, npm, etc.) |
+| `repository` | string | ✅ | - | Cloudsmith repository name |
+| `distribution` | string | ❌ | 'any' | Distribution name (e.g., ubuntu, centos, debian) |
+| `component` | string | ❌ | 'main' | Component name (e.g., main, contrib) |
+| `architecture` | string | ❌ | 'any' | Package architecture |
+| `tags` | string | ❌ | '' | Comma-separated list of tags |
+| `description` | string | ❌ | '' | Package description |
+| `publish` | boolean | ❌ | true | Whether to actually publish (vs just upload) |
+
+#### Outputs
+
+| Output | Description |
+|--------|-------------|
+| `package-url` | URL of the published package |
+| `upload-success` | Upload success status |
+| `package-id` | Cloudsmith package ID |
+
+#### Secrets
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `CLOUDSMITH_API_KEY` | ✅ | Cloudsmith API key for authentication |
+| `CLOUDSMITH_NAMESPACE` | ✅ | Cloudsmith namespace/organization |
+
+#### Usage Example
+
 ```yaml
-# Automatically triggers component-development.yml
-on:
-  push:
-    branches: [main, master]
+jobs:
+  publish:
+    uses: ./.github/workflows/publish-cloudsmith.yml@v1
+    with:
+      package_name: 'openssl'
+      package_version: '3.1.4'
+      package_path: './artifacts'
+      package_type: 'raw'
+      repository: 'my-repo'
+      description: 'OpenSSL 3.1.4 build'
+      tags: 'openssl,ssl,tls'
+    secrets:
+      CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+      CLOUDSMITH_NAMESPACE: ${{ secrets.CLOUDSMITH_NAMESPACE }}
 ```
 
-#### Performance Regression
+## Composite Actions
+
+### Cloudsmith Publish Action (`cloudsmith-publish`)
+
+A composite action for publishing packages to Cloudsmith with OIDC authentication and support for multiple package types.
+
+#### Inputs
+
+| Input | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `api-key` | string | ✅ | - | Cloudsmith API key for authentication |
+| `namespace` | string | ✅ | - | Cloudsmith namespace/organization |
+| `repository` | string | ✅ | - | Cloudsmith repository name |
+| `package-name` | string | ✅ | - | Name of the package to publish |
+| `package-version` | string | ✅ | - | Version of the package |
+| `package-path` | string | ✅ | - | Path to the package files |
+| `package-type` | string | ✅ | - | Type of package (raw, conan, maven, npm, etc.) |
+| `distribution` | string | ❌ | 'any' | Distribution name |
+| `component` | string | ❌ | 'main' | Component name |
+| `architecture` | string | ❌ | 'any' | Package architecture |
+| `tags` | string | ❌ | '' | Comma-separated list of tags |
+| `description` | string | ❌ | '' | Package description |
+| `publish` | string | ❌ | 'true' | Whether to actually publish |
+| `conan-username` | string | ❌ | '' | Conan username (for Conan packages) |
+| `conan-channel` | string | ❌ | 'stable' | Conan channel (for Conan packages) |
+
+#### Usage Example
+
 ```yaml
-# Automatically triggers performance-optimization.yml
+steps:
+  - name: Publish to Cloudsmith
+    uses: ./.github/actions/cloudsmith-publish@v1
+    with:
+      api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+      namespace: ${{ secrets.CLOUDSMITH_NAMESPACE }}
+      repository: 'my-repo'
+      package-name: 'openssl'
+      package-version: '3.1.4'
+      package-path: './artifacts'
+      package-type: 'raw'
+      description: 'OpenSSL 3.1.4 build'
+      tags: 'openssl,ssl,tls'
+```
+
+## Quality Gates
+
+All workflows include built-in quality gates:
+
+### Security Scanning
+- **Trivy**: Scans for vulnerabilities in built binaries
+- **SBOM Generation**: Generates Software Bill of Materials using Syft
+- **Fails on high-severity vulnerabilities**: Workflows will fail if critical or high-severity vulnerabilities are found
+
+### Code Quality
+- **Test Coverage**: Generates coverage reports for test suites
+- **Build Validation**: Ensures builds complete successfully
+- **Artifact Verification**: Validates uploaded artifacts
+
+## Testing the Workflows
+
+A test workflow (`test-reusable-workflows.yml`) is provided to validate all reusable workflows:
+
+```yaml
 on:
   workflow_dispatch:
     inputs:
-      trigger_reason: 'regression_detected'
+      openssl_version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+        default: '3.1.4'
+      test_platform:
+        description: 'Platform to test on'
+        required: true
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        default: 'ubuntu-latest'
+      enable_fips:
+        description: 'Enable FIPS mode'
+        required: false
+        type: boolean
+        default: false
+      test_publish:
+        description: 'Test publishing to Cloudsmith'
+        required: false
+        type: boolean
+        default: false
 ```
 
-## Workflow Dependencies
+## Versioning
 
-The workflows are designed to work together:
+Workflows are versioned using Git tags. Use `@v1` to reference the latest version:
 
-1. **Development Workflow Orchestrator** → Analyzes triggers and calls appropriate workflows
-2. **Component Development** → Full development lifecycle
-3. **Security Review** → Security-focused analysis
-4. **Performance Optimization** → Performance analysis and optimization
-5. **Automation Rules** → Implements the automation logic from the diagram
+```yaml
+uses: ./.github/workflows/build-openssl.yml@v1
+```
 
-## Configuration
+## Dependencies
 
-### Environment Variables
-- `CONAN_REMOTE_URL`: Conan remote repository URL
-- `ARTIFACTORY_URL`: JFrog Artifactory URL
-- `COVERITY_TOKEN`: Coverity scan token (for static analysis)
+### Required Tools
+- **Conan**: Package manager for C/C++
+- **Syft**: SBOM generation tool
+- **Trivy**: Security vulnerability scanner
+- **Cloudsmith CLI**: Package publishing tool
 
-### Secrets
-- `CONAN_PASSWORD`: Conan remote password
-- `ARTIFACTORY_PASSWORD`: Artifactory password
-- `GITHUB_TOKEN`: GitHub token for API access
-
-## Monitoring
-
-Each workflow generates a summary report that includes:
-- Trigger analysis
-- Workflow execution results
-- Automation rules applied
-- Performance metrics
-- Security scan results
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Workflow not triggering**: Check the path filters and branch conditions
-2. **Build failures**: Verify environment setup and dependencies
-3. **Security scan failures**: Check for sensitive data in code
-4. **Performance regression**: Review recent changes and optimization opportunities
-
-### Debug Mode
-Enable debug logging by setting the `ACTIONS_STEP_DEBUG` environment variable to `true`.
+### Required Secrets
+- `CLOUDSMITH_API_KEY`: Cloudsmith API key
+- `CLOUDSMITH_NAMESPACE`: Cloudsmith namespace/organization
+- `CLOUDSMITH_REPOSITORY`: Cloudsmith repository name (optional)
 
 ## Contributing
 
-When adding new workflows:
-1. Follow the naming convention: `workflow-name.yml`
-2. Include comprehensive documentation
-3. Add appropriate triggers and conditions
-4. Test with manual dispatch first
-5. Update this README with the new workflow information
+When modifying these workflows:
+
+1. Update version numbers in workflow files
+2. Update this documentation
+3. Test changes using the test workflow
+4. Create a new Git tag for the version
+5. Update callers to use the new version
+
+## Support
+
+For issues or questions about these workflows:
+
+1. Check the workflow logs for detailed error messages
+2. Verify all required inputs and secrets are provided
+3. Ensure the target platform supports the requested configuration
+4. Check Cloudsmith repository permissions and API key validity

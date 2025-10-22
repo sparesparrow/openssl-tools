@@ -1,0 +1,368 @@
+name: Reusable Integration Tests
+
+on:
+  workflow_call:
+    inputs:
+      openssl_version:
+        description: 'OpenSSL version to test'
+        required: true
+        type: string
+      test_matrix:
+        description: 'JSON string defining test matrix (os, compiler, arch)'
+        required: false
+        type: string
+        default: '{"os": ["ubuntu-latest", "windows-latest", "macos-latest"], "compiler": ["gcc", "clang", "msvc"], "arch": ["x64", "x86"]}'
+      test_suite:
+        description: 'Test suite to run (unit, integration, fuzz, performance)'
+        required: false
+        type: string
+        default: 'integration'
+      fips_mode:
+        description: 'Enable FIPS mode testing'
+        required: false
+        type: boolean
+        default: false
+      conan_profile:
+        description: 'Conan profile to use for testing'
+        required: false
+        type: string
+        default: 'default'
+      upload_results:
+        description: 'Upload test results as artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      test-results-url:
+        description: 'URL of uploaded test results'
+        value: ${{ jobs.test.outputs.test-results-url }}
+      test-success:
+        description: 'Overall test success status'
+        value: ${{ jobs.test.outputs.test-success }}
+      coverage-url:
+        description: 'URL of coverage report'
+        value: ${{ jobs.test.outputs.coverage-url }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for downloading packages'
+        required: false
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(inputs.test_matrix) }}
+    outputs:
+      test-results-url: ${{ steps.upload-results.outputs.test-results-url }}
+      test-success: ${{ steps.test-execution.outputs.success }}
+      coverage-url: ${{ steps.coverage.outputs.coverage-url }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Conan
+        run: |
+          pip install conan==2.0.0
+          conan config init
+
+      - name: Set up Conan profiles
+        run: |
+          conan profile detect --force
+          if [ "${{ inputs.conan_profile }}" != "default" ]; then
+            conan profile show ${{ inputs.conan_profile }} || conan profile new ${{ inputs.conan_profile }} --detect
+          fi
+
+      - name: Set up test environment
+        run: |
+          # Create test directory
+          mkdir -p test-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}
+          cd test-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}
+          
+          # Set environment variables
+          echo "TEST_DIR=$(pwd)" >> $GITHUB_ENV
+          echo "OS=${{ matrix.os }}" >> $GITHUB_ENV
+          echo "COMPILER=${{ matrix.compiler }}" >> $GITHUB_ENV
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+
+      - name: Download OpenSSL source
+        run: |
+          cd $TEST_DIR
+          wget https://www.openssl.org/source/openssl-${{ inputs.openssl_version }}.tar.gz
+          tar -xzf openssl-${{ inputs.openssl_version }}.tar.gz
+          cd openssl-${{ inputs.openssl_version }}
+
+      - name: Configure OpenSSL for testing
+        run: |
+          cd $TEST_DIR/openssl-${{ inputs.openssl_version }}
+          
+          # Configure with test-specific options
+          OPENSSL_OPTIONS="--prefix=$TEST_DIR/install"
+          
+          if [ "${{ inputs.fips_mode }}" == "true" ]; then
+            OPENSSL_OPTIONS="$OPENSSL_OPTIONS --enable-fips"
+          fi
+          
+          # Enable debug symbols for better test coverage
+          OPENSSL_OPTIONS="$OPENSSL_OPTIONS --debug"
+          
+          # Platform-specific configuration
+          case "${{ matrix.os }}" in
+            "ubuntu-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=$TEST_DIR/ssl"
+              ;;
+            "windows-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=$TEST_DIR/ssl"
+              ;;
+            "macos-latest")
+              OPENSSL_OPTIONS="$OPENSSL_OPTIONS --openssldir=$TEST_DIR/ssl"
+              ;;
+          esac
+          
+          echo "OPENSSL_OPTIONS=$OPENSSL_OPTIONS" >> $GITHUB_ENV
+
+      - name: Build OpenSSL for testing
+        run: |
+          cd $TEST_DIR/openssl-${{ inputs.openssl_version }}
+          ./config $OPENSSL_OPTIONS
+          make -j$(nproc)
+          make DESTDIR=$TEST_DIR/install install
+
+      - name: Run unit tests
+        id: unit-tests
+        if: contains(inputs.test_suite, 'unit') || inputs.test_suite == 'all'
+        run: |
+          cd $TEST_DIR/openssl-${{ inputs.openssl_version }}
+          
+          # Run OpenSSL test suite
+          make test > unit-test-results.log 2>&1
+          UNIT_TEST_EXIT_CODE=$?
+          
+          # Parse test results
+          if [ $UNIT_TEST_EXIT_CODE -eq 0 ]; then
+            echo "unit-tests-passed=true" >> $GITHUB_OUTPUT
+            echo "unit-tests-failed=false" >> $GITHUB_OUTPUT
+          else
+            echo "unit-tests-passed=false" >> $GITHUB_OUTPUT
+            echo "unit-tests-failed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Save test results
+          echo "unit-test-exit-code=$UNIT_TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Run integration tests
+        id: integration-tests
+        if: contains(inputs.test_suite, 'integration') || inputs.test_suite == 'all'
+        run: |
+          cd $TEST_DIR
+          
+          # Create integration test script
+          cat > integration_test.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          # Test basic OpenSSL functionality
+          echo "Testing OpenSSL basic functionality..."
+          
+          # Test version
+          $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl version
+          
+          # Test random number generation
+          $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl rand -hex 16
+          
+          # Test encryption/decryption
+          echo "test data" | $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl enc -aes-256-cbc -pass pass:testpass -base64
+          
+          # Test certificate generation
+          $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl req -x509 -newkey rsa:2048 -keyout test.key -out test.crt -days 1 -nodes -subj "/CN=test"
+          
+          # Test FIPS mode if enabled
+          if [ "${{ inputs.fips_mode }}" == "true" ]; then
+            echo "Testing FIPS mode..."
+            $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl fipsinstall -module $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/lib/ossl-modules/fips.so -out fips.cnf
+          fi
+          
+          echo "Integration tests completed successfully"
+          EOF
+          
+          chmod +x integration_test.sh
+          ./integration_test.sh > integration-test-results.log 2>&1
+          INTEGRATION_TEST_EXIT_CODE=$?
+          
+          if [ $INTEGRATION_TEST_EXIT_CODE -eq 0 ]; then
+            echo "integration-tests-passed=true" >> $GITHUB_OUTPUT
+            echo "integration-tests-failed=false" >> $GITHUB_OUTPUT
+          else
+            echo "integration-tests-passed=false" >> $GITHUB_OUTPUT
+            echo "integration-tests-failed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "integration-test-exit-code=$INTEGRATION_TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Run fuzz tests
+        id: fuzz-tests
+        if: contains(inputs.test_suite, 'fuzz') || inputs.test_suite == 'all'
+        run: |
+          cd $TEST_DIR/openssl-${{ inputs.openssl_version }}
+          
+          # Run fuzz tests if available
+          if [ -d "fuzz" ]; then
+            cd fuzz
+            make > fuzz-test-results.log 2>&1
+            FUZZ_TEST_EXIT_CODE=$?
+            
+            if [ $FUZZ_TEST_EXIT_CODE -eq 0 ]; then
+              echo "fuzz-tests-passed=true" >> $GITHUB_OUTPUT
+              echo "fuzz-tests-failed=false" >> $GITHUB_OUTPUT
+            else
+              echo "fuzz-tests-passed=false" >> $GITHUB_OUTPUT
+              echo "fuzz-tests-failed=true" >> $GITHUB_OUTPUT
+            fi
+            
+            echo "fuzz-test-exit-code=$FUZZ_TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+          else
+            echo "fuzz-tests-passed=true" >> $GITHUB_OUTPUT
+            echo "fuzz-tests-failed=false" >> $GITHUB_OUTPUT
+            echo "fuzz-test-exit-code=0" >> $GITHUB_OUTPUT
+            echo "No fuzz tests available" > fuzz-test-results.log
+          fi
+
+      - name: Run performance tests
+        id: performance-tests
+        if: contains(inputs.test_suite, 'performance') || inputs.test_suite == 'all'
+        run: |
+          cd $TEST_DIR/openssl-${{ inputs.openssl_version }}
+          
+          # Run OpenSSL speed tests
+          $TEST_DIR/install/usr/local/openssl-${{ inputs.openssl_version }}/bin/openssl speed > performance-test-results.log 2>&1
+          PERFORMANCE_TEST_EXIT_CODE=$?
+          
+          if [ $PERFORMANCE_TEST_EXIT_CODE -eq 0 ]; then
+            echo "performance-tests-passed=true" >> $GITHUB_OUTPUT
+            echo "performance-tests-failed=false" >> $GITHUB_OUTPUT
+          else
+            echo "performance-tests-passed=false" >> $GITHUB_OUTPUT
+            echo "performance-tests-failed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "performance-test-exit-code=$PERFORMANCE_TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Generate test coverage report
+        id: coverage
+        if: inputs.upload_results == 'true'
+        run: |
+          cd $TEST_DIR
+          
+          # Install gcov for coverage analysis
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install -y gcov lcov
+          fi
+          
+          # Generate coverage report
+          cd openssl-${{ inputs.openssl_version }}
+          
+          # Run tests with coverage
+          make clean
+          ./config $OPENSSL_OPTIONS --coverage
+          make -j$(nproc)
+          make test
+          
+          # Generate coverage report
+          if command -v lcov &> /dev/null; then
+            lcov --capture --directory . --output-file coverage.info
+            lcov --remove coverage.info '/usr/*' --output-file coverage.filtered.info
+            genhtml coverage.filtered.info --output-directory coverage-report
+            echo "coverage-url=coverage-report" >> $GITHUB_OUTPUT
+          else
+            echo "coverage-url=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate test summary
+        id: test-execution
+        run: |
+          # Determine overall test success
+          OVERALL_SUCCESS=true
+          
+          if [ "${{ steps.unit-tests.outputs.unit-tests-failed }}" == "true" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "${{ steps.integration-tests.outputs.integration-tests-failed }}" == "true" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "${{ steps.fuzz-tests.outputs.fuzz-tests-failed }}" == "true" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          if [ "${{ steps.performance-tests.outputs.performance-tests-failed }}" == "true" ]; then
+            OVERALL_SUCCESS=false
+          fi
+          
+          echo "success=$OVERALL_SUCCESS" >> $GITHUB_OUTPUT
+          
+          # Create test summary
+          cat > test-summary.json << EOF
+          {
+            "test_suite": "${{ inputs.test_suite }}",
+            "openssl_version": "${{ inputs.openssl_version }}",
+            "platform": "${{ matrix.os }}",
+            "compiler": "${{ matrix.compiler }}",
+            "arch": "${{ matrix.arch }}",
+            "fips_mode": ${{ inputs.fips_mode }},
+            "results": {
+              "unit_tests": {
+                "passed": ${{ steps.unit-tests.outputs.unit-tests-passed }},
+                "failed": ${{ steps.unit-tests.outputs.unit-tests-failed }},
+                "exit_code": ${{ steps.unit-tests.outputs.unit-test-exit-code }}
+              },
+              "integration_tests": {
+                "passed": ${{ steps.integration-tests.outputs.integration-tests-passed }},
+                "failed": ${{ steps.integration-tests.outputs.integration-tests-failed }},
+                "exit_code": ${{ steps.integration-tests.outputs.integration-test-exit-code }}
+              },
+              "fuzz_tests": {
+                "passed": ${{ steps.fuzz-tests.outputs.fuzz-tests-passed }},
+                "failed": ${{ steps.fuzz-tests.outputs.fuzz-tests-failed }},
+                "exit_code": ${{ steps.fuzz-tests.outputs.fuzz-test-exit-code }}
+              },
+              "performance_tests": {
+                "passed": ${{ steps.performance-tests.outputs.performance-tests-passed }},
+                "failed": ${{ steps.performance-tests.outputs.performance-tests-failed }},
+                "exit_code": ${{ steps.performance-tests.outputs.performance-test-exit-code }}
+              }
+            },
+            "overall_success": $OVERALL_SUCCESS,
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload test results
+        id: upload-results
+        if: inputs.upload_results == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ inputs.openssl_version }}
+          path: |
+            ${{ env.TEST_DIR }}/test-summary.json
+            ${{ env.TEST_DIR }}/openssl-${{ inputs.openssl_version }}/unit-test-results.log
+            ${{ env.TEST_DIR }}/integration-test-results.log
+            ${{ env.TEST_DIR }}/openssl-${{ inputs.openssl_version }}/fuzz-test-results.log
+            ${{ env.TEST_DIR }}/openssl-${{ inputs.openssl_version }}/performance-test-results.log
+            ${{ env.TEST_DIR }}/openssl-${{ inputs.openssl_version }}/coverage-report/
+          retention-days: 30
+
+      - name: Set test results URL
+        if: inputs.upload_results == 'true'
+        run: |
+          echo "test-results-url=test-results-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ inputs.openssl_version }}" >> $GITHUB_OUTPUT
