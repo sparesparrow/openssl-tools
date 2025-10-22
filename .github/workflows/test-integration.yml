@@ -1,0 +1,306 @@
+name: Reusable Integration Test
+
+on:
+  workflow_call:
+    inputs:
+      test-matrix:
+        description: 'JSON string defining test matrix (OS, profiles, versions)'
+        required: false
+        type: string
+        default: '{"os": ["ubuntu-latest", "windows-latest", "macos-latest"], "profiles": ["default"], "versions": ["3.6.0"]}'
+      test-suite:
+        description: 'Test suite to run (unit, integration, fuzz, all)'
+        required: false
+        type: string
+        default: 'integration'
+      max-retries:
+        description: 'Maximum number of retries for flaky tests'
+        required: false
+        type: number
+        default: 2
+      timeout-minutes:
+        description: 'Timeout for test execution in minutes'
+        required: false
+        type: number
+        default: 60
+      enable-fips-tests:
+        description: 'Enable FIPS-specific tests'
+        required: false
+        type: boolean
+        default: true
+      enable-cross-platform:
+        description: 'Enable cross-platform compatibility tests'
+        required: false
+        type: boolean
+        default: true
+      conan-options:
+        description: 'Additional Conan options for tests'
+        required: false
+        type: string
+        default: ''
+      upload-results:
+        description: 'Upload test results as artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      test-results:
+        description: 'Overall test results summary'
+        value: ${{ jobs.test-matrix.outputs.test-results }}
+      flaky-detected:
+        description: 'Whether flaky tests were detected'
+        value: ${{ jobs.test-matrix.outputs.flaky-detected }}
+      total-tests:
+        description: 'Total number of test runs'
+        value: ${{ jobs.test-matrix.outputs.total-tests }}
+      passed-tests:
+        description: 'Number of passed test runs'
+        value: ${{ jobs.test-matrix.outputs.passed-tests }}
+      failed-tests:
+        description: 'Number of failed test runs'
+        value: ${{ jobs.test-matrix.outputs.failed-tests }}
+
+jobs:
+  test-matrix:
+    name: 🧪 Integration Test Matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.test-matrix).os }}
+        profile: ${{ fromJson(inputs.test-matrix).profiles }}
+        version: ${{ fromJson(inputs.test-matrix).versions }}
+    outputs:
+      test-results: ${{ steps.collect-results.outputs.test-results }}
+      flaky-detected: ${{ steps.collect-results.outputs.flaky-detected }}
+      total-tests: ${{ steps.collect-results.outputs.total-tests }}
+      passed-tests: ${{ steps.collect-results.outputs.passed-tests }}
+      failed-tests: ${{ steps.collect-results.outputs.failed-tests }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Conan
+        run: |
+          python -m pip install --upgrade pip
+          pip install conan==2.21.0
+          conan --version
+
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan config set general.revisions_enabled=1
+          conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/ || true
+          conan remote add conancenter https://center.conan.io || true
+
+      - name: Install openssl-tools extensions
+        run: |
+          # Export this repo as python_requires if it contains conanfile.py
+          if [ -f "conanfile.py" ]; then
+            conan export . openssl-tools/1.2.0@
+          fi
+
+          # Install extensions if they exist
+          if [ -f "install-extensions.sh" ]; then
+            ./install-extensions.sh
+          elif [ -d "extensions" ]; then
+            mkdir -p ~/.conan2/extensions
+            cp -r extensions/* ~/.conan2/extensions/
+          fi
+
+      - name: Run Integration Tests
+        id: test
+        uses: ./.github/actions/run-openssl-tests
+        with:
+          test-suite: ${{ inputs.test-suite }}
+          max-retries: ${{ inputs.max-retries }}
+          timeout-minutes: ${{ inputs.timeout-minutes }}
+          conan-options: ${{ inputs.conan-options }}
+
+      - name: Run FIPS Tests
+        if: inputs.enable-fips-tests
+        id: fips-test
+        uses: ./.github/actions/run-openssl-tests
+        with:
+          test-suite: 'fips'
+          max-retries: ${{ inputs.max-retries }}
+          timeout-minutes: ${{ inputs.timeout-minutes }}
+          conan-options: '${{ inputs.conan-options }} -o enable_fips=True'
+
+      - name: Cross-Platform Compatibility Test
+        if: inputs.enable-cross-platform
+        id: cross-platform-test
+        run: |
+          echo "🌐 Running cross-platform compatibility tests..."
+          
+          # Test basic OpenSSL functionality across platforms
+          PACKAGE_REF="openssl/${{ matrix.version }}"
+          
+          # Create a simple test consumer
+          mkdir -p test-consumer
+          cat > test-consumer/conanfile.py << 'EOF'
+          from conan import ConanFile
+          
+          class TestConsumer(ConanFile):
+              name = "test_consumer"
+              version = "1.0.0"
+              requires = "openssl/${{ matrix.version }}"
+              
+              def test(self):
+                  # Test basic OpenSSL functionality
+                  import subprocess
+                  import sys
+                  
+                  # Test OpenSSL version
+                  result = subprocess.run(['openssl', 'version'], 
+                                        capture_output=True, text=True)
+                  if result.returncode != 0:
+                      raise Exception("OpenSSL version check failed")
+                  
+                  print(f"OpenSSL version: {result.stdout.strip()}")
+                  
+                  # Test basic crypto operations
+                  result = subprocess.run(['openssl', 'rand', '-hex', '16'], 
+                                        capture_output=True, text=True)
+                  if result.returncode != 0:
+                      raise Exception("OpenSSL random generation failed")
+                  
+                  print(f"Random hex: {result.stdout.strip()}")
+                  
+                  print("✅ Cross-platform compatibility test passed")
+          EOF
+          
+          # Run the test consumer
+          cd test-consumer
+          conan create . --profile=${{ matrix.profile }} --build=missing
+          cd ..
+
+      - name: Collect Test Results
+        id: collect-results
+        run: |
+          echo "📊 Collecting test results..."
+          
+          # Initialize counters
+          TOTAL_TESTS=0
+          PASSED_TESTS=0
+          FAILED_TESTS=0
+          FLAKY_DETECTED=false
+          
+          # Count main test results
+          if [ "${{ steps.test.outputs.test-results }}" = "success" ]; then
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          
+          if [ "${{ steps.test.outputs.flaky-detected }}" = "true" ]; then
+            FLAKY_DETECTED=true
+          fi
+          
+          # Count FIPS test results
+          if [ "${{ inputs.enable-fips-tests }}" = "true" ]; then
+            if [ "${{ steps.fips-test.outputs.test-results }}" = "success" ]; then
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            TOTAL_TESTS=$((TOTAL_TESTS + 1))
+            
+            if [ "${{ steps.fips-test.outputs.flaky-detected }}" = "true" ]; then
+              FLAKY_DETECTED=true
+            fi
+          fi
+          
+          # Count cross-platform test results
+          if [ "${{ inputs.enable-cross-platform }}" = "true" ]; then
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+            TOTAL_TESTS=$((TOTAL_TESTS + 1))
+          fi
+          
+          # Set outputs
+          echo "test-results=${{ steps.test.outputs.test-results }}" >> $GITHUB_OUTPUT
+          echo "flaky-detected=$FLAKY_DETECTED" >> $GITHUB_OUTPUT
+          echo "total-tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+          echo "passed-tests=$PASSED_TESTS" >> $GITHUB_OUTPUT
+          echo "failed-tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
+          
+          echo "Test Results Summary:"
+          echo "  Total: $TOTAL_TESTS"
+          echo "  Passed: $PASSED_TESTS"
+          echo "  Failed: $FAILED_TESTS"
+          echo "  Flaky: $FLAKY_DETECTED"
+
+      - name: Security Scan Test Artifacts
+        id: security-scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './test-consumer'
+          format: 'table'
+          output: 'trivy-test-results.txt'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: false
+
+      - name: Generate Test SBOM
+        id: test-sbom
+        run: |
+          echo "📋 Generating test SBOM..."
+          
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Generate SBOM for test artifacts
+          syft packages ./test-consumer \
+            --output cyclonedx-json \
+            --file ./test-consumer-sbom.json \
+            --name "openssl-test-${{ matrix.version }}" \
+            --version "${{ matrix.version }}" \
+            --type "test" \
+            --namespace "https://github.com/sparesparrow/openssl-tools"
+          
+          echo "generated=true" >> $GITHUB_OUTPUT
+
+      - name: Upload Test Results
+        if: inputs.upload-results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.profile }}-${{ matrix.version }}-${{ github.run_id }}
+          path: |
+            test-consumer/
+            *.log
+            trivy-test-results.txt
+            test-consumer-sbom.json
+          retention-days: 30
+
+      - name: Test Summary
+        run: |
+          echo "## 🧪 Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **OS**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Profile**: ${{ matrix.profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ matrix.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Suite**: ${{ inputs.test-suite }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS Tests**: ${{ inputs.enable-fips-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cross-Platform**: ${{ inputs.enable-cross-platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Tests**: ${{ steps.collect-results.outputs.total-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Passed**: ${{ steps.collect-results.outputs.passed-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Failed**: ${{ steps.collect-results.outputs.failed-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Flaky Detected**: ${{ steps.collect-results.outputs.flaky-detected }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔄 Retry Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Max Retries**: ${{ inputs.max-retries }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes" >> $GITHUB_STEP_SUMMARY

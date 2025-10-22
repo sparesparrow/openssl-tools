@@ -1,0 +1,222 @@
+name: Reusable Quality Gates
+
+on:
+  workflow_call:
+    inputs:
+      artifact-path:
+        description: 'Path to artifacts to scan'
+        required: true
+        type: string
+      artifact-name:
+        description: 'Name of the artifact being scanned'
+        required: false
+        type: string
+        default: 'unknown'
+      scan-type:
+        description: 'Type of scan to perform (fs, image, repo)'
+        required: false
+        type: string
+        default: 'fs'
+      fail-on-severity:
+        description: 'Severity levels to fail on (LOW,MEDIUM,HIGH,CRITICAL)'
+        required: false
+        type: string
+        default: 'HIGH,CRITICAL'
+      enable-sbom:
+        description: 'Generate SBOM for the artifacts'
+        required: false
+        type: boolean
+        default: true
+      enable-trivy:
+        description: 'Run Trivy vulnerability scan'
+        required: false
+        type: boolean
+        default: true
+      enable-syft:
+        description: 'Use Syft for SBOM generation (alternative to anchore/sbom-action)'
+        required: false
+        type: boolean
+        default: true
+      sbom-format:
+        description: 'SBOM format (cyclonedx-json, spdx-json, table)'
+        required: false
+        type: string
+        default: 'cyclonedx-json'
+      upload-sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        required: false
+        type: boolean
+        default: true
+      upload-artifacts:
+        description: 'Upload scan artifacts'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      sbom-generated:
+        description: 'Whether SBOM was successfully generated'
+        value: ${{ jobs.quality-gates.outputs.sbom-generated }}
+      vulnerabilities-found:
+        description: 'Number of vulnerabilities found'
+        value: ${{ jobs.quality-gates.outputs.vulnerabilities-found }}
+      scan-passed:
+        description: 'Whether quality gates passed'
+        value: ${{ jobs.quality-gates.outputs.scan-passed }}
+      high-severity-count:
+        description: 'Number of high severity vulnerabilities'
+        value: ${{ jobs.quality-gates.outputs.high-severity-count }}
+      critical-severity-count:
+        description: 'Number of critical severity vulnerabilities'
+        value: ${{ jobs.quality-gates.outputs.critical-severity-count }}
+
+jobs:
+  quality-gates:
+    name: 🛡️ Quality Gates
+    runs-on: ubuntu-22.04
+    outputs:
+      sbom-generated: ${{ steps.sbom.outputs.generated }}
+      vulnerabilities-found: ${{ steps.trivy.outputs.vulnerabilities-found }}
+      scan-passed: ${{ steps.trivy.outputs.scan-passed }}
+      high-severity-count: ${{ steps.trivy.outputs.high-severity-count }}
+      critical-severity-count: ${{ steps.trivy.outputs.critical-severity-count }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install cyclonedx-bom cyclonedx-python-lib
+
+      - name: Generate SBOM with Syft
+        if: inputs.enable-sbom && inputs.enable-syft
+        id: sbom
+        run: |
+          echo "📋 Generating SBOM with Syft..."
+          
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft version
+          
+          # Generate SBOM
+          syft packages ${{ inputs.artifact-path }} \
+            --output ${{ inputs.sbom-format }} \
+            --file ./sbom-${{ inputs.sbom-format }}.json \
+            --name "${{ inputs.artifact-name }}" \
+            --version "1.0.0" \
+            --type "application" \
+            --namespace "https://github.com/sparesparrow/openssl-tools"
+          
+          # Generate human-readable summary
+          syft packages ${{ inputs.artifact-path }} \
+            --output table \
+            --file ./sbom-summary.txt
+          
+          echo "generated=true" >> $GITHUB_OUTPUT
+          echo "✅ SBOM generated successfully"
+
+      - name: Generate SBOM with Anchore
+        if: inputs.enable-sbom && !inputs.enable-syft
+        id: sbom
+        uses: anchore/sbom-action@v0
+        with:
+          path: ${{ inputs.artifact-path }}
+          format: ${{ inputs.sbom-format }}
+          output-file: sbom-${{ inputs.sbom-format }}.json
+          fail-on-error: true
+
+      - name: Vulnerability Scan with Trivy
+        if: inputs.enable-trivy
+        id: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: ${{ inputs.scan-type }}
+          scan-ref: ${{ inputs.artifact-path }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '1'
+          severity: ${{ inputs.fail-on-severity }}
+          fail-on-error: true
+
+      - name: Generate Trivy Report
+        if: inputs.enable-trivy
+        run: |
+          echo "📊 Generating Trivy report..."
+          
+          # Install Trivy if not already available
+          if ! command -v trivy &> /dev/null; then
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          fi
+          
+          # Generate detailed report
+          trivy filesystem ${{ inputs.artifact-path }} \
+            --format table \
+            --output trivy-report.txt \
+            --severity ${{ inputs.fail-on-severity }}
+          
+          # Count vulnerabilities by severity
+          HIGH_COUNT=$(grep -c "HIGH" trivy-report.txt || echo "0")
+          CRITICAL_COUNT=$(grep -c "CRITICAL" trivy-report.txt || echo "0")
+          TOTAL_COUNT=$(grep -c "│" trivy-report.txt || echo "0")
+          
+          echo "high-severity-count=$HIGH_COUNT" >> $GITHUB_OUTPUT
+          echo "critical-severity-count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+          echo "vulnerabilities-found=$TOTAL_COUNT" >> $GITHUB_OUTPUT
+          echo "scan-passed=true" >> $GITHUB_OUTPUT
+
+      - name: Upload SARIF results
+        if: inputs.upload-sarif && inputs.enable-trivy
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Upload scan artifacts
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gates-${{ inputs.artifact-name }}-${{ github.run_id }}
+          path: |
+            sbom-*.json
+            sbom-summary.txt
+            trivy-results.sarif
+            trivy-report.txt
+          retention-days: 30
+
+      - name: Quality Gates Summary
+        run: |
+          echo "## 🛡️ Quality Gates Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Scan Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Path**: ${{ inputs.artifact-path }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: ${{ inputs.artifact-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Type**: ${{ inputs.scan-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Fail on Severity**: ${{ inputs.fail-on-severity }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ inputs.enable-sbom }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trivy Scan**: ${{ inputs.enable-trivy }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ steps.sbom.outputs.generated }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Vulnerabilities Found**: ${{ steps.trivy.outputs.vulnerabilities-found }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **High Severity**: ${{ steps.trivy.outputs.high-severity-count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Critical Severity**: ${{ steps.trivy.outputs.critical-severity-count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Passed**: ${{ steps.trivy.outputs.scan-passed }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Generated Artifacts" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.enable-sbom }}" = "true" ]; then
+            echo "- **SBOM Format**: ${{ inputs.sbom-format }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **SBOM File**: sbom-${{ inputs.sbom-format }}.json" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.enable-trivy }}" = "true" ]; then
+            echo "- **Trivy SARIF**: trivy-results.sarif" >> $GITHUB_STEP_SUMMARY
+            echo "- **Trivy Report**: trivy-report.txt" >> $GITHUB_STEP_SUMMARY
+          fi

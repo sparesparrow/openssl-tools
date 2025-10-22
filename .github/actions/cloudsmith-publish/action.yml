@@ -1,0 +1,295 @@
+name: 'Cloudsmith Publish'
+description: 'OIDC-authenticated package publishing to Cloudsmith repositories with support for Conan and raw formats'
+inputs:
+  package-reference:
+    description: 'Package reference to publish (e.g., openssl/3.6.0)'
+    required: true
+  repository:
+    description: 'Cloudsmith repository name'
+    required: false
+    default: 'openssl-conan'
+  owner:
+    description: 'Cloudsmith repository owner'
+    required: false
+    default: 'sparesparrow-conan'
+  package-format:
+    description: 'Package format (conan, raw, generic)'
+    required: false
+    default: 'conan'
+  distribution:
+    description: 'Distribution name for the package'
+    required: false
+    default: 'main'
+  version:
+    description: 'Package version to publish (overrides package-reference version)'
+    required: false
+  tags:
+    description: 'Comma-separated list of tags for the package'
+    required: false
+    default: 'openssl,conan,ci'
+  description:
+    description: 'Package description'
+    required: false
+    default: 'OpenSSL package built via GitHub Actions'
+  license:
+    description: 'Package license'
+    required: false
+    default: 'Apache-2.0'
+  homepage:
+    description: 'Package homepage URL'
+    required: false
+    default: 'https://www.openssl.org/'
+  vcs-url:
+    description: 'VCS URL for the package'
+    required: false
+    default: 'https://github.com/sparesparrow/openssl-tools'
+  artifact-path:
+    description: 'Path to artifacts to publish (for raw/generic formats)'
+    required: false
+    default: './artifacts'
+  conan-remote:
+    description: 'Conan remote name for the repository'
+    required: false
+    default: 'sparesparrow-conan'
+  use-oidc:
+    description: 'Use OIDC authentication instead of API key'
+    required: false
+    default: 'false'
+  oidc-token:
+    description: 'OIDC token for authentication (when use-oidc is true)'
+    required: false
+  api-key:
+    description: 'Cloudsmith API key for authentication (when use-oidc is false)'
+    required: false
+  verify-upload:
+    description: 'Verify the upload was successful'
+    required: false
+    default: 'true'
+  timeout-minutes:
+    description: 'Timeout for upload operations in minutes'
+    required: false
+    default: '30'
+
+outputs:
+  package-url:
+    description: 'URL of the published package'
+    value: ${{ steps.publish.outputs.package-url }}
+  package-id:
+    description: 'ID of the published package'
+    value: ${{ steps.publish.outputs.package-id }}
+  upload-success:
+    description: 'Whether the upload was successful'
+    value: ${{ steps.publish.outputs.upload-success }}
+  repository-url:
+    description: 'URL of the Cloudsmith repository'
+    value: ${{ steps.publish.outputs.repository-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install Cloudsmith CLI
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install cloudsmith-cli
+        cloudsmith --version
+
+    - name: Install Conan (for Conan packages)
+      if: inputs.package-format == 'conan'
+      shell: bash
+      run: |
+        pip install conan==2.21.0
+        conan --version
+
+    - name: Configure Conan (for Conan packages)
+      if: inputs.package-format == 'conan'
+      shell: bash
+      run: |
+        conan profile detect --force
+        conan config set general.revisions_enabled=1
+        conan remote add ${{ inputs.conan-remote }} https://cloudsmith.io/~${{ inputs.owner }}/repos/${{ inputs.repository }}/ || true
+        conan remote add conancenter https://center.conan.io || true
+
+    - name: Install openssl-tools extensions (for Conan packages)
+      if: inputs.package-format == 'conan'
+      shell: bash
+      run: |
+        # Export this repo as python_requires if it contains conanfile.py
+        if [ -f "conanfile.py" ]; then
+          conan export . openssl-tools/1.2.0@
+        fi
+
+        # Install extensions if they exist
+        if [ -f "install-extensions.sh" ]; then
+          ./install-extensions.sh
+        elif [ -d "extensions" ]; then
+          mkdir -p ~/.conan2/extensions
+          cp -r extensions/* ~/.conan2/extensions/
+        fi
+
+    - name: Authenticate with Cloudsmith
+      id: auth
+      shell: bash
+      run: |
+        echo "🔐 Authenticating with Cloudsmith..."
+        
+        if [ "${{ inputs.use-oidc }}" = "true" ]; then
+          echo "Using OIDC authentication"
+          if [ -z "${{ inputs.oidc-token }}" ]; then
+            echo "❌ OIDC token is required when use-oidc is true"
+            exit 1
+          fi
+          
+          # Set up OIDC authentication
+          echo "CLOUDSMITH_API_KEY=${{ inputs.oidc-token }}" >> $GITHUB_ENV
+          cloudsmith auth login --api-key ${{ inputs.oidc-token }}
+        else
+          echo "Using API key authentication"
+          if [ -z "${{ inputs.api-key }}" ]; then
+            echo "❌ API key is required when use-oidc is false"
+            exit 1
+          fi
+          
+          # Set up API key authentication
+          echo "CLOUDSMITH_API_KEY=${{ inputs.api-key }}" >> $GITHUB_ENV
+          cloudsmith auth login --api-key ${{ inputs.api-key }}
+        fi
+        
+        echo "✅ Authentication successful"
+
+    - name: Publish Package
+      id: publish
+      shell: bash
+      run: |
+        echo "📦 Publishing package to Cloudsmith..."
+        
+        # Get package information
+        PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+        PACKAGE_VERSION="${{ inputs.version }}"
+        if [ -z "$PACKAGE_VERSION" ]; then
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+        fi
+        
+        echo "Package: $PACKAGE_NAME"
+        echo "Version: $PACKAGE_VERSION"
+        echo "Format: ${{ inputs.package-format }}"
+        echo "Repository: ${{ inputs.owner }}/${{ inputs.repository }}"
+        
+        # Set up timeout
+        TIMEOUT_SECONDS=$(({{ inputs.timeout-minutes }} * 60))
+        
+        # Publish based on format
+        case "${{ inputs.package-format }}" in
+          "conan")
+            echo "📦 Publishing Conan package..."
+            timeout $TIMEOUT_SECONDS conan upload "${{ inputs.package-reference }}" \
+              --remote ${{ inputs.conan-remote }} \
+              --confirm
+            ;;
+          "raw")
+            echo "📦 Publishing raw artifacts..."
+            if [ ! -d "${{ inputs.artifact-path }}" ]; then
+              echo "❌ Artifact path not found: ${{ inputs.artifact-path }}"
+              exit 1
+            fi
+            
+            timeout $TIMEOUT_SECONDS cloudsmith upload raw ${{ inputs.owner }}/${{ inputs.repository }} \
+              --name "$PACKAGE_NAME" \
+              --version "$PACKAGE_VERSION" \
+              --distribution "${{ inputs.distribution }}" \
+              --description "${{ inputs.description }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --tags "${{ inputs.tags }}" \
+              "${{ inputs.artifact-path }}"/*
+            ;;
+          "generic")
+            echo "📦 Publishing generic package..."
+            if [ ! -d "${{ inputs.artifact-path }}" ]; then
+              echo "❌ Artifact path not found: ${{ inputs.artifact-path }}"
+              exit 1
+            fi
+            
+            timeout $TIMEOUT_SECONDS cloudsmith upload generic ${{ inputs.owner }}/${{ inputs.repository }} \
+              --name "$PACKAGE_NAME" \
+              --version "$PACKAGE_VERSION" \
+              --distribution "${{ inputs.distribution }}" \
+              --description "${{ inputs.description }}" \
+              --license "${{ inputs.license }}" \
+              --homepage "${{ inputs.homepage }}" \
+              --vcs-url "${{ inputs.vcs-url }}" \
+              --tags "${{ inputs.tags }}" \
+              "${{ inputs.artifact-path }}"/*
+            ;;
+          *)
+            echo "❌ Unsupported package format: ${{ inputs.package-format }}"
+            exit 1
+            ;;
+        esac
+        
+        # Set outputs
+        echo "package-url=https://cloudsmith.io/~${{ inputs.owner }}/repos/${{ inputs.repository }}/packages/detail/${{ inputs.package-format }}/$PACKAGE_NAME/$PACKAGE_VERSION/" >> $GITHUB_OUTPUT
+        echo "package-id=$PACKAGE_NAME/$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        echo "upload-success=true" >> $GITHUB_OUTPUT
+        echo "repository-url=https://cloudsmith.io/~${{ inputs.owner }}/repos/${{ inputs.repository }}/" >> $GITHUB_OUTPUT
+        
+        echo "✅ Package published successfully"
+
+    - name: Verify Upload
+      if: inputs.verify-upload == 'true'
+      shell: bash
+      run: |
+        echo "🔍 Verifying package upload..."
+        
+        # Get package information
+        PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+        PACKAGE_VERSION="${{ inputs.version }}"
+        if [ -z "$PACKAGE_VERSION" ]; then
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+        fi
+        
+        # List packages to verify upload
+        cloudsmith list packages ${{ inputs.owner }}/${{ inputs.repository }} \
+          --query "name:$PACKAGE_NAME AND version:$PACKAGE_VERSION" \
+          --format json > package-info.json
+        
+        if [ -s package-info.json ]; then
+          echo "✅ Package verification successful"
+          echo "Package details:"
+          cat package-info.json | jq '.[0] | {name, version, distribution, created_at, download_url}'
+        else
+          echo "❌ Package verification failed - package not found"
+          exit 1
+        fi
+
+    - name: Publish Summary
+      shell: bash
+      run: |
+        echo "## 📦 Cloudsmith Publish Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Package Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package Reference**: ${{ inputs.package-reference }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository**: ${{ inputs.owner }}/${{ inputs.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package Format**: ${{ inputs.package-format }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Distribution**: ${{ inputs.distribution }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Description**: ${{ inputs.description }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **License**: ${{ inputs.license }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tags**: ${{ inputs.tags }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Published Package" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package URL**: ${{ steps.publish.outputs.package-url }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Package ID**: ${{ steps.publish.outputs.package-id }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Upload Success**: ${{ steps.publish.outputs.upload-success }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Repository URL**: ${{ steps.publish.outputs.repository-url }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔐 Authentication" >> $GITHUB_STEP_SUMMARY
+        echo "- **Method**: ${{ inputs.use-oidc == 'true' && 'OIDC' || 'API Key' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Verification**: ${{ inputs.verify-upload }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes" >> $GITHUB_STEP_SUMMARY
