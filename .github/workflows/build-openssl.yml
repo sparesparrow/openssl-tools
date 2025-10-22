@@ -1,0 +1,311 @@
+name: Reusable OpenSSL Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'OpenSSL version to build (e.g., 3.6.0)'
+        required: true
+        type: string
+      platform:
+        description: 'Target platform (ubuntu-latest, windows-latest, macos-latest)'
+        required: true
+        type: string
+      fips:
+        description: 'Enable FIPS 140-3 mode'
+        required: false
+        type: boolean
+        default: false
+      shared:
+        description: 'Build shared libraries'
+        required: false
+        type: boolean
+        default: false
+      profile:
+        description: 'Conan profile to use'
+        required: false
+        type: string
+        default: 'default'
+      conan-options:
+        description: 'Additional Conan options'
+        required: false
+        type: string
+        default: ''
+      enable-tests:
+        description: 'Enable unit tests during build'
+        required: false
+        type: boolean
+        default: true
+      enable-sbom:
+        description: 'Generate SBOM during build'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      artifact-url:
+        description: 'URL of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-url }}
+      artifact-name:
+        description: 'Name of the build artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+      build-path:
+        description: 'Path to build artifacts'
+        value: ${{ jobs.build.outputs.build-path }}
+      sbom-generated:
+        description: 'Whether SBOM was generated'
+        value: ${{ jobs.build.outputs.sbom-generated }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for publishing'
+        required: false
+
+jobs:
+  build:
+    name: 🔨 Build OpenSSL ${{ inputs.version }}
+    runs-on: ${{ inputs.platform }}
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+      build-path: ${{ steps.build.outputs.build-path }}
+      sbom-generated: ${{ steps.sbom.outputs.generated }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Conan
+        run: |
+          python -m pip install --upgrade pip
+          pip install conan==2.21.0
+          conan --version
+
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan config set general.revisions_enabled=1
+          conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/ || true
+          conan remote add conancenter https://center.conan.io || true
+
+      - name: Install openssl-tools extensions
+        run: |
+          # Export this repo as python_requires if it contains conanfile.py
+          if [ -f "conanfile.py" ]; then
+            conan export . openssl-tools/1.2.0@
+          fi
+
+          # Install extensions if they exist
+          if [ -f "install-extensions.sh" ]; then
+            ./install-extensions.sh
+          elif [ -d "extensions" ]; then
+            mkdir -p ~/.conan2/extensions
+            cp -r extensions/* ~/.conan2/extensions/
+          fi
+
+      - name: Build OpenSSL
+        id: build
+        run: |
+          echo "🔨 Building OpenSSL ${{ inputs.version }}"
+          echo "Platform: ${{ inputs.platform }}"
+          echo "FIPS: ${{ inputs.fips }}"
+          echo "Shared: ${{ inputs.shared }}"
+          echo "Profile: ${{ inputs.profile }}"
+
+          # Prepare build options
+          BUILD_OPTS=""
+          if [ "${{ inputs.shared }}" = "true" ]; then
+            BUILD_OPTS="$BUILD_OPTS -o shared=True"
+          else
+            BUILD_OPTS="$BUILD_OPTS -o shared=False"
+          fi
+
+          if [ "${{ inputs.fips }}" = "true" ]; then
+            BUILD_OPTS="$BUILD_OPTS -o enable_fips=True"
+          else
+            BUILD_OPTS="$BUILD_OPTS -o enable_fips=False"
+          fi
+
+          if [ "${{ inputs.enable-tests }}" = "true" ]; then
+            BUILD_OPTS="$BUILD_OPTS -o enable_unit_test=True"
+          else
+            BUILD_OPTS="$BUILD_OPTS -o enable_unit_test=False"
+          fi
+
+          # Add custom Conan options
+          if [ -n "${{ inputs.conan-options }}" ]; then
+            BUILD_OPTS="$BUILD_OPTS ${{ inputs.conan-options }}"
+          fi
+
+          # Create package reference
+          PACKAGE_REF="openssl/${{ inputs.version }}"
+
+          # Use custom command if available, otherwise standard conan
+          if command -v conan openssl:build &> /dev/null; then
+            echo "Using custom openssl:build command"
+            FIPS_FLAG=""
+            if [ "${{ inputs.fips }}" = "true" ]; then
+              FIPS_FLAG="--fips"
+            fi
+            conan openssl:build $FIPS_FLAG --profile=${{ inputs.profile }} --deployer-folder=./artifacts
+          else
+            echo "Using standard conan commands"
+            conan install --requires=$PACKAGE_REF \
+              --profile=${{ inputs.profile }} $BUILD_OPTS --build=missing
+            
+            # Deploy artifacts
+            conan install --requires=$PACKAGE_REF \
+              --profile=${{ inputs.profile }} \
+              --deployer=full_deploy_enhanced \
+              --deployer-folder=./artifacts
+          fi
+
+          # Generate build metadata
+          mkdir -p ./artifacts/metadata
+          cat > ./artifacts/metadata/build-info.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "version": "${{ inputs.version }}",
+            "platform": "${{ inputs.platform }}",
+            "profile": "${{ inputs.profile }}",
+            "shared": ${{ inputs.shared }},
+            "fips_enabled": ${{ inputs.fips }},
+            "tests_enabled": ${{ inputs.enable-tests }},
+            "package_reference": "$PACKAGE_REF",
+            "conan_options": "${{ inputs.conan-options }}",
+            "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}"
+          }
+          EOF
+
+          # Set outputs
+          ARTIFACT_NAME="openssl-${{ inputs.version }}-${{ inputs.platform }}"
+          if [ "${{ inputs.fips }}" = "true" ]; then
+            ARTIFACT_NAME="${ARTIFACT_NAME}-fips"
+          fi
+          if [ "${{ inputs.shared }}" = "true" ]; then
+            ARTIFACT_NAME="${ARTIFACT_NAME}-shared"
+          fi
+          ARTIFACT_NAME="${ARTIFACT_NAME}-${{ runner.arch }}"
+
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "build-path=$(pwd)/artifacts" >> $GITHUB_OUTPUT
+
+          echo "✅ Build completed successfully"
+          echo "Artifact name: $ARTIFACT_NAME"
+          echo "Build path: $(pwd)/artifacts"
+
+      - name: Generate SBOM with Syft
+        if: inputs.enable-sbom
+        id: sbom
+        run: |
+          echo "📋 Generating SBOM with Syft..."
+          
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft version
+          
+          # Generate SBOM for artifacts
+          syft packages ./artifacts \
+            --output cyclonedx-json \
+            --file ./artifacts/sbom-cyclonedx.json \
+            --name "openssl-${{ inputs.version }}" \
+            --version "${{ inputs.version }}" \
+            --type "application" \
+            --namespace "https://github.com/sparesparrow/openssl-tools"
+          
+          # Also generate SPDX format
+          syft packages ./artifacts \
+            --output spdx-json \
+            --file ./artifacts/sbom-spdx.json \
+            --name "openssl-${{ inputs.version }}" \
+            --version "${{ inputs.version }}" \
+            --type "application" \
+            --namespace "https://github.com/sparesparrow/openssl-tools"
+          
+          # Generate human-readable summary
+          syft packages ./artifacts \
+            --output table \
+            --file ./artifacts/sbom-summary.txt
+          
+          echo "generated=true" >> $GITHUB_OUTPUT
+          echo "✅ SBOM generated successfully"
+
+      - name: Security Scan with Trivy
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './artifacts'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: true
+
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      - name: Upload SBOM artifacts
+        if: inputs.enable-sbom
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ steps.build.outputs.artifact-name }}
+          path: |
+            ./artifacts/sbom-cyclonedx.json
+            ./artifacts/sbom-spdx.json
+            ./artifacts/sbom-summary.txt
+          retention-days: 30
+
+      - name: Upload build artifacts
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact-name }}
+          path: ./artifacts/
+          retention-days: 30
+
+      - name: Upload to Cloudsmith
+        if: secrets.CLOUDSMITH_API_KEY != '' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "📦 Uploading to Cloudsmith..."
+          pip install cloudsmith-cli
+          
+          # Upload Conan package
+          conan upload "openssl/${{ inputs.version }}" \
+            --remote sparesparrow-conan \
+            --confirm
+
+      - name: Build summary
+        run: |
+          echo "## 🔨 OpenSSL Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: ${{ inputs.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **FIPS Mode**: ${{ inputs.fips }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Shared Libraries**: ${{ inputs.shared }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Profile**: ${{ inputs.profile }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tests Enabled**: ${{ inputs.enable-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ inputs.enable-sbom }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: ${{ steps.build.outputs.artifact-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Path**: ${{ steps.build.outputs.build-path }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SBOM Generated**: ${{ steps.sbom.outputs.generated }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏗️ Build Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner OS**: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner Arch**: ${{ runner.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conan Version**: $(conan --version)" >> $GITHUB_STEP_SUMMARY

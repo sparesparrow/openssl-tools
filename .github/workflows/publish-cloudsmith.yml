@@ -1,0 +1,326 @@
+name: Reusable Cloudsmith Publish
+
+on:
+  workflow_call:
+    inputs:
+      package-reference:
+        description: 'Package reference to publish (e.g., openssl/3.6.0)'
+        required: true
+        type: string
+      repository:
+        description: 'Cloudsmith repository name'
+        required: false
+        type: string
+        default: 'openssl-conan'
+      owner:
+        description: 'Cloudsmith repository owner'
+        required: false
+        type: string
+        default: 'sparesparrow-conan'
+      package-format:
+        description: 'Package format (conan, raw, generic)'
+        required: false
+        type: string
+        default: 'conan'
+      distribution:
+        description: 'Distribution name for the package'
+        required: false
+        type: string
+        default: 'main'
+      version:
+        description: 'Package version to publish'
+        required: false
+        type: string
+      tags:
+        description: 'Comma-separated list of tags for the package'
+        required: false
+        type: string
+        default: 'openssl,conan,ci'
+      description:
+        description: 'Package description'
+        required: false
+        type: string
+        default: 'OpenSSL package built via GitHub Actions'
+      license:
+        description: 'Package license'
+        required: false
+        type: string
+        default: 'Apache-2.0'
+      homepage:
+        description: 'Package homepage URL'
+        required: false
+        type: string
+        default: 'https://www.openssl.org/'
+      vcs-url:
+        description: 'VCS URL for the package'
+        required: false
+        type: string
+        default: 'https://github.com/sparesparrow/openssl-tools'
+      publish-raw-artifacts:
+        description: 'Publish raw build artifacts in addition to Conan package'
+        required: false
+        type: boolean
+        default: true
+      artifact-path:
+        description: 'Path to artifacts to publish (for raw format)'
+        required: false
+        type: string
+        default: './artifacts'
+      conan-remote:
+        description: 'Conan remote name for the repository'
+        required: false
+        type: string
+        default: 'sparesparrow-conan'
+    outputs:
+      package-url:
+        description: 'URL of the published package'
+        value: ${{ jobs.publish.outputs.package-url }}
+      package-id:
+        description: 'ID of the published package'
+        value: ${{ jobs.publish.outputs.package-id }}
+      upload-success:
+        description: 'Whether the upload was successful'
+        value: ${{ jobs.publish.outputs.upload-success }}
+    secrets:
+      CLOUDSMITH_API_KEY:
+        description: 'Cloudsmith API key for authentication'
+        required: true
+
+jobs:
+  publish:
+    name: 📦 Publish to Cloudsmith
+    runs-on: ubuntu-latest
+    outputs:
+      package-url: ${{ steps.publish-conan.outputs.package-url }}
+      package-id: ${{ steps.publish-conan.outputs.package-id }}
+      upload-success: ${{ steps.publish-conan.outputs.upload-success }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Cloudsmith CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install cloudsmith-cli
+          cloudsmith --version
+
+      - name: Install Conan
+        run: |
+          pip install conan==2.21.0
+          conan --version
+
+      - name: Configure Conan
+        run: |
+          conan profile detect --force
+          conan config set general.revisions_enabled=1
+          conan remote add ${{ inputs.conan-remote }} https://cloudsmith.io/~${{ inputs.owner }}/repos/${{ inputs.repository }}/ || true
+          conan remote add conancenter https://center.conan.io || true
+
+      - name: Install openssl-tools extensions
+        run: |
+          # Export this repo as python_requires if it contains conanfile.py
+          if [ -f "conanfile.py" ]; then
+            conan export . openssl-tools/1.2.0@
+          fi
+
+          # Install extensions if they exist
+          if [ -f "install-extensions.sh" ]; then
+            ./install-extensions.sh
+          elif [ -d "extensions" ]; then
+            mkdir -p ~/.conan2/extensions
+            cp -r extensions/* ~/.conan2/extensions/
+          fi
+
+      - name: Publish Conan Package
+        id: publish-conan
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "📦 Publishing Conan package to Cloudsmith..."
+          
+          # Set up Cloudsmith authentication
+          cloudsmith auth login --api-key $CLOUDSMITH_API_KEY
+          
+          # Upload Conan package
+          echo "Uploading Conan package: ${{ inputs.package-reference }}"
+          conan upload "${{ inputs.package-reference }}" \
+            --remote ${{ inputs.conan-remote }} \
+            --confirm
+          
+          # Get package information
+          PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+          
+          # Set outputs
+          echo "package-url=https://cloudsmith.io/~${{ inputs.owner }}/repos/${{ inputs.repository }}/packages/detail/conan/$PACKAGE_NAME/$PACKAGE_VERSION/" >> $GITHUB_OUTPUT
+          echo "package-id=$PACKAGE_NAME/$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "upload-success=true" >> $GITHUB_OUTPUT
+          
+          echo "✅ Conan package uploaded successfully"
+
+      - name: Publish Raw Artifacts
+        if: inputs.publish-raw-artifacts && inputs.package-format == 'raw'
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "📦 Publishing raw artifacts to Cloudsmith..."
+          
+          # Set up Cloudsmith authentication
+          cloudsmith auth login --api-key $CLOUDSMITH_API_KEY
+          
+          # Check if artifacts exist
+          if [ ! -d "${{ inputs.artifact-path }}" ]; then
+            echo "❌ Artifact path not found: ${{ inputs.artifact-path }}"
+            exit 1
+          fi
+          
+          # Create package metadata
+          PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+          
+          # Upload raw artifacts
+          cloudsmith upload raw ${{ inputs.owner }}/${{ inputs.repository }} \
+            --name "$PACKAGE_NAME" \
+            --version "$PACKAGE_VERSION" \
+            --distribution "${{ inputs.distribution }}" \
+            --description "${{ inputs.description }}" \
+            --license "${{ inputs.license }}" \
+            --homepage "${{ inputs.homepage }}" \
+            --vcs-url "${{ inputs.vcs-url }}" \
+            --tags "${{ inputs.tags }}" \
+            "${{ inputs.artifact-path }}"/*
+          
+          echo "✅ Raw artifacts uploaded successfully"
+
+      - name: Publish Generic Package
+        if: inputs.package-format == 'generic'
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "📦 Publishing generic package to Cloudsmith..."
+          
+          # Set up Cloudsmith authentication
+          cloudsmith auth login --api-key $CLOUDSMITH_API_KEY
+          
+          # Check if artifacts exist
+          if [ ! -d "${{ inputs.artifact-path }}" ]; then
+            echo "❌ Artifact path not found: ${{ inputs.artifact-path }}"
+            exit 1
+          fi
+          
+          # Create package metadata
+          PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+          
+          # Upload generic package
+          cloudsmith upload generic ${{ inputs.owner }}/${{ inputs.repository }} \
+            --name "$PACKAGE_NAME" \
+            --version "$PACKAGE_VERSION" \
+            --distribution "${{ inputs.distribution }}" \
+            --description "${{ inputs.description }}" \
+            --license "${{ inputs.license }}" \
+            --homepage "${{ inputs.homepage }}" \
+            --vcs-url "${{ inputs.vcs-url }}" \
+            --tags "${{ inputs.tags }}" \
+            "${{ inputs.artifact-path }}"/*
+          
+          echo "✅ Generic package uploaded successfully"
+
+      - name: Security Scan Before Publish
+        id: pre-publish-scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '${{ inputs.artifact-path }}'
+          format: 'table'
+          output: 'pre-publish-scan.txt'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          fail-on-error: true
+
+      - name: Generate Publish SBOM
+        id: publish-sbom
+        run: |
+          echo "📋 Generating publish SBOM..."
+          
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Generate SBOM for publish artifacts
+          syft packages ${{ inputs.artifact-path }} \
+            --output cyclonedx-json \
+            --file ./publish-sbom.json \
+            --name "$(echo ${{ inputs.package-reference }} | cut -d'/' -f1)" \
+            --version "$(echo ${{ inputs.package-reference }} | cut -d'/' -f2)" \
+            --type "package" \
+            --namespace "https://github.com/sparesparrow/openssl-tools"
+          
+          echo "generated=true" >> $GITHUB_OUTPUT
+
+      - name: Verify Upload
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          echo "🔍 Verifying package upload..."
+          
+          # Set up Cloudsmith authentication
+          cloudsmith auth login --api-key $CLOUDSMITH_API_KEY
+          
+          # Get package information
+          PACKAGE_NAME=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f1)
+          PACKAGE_VERSION=$(echo "${{ inputs.package-reference }}" | cut -d'/' -f2)
+          
+          # List packages to verify upload
+          cloudsmith list packages ${{ inputs.owner }}/${{ inputs.repository }} \
+            --query "name:$PACKAGE_NAME AND version:$PACKAGE_VERSION" \
+            --format json > package-info.json
+          
+          if [ -s package-info.json ]; then
+            echo "✅ Package verification successful"
+            cat package-info.json
+          else
+            echo "❌ Package verification failed"
+            exit 1
+          fi
+
+      - name: Upload Security Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-artifacts-${{ github.run_id }}
+          path: |
+            pre-publish-scan.txt
+            publish-sbom.json
+          retention-days: 30
+
+      - name: Publish Summary
+        run: |
+          echo "## 📦 Cloudsmith Publish Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Package Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Reference**: ${{ inputs.package-reference }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository**: ${{ inputs.owner }}/${{ inputs.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Format**: ${{ inputs.package-format }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Distribution**: ${{ inputs.distribution }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Description**: ${{ inputs.description }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **License**: ${{ inputs.license }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**: ${{ inputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Published Package" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package URL**: ${{ steps.publish-conan.outputs.package-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package ID**: ${{ steps.publish-conan.outputs.package-id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Upload Success**: ${{ steps.publish-conan.outputs.upload-success }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Additional Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Raw Artifacts**: ${{ inputs.publish-raw-artifacts }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.publish-raw-artifacts }}" = "true" ]; then
+            echo "- **Artifact Path**: ${{ inputs.artifact-path }}" >> $GITHUB_STEP_SUMMARY
+          fi
