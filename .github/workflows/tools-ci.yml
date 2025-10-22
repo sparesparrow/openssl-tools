@@ -193,23 +193,22 @@ jobs:
           semgrep-report.json
           
   test-integration:
-    timeout-minutes: 30  # Integration testing
     runs-on: ubuntu-latest
     needs: test-python-environments
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: "3.11"
-        
+
     - name: Install dependencies
       run: |
         pip install PyGithub requests gitpython
-        
+
     - name: Test build matrix generator
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -219,43 +218,42 @@ jobs:
           --sha HEAD \
           --output test_matrix.json \
           --reason "integration-test"
-          
+
     - name: Validate matrix output
       run: |
         jq empty test_matrix.json  # Validates JSON
         echo "Matrix contents:"
         cat test_matrix.json
-        
+
     - name: Test status reporter
       run: |
         # Create mock artifacts directory
         mkdir -p test_artifacts/openssl-linux-gcc-release-ubuntu-22.04
         echo '{"status": "success", "build_time": 120, "cache_hit": true, "packages": 5}' > test_artifacts/openssl-linux-gcc-release-ubuntu-22.04/performance_report.json
-        
+
         # Test status reporter (dry run)
         python scripts/status_reporter.py \
           --repo sparesparrow/openssl-tools \
           --sha ${{ github.sha }} \
           --artifacts-dir test_artifacts \
           --reason "integration-test" || echo "Status reporter test completed"
-          
+
     - name: Test performance analyzer
       run: |
         # Create mock Conan output
         echo '{"installed": [{"binary": "Download", "type": "openssl"}], "timestamp": "2024-01-01T00:00:00Z"}' > test_conan_output.json
-        
+
         # Test performance analyzer
         python scripts/performance_analyzer.py \
           --input test_conan_output.json \
           --output test_performance.json \
           --build-time 120
-          
+
         # Validate output
         jq empty test_performance.json
         echo "Performance analysis completed"
 
   build-and-test:
-    timeout-minutes: 45  # Build and test
     runs-on: ubuntu-latest
     needs: [test-conan-integration, test-fuzz-integration, security-scan, test-integration]
     

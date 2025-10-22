@@ -27,7 +27,6 @@ permissions:
 concurrency:
   group: cache-warmup-${{ github.ref }}
   cancel-in-progress: false
-
 env:
   CONAN_VERSION: "2.0.17"
   ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL || 'https://artifactory.company.com/artifactory/api/conan/openssl-conan' }}

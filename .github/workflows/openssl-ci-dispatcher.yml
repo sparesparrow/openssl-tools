@@ -24,7 +24,6 @@ env:
 
 jobs:
   prepare-matrix:
-    timeout-minutes: 10  # Quick matrix generation
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.generate-matrix.outputs.matrix }}

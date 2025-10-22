@@ -1,0 +1,299 @@
+name: 'Cloudsmith Publish'
+description: 'Publish packages to Cloudsmith with OIDC authentication and support for multiple package types'
+
+inputs:
+  api-key:
+    description: 'Cloudsmith API key for authentication'
+    required: true
+  namespace:
+    description: 'Cloudsmith namespace/organization'
+    required: true
+  repository:
+    description: 'Cloudsmith repository name'
+    required: true
+  package-name:
+    description: 'Name of the package to publish'
+    required: true
+  package-version:
+    description: 'Version of the package'
+    required: true
+  package-path:
+    description: 'Path to the package files'
+    required: true
+  package-type:
+    description: 'Type of package (raw, conan, maven, npm, pypi, etc.)'
+    required: true
+    default: 'raw'
+  distribution:
+    description: 'Distribution name (e.g., ubuntu, centos, debian)'
+    required: false
+    default: 'any'
+  component:
+    description: 'Component name (e.g., main, contrib)'
+    required: false
+    default: 'main'
+  architecture:
+    description: 'Package architecture'
+    required: false
+    default: 'any'
+  tags:
+    description: 'Comma-separated list of tags'
+    required: false
+    default: 'openssl,security,crypto'
+  description:
+    description: 'Package description'
+    required: false
+    default: 'OpenSSL cryptographic library'
+  publish:
+    description: 'Whether to actually publish (vs just upload)'
+    required: false
+    default: 'true'
+  conan-username:
+    description: 'Conan username (for Conan packages)'
+    required: false
+    default: ''
+  conan-channel:
+    description: 'Conan channel (for Conan packages)'
+    required: false
+    default: 'stable'
+  oidc-token:
+    description: 'OIDC token for authentication (alternative to API key)'
+    required: false
+  username:
+    description: 'Cloudsmith username (required with API key)'
+    required: false
+
+outputs:
+  package-url:
+    description: 'URL of the published package'
+    value: ${{ steps.publish.outputs.package-url }}
+  upload-success:
+    description: 'Upload success status'
+    value: ${{ steps.publish.outputs.upload-success }}
+  package-id:
+    description: 'Cloudsmith package ID'
+    value: ${{ steps.publish.outputs.package-id }}
+  upload-status:
+    description: 'Status of the upload'
+    value: ${{ steps.publish.outputs.upload-success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Cloudsmith CLI
+      shell: bash
+      run: |
+        pip install cloudsmith-cli
+        cloudsmith --version
+
+    - name: Configure OIDC authentication
+      if: inputs.oidc-token != ''
+      shell: bash
+      run: |
+        # Configure OIDC authentication
+        cloudsmith config set-oidc-token ${{ inputs.oidc-token }}
+        cloudsmith config set-namespace ${{ inputs.namespace }}
+        echo "OIDC authentication configured"
+
+    - name: Configure API key authentication
+      if: inputs.oidc-token == '' && inputs.api-key != ''
+      shell: bash
+      run: |
+        # Configure API key authentication
+        cloudsmith config set-api-key ${{ inputs.api-key }}
+        cloudsmith config set-namespace ${{ inputs.namespace }}
+        if [ -n "${{ inputs.username }}" ]; then
+          cloudsmith config set-username ${{ inputs.username }}
+        fi
+        echo "API key authentication configured"
+
+    - name: Validate authentication
+      shell: bash
+      run: |
+        # Test authentication
+        cloudsmith whoami || {
+          echo "Authentication failed"
+          exit 1
+        }
+        echo "Authentication successful"
+
+    - name: Validate package path
+      shell: bash
+      run: |
+        if [ ! -d "${{ inputs.package-path }}" ] && [ ! -f "${{ inputs.package-path }}" ]; then
+          echo "Error: Package path '${{ inputs.package-path }}' does not exist"
+          exit 1
+        fi
+        
+        echo "Package path validation successful"
+        echo "Contents of package path:"
+        ls -la "${{ inputs.package-path }}"
+
+    - name: Prepare package metadata
+      id: metadata
+      shell: bash
+      run: |
+        # Create package metadata
+        cat > package-metadata.json << EOF
+        {
+          "name": "${{ inputs.package-name }}",
+          "version": "${{ inputs.package-version }}",
+          "type": "${{ inputs.package-type }}",
+          "description": "${{ inputs.description }}",
+          "tags": "${{ inputs.tags }}",
+          "distribution": "${{ inputs.distribution }}",
+          "component": "${{ inputs.component }}",
+          "architecture": "${{ inputs.architecture }}",
+          "publish": ${{ inputs.publish }},
+          "conan_username": "${{ inputs.conan-username }}",
+          "conan_channel": "${{ inputs.conan-channel }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "Package metadata prepared"
+
+    - name: Handle Conan packages
+      if: inputs.package-type == 'conan'
+      shell: bash
+      run: |
+        # For Conan packages, we need to create a conanfile.txt or use existing conanfile.py
+        if [ -f "${{ inputs.package-path }}/conanfile.py" ]; then
+          echo "Using existing conanfile.py"
+        elif [ -f "${{ inputs.package-path }}/conanfile.txt" ]; then
+          echo "Using existing conanfile.txt"
+        else
+          # Create a basic conanfile.txt for raw packages
+          cat > "${{ inputs.package-path }}/conanfile.txt" << EOF
+          [requires]
+          ${{ inputs.package-name }}/${{ inputs.package-version }}@${{ inputs.conan-username }}/${{ inputs.conan-channel }}
+          
+          [generators]
+          CMakeDeps
+          CMakeToolchain
+          EOF
+        fi
+
+    - name: Upload package to Cloudsmith
+      id: publish
+      shell: bash
+      run: |
+        # Set up Cloudsmith upload command
+        CLOUDSMITH_CMD="cloudsmith push ${{ inputs.package-type }}"
+        CLOUDSMITH_CMD="$CLOUDSMITH_CMD ${{ inputs.namespace }}/${{ inputs.repository }}"
+        CLOUDSMITH_CMD="$CLOUDSMITH_CMD ${{ inputs.package-path }}"
+        
+        # Add optional parameters
+        if [ "${{ inputs.distribution }}" != "any" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --distro ${{ inputs.distribution }}"
+        fi
+        
+        if [ "${{ inputs.component }}" != "main" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --component ${{ inputs.component }}"
+        fi
+        
+        if [ "${{ inputs.architecture }}" != "any" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --arch ${{ inputs.architecture }}"
+        fi
+        
+        if [ -n "${{ inputs.tags }}" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --tags ${{ inputs.tags }}"
+        fi
+        
+        if [ -n "${{ inputs.description }}" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --description '${{ inputs.description }}'"
+        fi
+        
+        if [ "${{ inputs.publish }}" == "false" ]; then
+          CLOUDSMITH_CMD="$CLOUDSMITH_CMD --no-publish"
+        fi
+        
+        # For Conan packages, add username and channel
+        if [ "${{ inputs.package-type }}" == "conan" ]; then
+          if [ -n "${{ inputs.conan-username }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --username ${{ inputs.conan-username }}"
+          fi
+          if [ -n "${{ inputs.conan-channel }}" ]; then
+            CLOUDSMITH_CMD="$CLOUDSMITH_CMD --channel ${{ inputs.conan-channel }}"
+          fi
+        fi
+        
+        # Execute upload
+        echo "Executing: $CLOUDSMITH_CMD"
+        eval $CLOUDSMITH_CMD > upload-output.log 2>&1
+        UPLOAD_EXIT_CODE=$?
+        
+        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
+          echo "Package uploaded successfully"
+          echo "upload-success=true" >> $GITHUB_OUTPUT
+          
+          # Extract package URL from output
+          PACKAGE_URL=$(grep -o 'https://[^[:space:]]*' upload-output.log | head -1)
+          if [ -n "$PACKAGE_URL" ]; then
+            echo "package-url=$PACKAGE_URL" >> $GITHUB_OUTPUT
+          else
+            echo "package-url=" >> $GITHUB_OUTPUT
+          fi
+          
+          # Extract package ID from output
+          PACKAGE_ID=$(grep -o 'Package ID: [^[:space:]]*' upload-output.log | cut -d' ' -f3)
+          if [ -n "$PACKAGE_ID" ]; then
+            echo "package-id=$PACKAGE_ID" >> $GITHUB_OUTPUT
+          else
+            echo "package-id=" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "Package upload failed with exit code $UPLOAD_EXIT_CODE"
+          echo "upload-success=false" >> $GITHUB_OUTPUT
+          echo "package-url=" >> $GITHUB_OUTPUT
+          echo "package-id=" >> $GITHUB_OUTPUT
+          
+          # Show error output
+          echo "Upload error output:"
+          cat upload-output.log
+          exit 1
+        fi
+
+    - name: Verify package upload
+      if: steps.publish.outputs.upload-success == 'true'
+      shell: bash
+      run: |
+        # List packages in repository to verify upload
+        cloudsmith list ${{ inputs.package-type }} ${{ inputs.namespace }}/${{ inputs.repository }} --limit 10 > package-list.log
+        
+        echo "Recent packages in repository:"
+        cat package-list.log
+        
+        # Check if our package is in the list
+        if grep -q "${{ inputs.package-name }}" package-list.log; then
+          echo "Package verification successful"
+        else
+          echo "Warning: Package not found in repository listing"
+        fi
+
+    - name: Generate package report
+      if: always()
+      shell: bash
+      run: |
+        cat > package-report.json << EOF
+        {
+          "package_name": "${{ inputs.package-name }}",
+          "package_version": "${{ inputs.package-version }}",
+          "package_type": "${{ inputs.package-type }}",
+          "repository": "${{ inputs.repository }}",
+          "namespace": "${{ inputs.namespace }}",
+          "upload_success": ${{ steps.publish.outputs.upload-success }},
+          "package_url": "${{ steps.publish.outputs.package-url }}",
+          "package_id": "${{ steps.publish.outputs.package-id }}",
+          "publish": ${{ inputs.publish }},
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        
+        echo "Package report generated:"
+        cat package-report.json
