@@ -1,15 +1,10 @@
-"""
-OpenSSL Tools Conan Package
-Build orchestration and Python utilities for OpenSSL ecosystem
-"""
-
 from conan import ConanFile
 from conan.tools.files import copy
 import os
 
 class OpenSSLToolsConan(ConanFile):
     name = "openssl-tools"
-    version = "1.2.4"
+    version = "1.2.6"
     description = "OpenSSL build tools, automation scripts, and infrastructure components"
     license = "Apache-2.0"
     url = "https://github.com/sparesparrow/openssl-tools"
@@ -18,37 +13,32 @@ class OpenSSLToolsConan(ConanFile):
 
     # Package settings
     package_type = "python-require"
-    settings = "os", "arch", "compiler", "build_type"
+    # Note: python-require packages should not have settings (binary-agnostic)
 
     # Export sources
     exports_sources = (
         "scripts/*",
-        "profiles/*",
         "templates/*",
         "openssl_tools/**",
         "*.md",
         "pyproject.toml"
     )
 
-    def requirements(self):
-        """Require foundation packages only"""
-        # Foundation packages
-        self.requires("openssl-profiles/2.0.0")
+    python_requires = "openssl-base/1.0.1@sparesparrow/stable"
 
     def package(self):
         """Package orchestration components"""
         # Copy Python tools
-        copy(self, "*.py", src="openssl_tools", dst=os.path.join(self.package_folder, "openssl_tools"))
+        copy(self, "**", src=os.path.join(self.source_folder, "openssl_tools"),
+             dst=os.path.join(self.package_folder, "openssl_tools"))
 
         # Copy scripts
-        copy(self, "*.sh", src="scripts", dst=os.path.join(self.package_folder, "scripts"))
-        copy(self, "*.py", src="scripts", dst=os.path.join(self.package_folder, "scripts"))
-
-        # Copy profiles
-        copy(self, "*.profile", src="profiles", dst=os.path.join(self.package_folder, "profiles"))
+        copy(self, "**", src=os.path.join(self.source_folder, "scripts"),
+             dst=os.path.join(self.package_folder, "scripts"))
 
         # Copy templates
-        copy(self, "*", src="templates", dst=os.path.join(self.package_folder, "templates"))
+        copy(self, "**", src=os.path.join(self.source_folder, "templates"),
+             dst=os.path.join(self.package_folder, "templates"))
 
     def package_info(self):
         """Package information for consumers"""

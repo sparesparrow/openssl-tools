@@ -4,8 +4,7 @@ import os
 
 class TestPackageConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    generators = "VirtualRunEnv"
-    python_requires = "openssl-tools/1.2.4"
+    test_type = "explicit"
 
     def requirements(self):
         self.requires(self.tested_reference_str)
@@ -13,8 +12,8 @@ class TestPackageConan(ConanFile):
     def test(self):
         """Run basic tests for openssl-tools"""
         if can_run(self):
-            # Test that the package was created successfully
-            self.run("python3 -c \"print('OpenSSL Tools package test passed')\"", env="conanrun")
+            # Test Python module import
+            self.run("python3 -c \"from openssl_tools.foundation import version_manager; print('Import successful')\"", env="conanrun")
 
             # Test environment variables
             self.run("python3 -c \"import os; print('OPENSSL_TOOLS_VERSION:', os.environ.get('OPENSSL_TOOLS_VERSION', 'Not set'))\"", env="conanrun")

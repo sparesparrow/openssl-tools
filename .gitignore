@@ -177,8 +177,7 @@ fuzz-results/
 *.sig
 *.manifest.json
 
-# Conan
-.conan/
+# Conan 2.x
 .conan2/
 conandata.yml
 conanfile.txt
@@ -193,6 +192,9 @@ deactivate_conanrun.sh
 CMakePresets.json
 conan_toolchain.cmake
 conan.lock
+
+# Conan 1.x (legacy)
+.conan/
 
 # Build artifacts
 build/
