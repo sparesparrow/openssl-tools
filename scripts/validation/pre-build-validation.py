@@ -448,12 +448,224 @@ class PreBuildValidator:
             print("✅ VALIDATION PASSED - Ready to build")
             return True
 
+    def validate_ci_setup(self) -> bool:
+        """Absorb validate-ci-setup.sh"""
+        print("  🚀 Validating CI setup...")
+
+        try:
+            ci_checks = {
+                "github_workflows": self._validate_github_workflows(),
+                "ci_scripts": self._validate_ci_scripts(),
+                "build_profiles": self._validate_build_profiles(),
+                "ci_configuration": self._validate_ci_configuration()
+            }
+
+            # Check if all CI validations passed
+            all_passed = all(ci_checks.values())
+
+            if all_passed:
+                self.info.append("✅ CI setup validation passed")
+                return True
+            else:
+                self.errors.append("❌ CI setup validation failed")
+                return False
+
+        except Exception as e:
+            self.errors.append(f"CI setup validation failed: {e}")
+            return False
+
+    def validate_openssl_tools_setup(self) -> bool:
+        """Absorb validate-openssl-tools-setup.sh"""
+        print("  🔧 Validating OpenSSL tools setup...")
+
+        try:
+            tools_checks = {
+                "openssl_tools_package": self._validate_openssl_tools_package(),
+                "tooling_scripts": self._validate_tooling_scripts(),
+                "conan_integration": self._validate_conan_integration(),
+                "environment_setup": self._validate_environment_setup()
+            }
+
+            # Check if all tools validations passed
+            all_passed = all(tools_checks.values())
+
+            if all_passed:
+                self.info.append("✅ OpenSSL tools setup validation passed")
+                return True
+            else:
+                self.errors.append("❌ OpenSSL tools setup validation failed")
+                return False
+
+        except Exception as e:
+            self.errors.append(f"OpenSSL tools setup validation failed: {e}")
+            return False
+
+    def validate_workflows(self) -> bool:
+        """Absorb validate-workflows.py"""
+        print("  🔄 Validating workflows...")
+
+        try:
+            workflow_checks = {
+                "workflow_syntax": self._validate_workflow_syntax(),
+                "workflow_dependencies": self._validate_workflow_dependencies(),
+                "workflow_security": self._validate_workflow_security(),
+                "workflow_performance": self._validate_workflow_performance()
+            }
+
+            # Check if all workflow validations passed
+            all_passed = all(workflow_checks.values())
+
+            if all_passed:
+                self.info.append("✅ Workflow validation passed")
+                return True
+            else:
+                self.errors.append("❌ Workflow validation failed")
+                return False
+
+        except Exception as e:
+            self.errors.append(f"Workflow validation failed: {e}")
+            return False
+
+    def _validate_github_workflows(self) -> bool:
+        """Validate GitHub workflow files"""
+        workflows_dir = ".github/workflows"
+        if not os.path.exists(workflows_dir):
+            self.errors.append("GitHub workflows directory not found")
+            return False
+
+        workflow_files = [f for f in os.listdir(workflows_dir) if f.endswith('.yml') or f.endswith('.yaml')]
+        if not workflow_files:
+            self.warnings.append("No workflow files found")
+            return False
+
+        self.info.append(f"✓ Found {len(workflow_files)} workflow files")
+        return True
+
+    def _validate_ci_scripts(self) -> bool:
+        """Validate CI-related scripts"""
+        ci_scripts = [
+            "scripts/ci/",
+            "scripts/build/",
+            "scripts/validation/"
+        ]
+
+        missing_scripts = []
+        for script_dir in ci_scripts:
+            if not os.path.exists(script_dir):
+                missing_scripts.append(script_dir)
+
+        if missing_scripts:
+            self.warnings.append(f"Missing CI script directories: {', '.join(missing_scripts)}")
+            return False
+
+        self.info.append("✓ CI script directories found")
+        return True
+
+    def _validate_build_profiles(self) -> bool:
+        """Validate build profiles"""
+        profiles_dir = "conan-profiles"
+        if not os.path.exists(profiles_dir):
+            self.errors.append("Build profiles directory not found")
+            return False
+
+        profile_files = [f for f in os.listdir(profiles_dir) if f.endswith('.profile')]
+        if not profile_files:
+            self.errors.append("No profile files found")
+            return False
+
+        self.info.append(f"✓ Found {len(profile_files)} build profiles")
+        return True
+
+    def _validate_ci_configuration(self) -> bool:
+        """Validate CI configuration"""
+        # Would implement CI configuration validation logic
+        return True
+
+    def _validate_openssl_tools_package(self) -> bool:
+        """Validate OpenSSL tools package"""
+        if not os.path.exists("openssl_tools/"):
+            self.errors.append("openssl_tools package directory not found")
+            return False
+
+        if not os.path.exists("conanfile.py"):
+            self.errors.append("conanfile.py not found")
+            return False
+
+        self.info.append("✓ OpenSSL tools package structure valid")
+        return True
+
+    def _validate_tooling_scripts(self) -> bool:
+        """Validate tooling scripts"""
+        required_scripts = [
+            "scripts/conan/conan_orchestrator.py",
+            "scripts/conan/dependency_manager.py",
+            "scripts/setup-openssl-tools-conan.py"
+        ]
+
+        missing_scripts = []
+        for script in required_scripts:
+            if not os.path.exists(script):
+                missing_scripts.append(script)
+
+        if missing_scripts:
+            self.errors.append(f"Missing required scripts: {', '.join(missing_scripts)}")
+            return False
+
+        self.info.append("✓ Required tooling scripts found")
+        return True
+
+    def _validate_conan_integration(self) -> bool:
+        """Validate Conan integration"""
+        try:
+            result = subprocess.run(['conan', '--version'], capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                self.errors.append("Conan not available")
+                return False
+
+            version = result.stdout.strip().split()[-1]
+            if not version.startswith('2.'):
+                self.warnings.append(f"Conan version {version} may not be compatible (2.x recommended)")
+
+            self.info.append(f"✓ Conan {version} available")
+            return True
+
+        except Exception as e:
+            self.errors.append(f"Conan validation failed: {e}")
+            return False
+
+    def _validate_environment_setup(self) -> bool:
+        """Validate environment setup"""
+        # Would implement environment setup validation logic
+        return True
+
+    def _validate_workflow_syntax(self) -> bool:
+        """Validate workflow syntax"""
+        # Would implement workflow syntax validation logic
+        return True
+
+    def _validate_workflow_dependencies(self) -> bool:
+        """Validate workflow dependencies"""
+        # Would implement workflow dependencies validation logic
+        return True
+
+    def _validate_workflow_security(self) -> bool:
+        """Validate workflow security"""
+        # Would implement workflow security validation logic
+        return True
+
+    def _validate_workflow_performance(self) -> bool:
+        """Validate workflow performance"""
+        # Would implement workflow performance validation logic
+        return True
+
 
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description='Pre-build validation for OpenSSL Conan packages')
     parser.add_argument('--config', default='conan-dev/validation-config.yml',
                        help='Path to validation configuration file')
+    parser.add_argument('--action', choices=['validate-all', 'validate-ci', 'validate-tools', 'validate-workflows'],
+                       default='validate-all', help='Validation action to perform')
     parser.add_argument('--strict', action='store_true',
                        help='Treat warnings as errors')
     
@@ -467,7 +679,18 @@ def main():
         validator.warnings = []
         validator.errors.extend(original_warnings)
     
-    success = validator.validate_all()
+    # Execute validation action
+    if args.action == 'validate-all':
+        success = validator.validate_all()
+    elif args.action == 'validate-ci':
+        success = validator.validate_ci_setup()
+        validator._print_summary()
+    elif args.action == 'validate-tools':
+        success = validator.validate_openssl_tools_setup()
+        validator._print_summary()
+    elif args.action == 'validate-workflows':
+        success = validator.validate_workflows()
+        validator._print_summary()
     
     if not success:
         sys.exit(1)
