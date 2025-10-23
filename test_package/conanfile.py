@@ -13,7 +13,7 @@ class TestPackageConan(ConanFile):
         """Run basic tests for openssl-tools"""
         if can_run(self):
             # Test Python module import
-            self.run("python3 -c \"from openssl_tools.foundation import version_manager; print('Import successful')\"", env="conanrun")
+            self.run("python3 -c \"from openssl_tools.foundation import get_openssl_version; print('Import successful')\"", env="conanrun")
 
             # Test environment variables
             self.run("python3 -c \"import os; print('OPENSSL_TOOLS_VERSION:', os.environ.get('OPENSSL_TOOLS_VERSION', 'Not set'))\"", env="conanrun")

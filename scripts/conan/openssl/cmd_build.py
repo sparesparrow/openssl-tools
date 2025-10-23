@@ -35,7 +35,7 @@ def build(conan_api: ConanAPI, parser, *args):
         print("🔒 FIPS mode enabled")
     
     # Install with deployer
-    conan_api.install.deploy install_system_requires nstall_sources install_binaries install_consumer(
+    conan_api.install(
         path=".",
         requires=requires,
         profile_host=profile_host,
