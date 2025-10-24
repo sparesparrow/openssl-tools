@@ -9,14 +9,18 @@ __all__ = [
     "__version__",
     # Foundation modules
     "foundation",
-    # Security modules  
+    # Security modules
     "security",
     # Automation modules
     "automation",
     # Testing modules
     "testing",
     # Statistics modules
-    "statistics"
+    "statistics",
+    # Python requires classes (exposed at top level)
+    "VersionManager",
+    "ProfileValidator",
+    "OpenSSLBuildOrchestrator"
 ]
 
 __version__ = "1.2.0"
@@ -27,3 +31,8 @@ from . import security
 from . import automation
 from . import testing
 from . import statistics
+
+# Expose classes for python_requires access
+from .base.version_manager import VersionManager
+from .base.profile_validator import ProfileValidator
+from .foundation.build_orchestrator import OpenSSLBuildOrchestrator
