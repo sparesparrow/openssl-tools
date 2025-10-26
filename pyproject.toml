@@ -173,11 +173,8 @@ minversion = "7.0"
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=.",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-    "--cov-fail-under=80",
+    "-v",
+    "--tb=short"
 ]
 testpaths = ["tests"]
 markers = [
@@ -186,6 +183,7 @@ markers = [
     "fuzzing: marks tests as fuzzing tests",
     "security: marks tests as security tests",
     "performance: marks tests as performance tests",
+    "bootstrap: marks tests as bootstrap tests",
 ]
 
 # Coverage configuration

@@ -1,46 +1,69 @@
-#!/usr/bin/env python3
-"""
-OpenSSL Configure Script - Python Implementation
-Replaces the traditional Perl Configure script with a Python implementation
-"""
+#!/bin/bash
+# OpenSSL Configure Script - Hybrid wrapper
+#
+# This script provides a hybrid approach to OpenSSL configuration:
+# 1. First tries to use the native OpenSSL Configure script
+# 2. Falls back to Python-based configuration if native script unavailable
+# 3. Ensures compatibility with existing OpenSSL build processes
 
-import sys
-import os
-import platform
-from typing import List, Dict, Set, Optional
+set -euo pipefail
 
+OPENSSL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NATIVE_CONFIGURE="$OPENSSL_ROOT/Configure"
+PYTHON_CONFIGURE="$OPENSSL_ROOT/configure.py"
 
-class OpenSSLConfigurer:
-    """OpenSSL configuration generator."""
-    
-    def __init__(self):
-        self.system = platform.system().lower()
-        self.machine = platform.machine().lower()
-        self.is_64bit = sys.maxsize > 2**32
-        
-        # Default build configuration
-        self.build_config = {
-            'shared': True,
-            'static': True,
-            'threads': True,
-            'asm': True,
-            'fips': False,
-            'no_shared': False,
-            'no_static': False,
-            'no_threads': False,
-            'no_asm': False,
-            'enable_fips': False,
-        }
-        
-        self.enabled_features: Set[str] = set()
-        self.disabled_features: Set[str] = set()
-        self.defines: Dict[str, str] = {}
-        self.includes: List[str] = []
-        self.libdirs: List[str] = []
-        self.libs: List[str] = []
-        self.target: Optional[str] = None
-        self.debug = False
-        self.quiet = False
+# Logging functions
+log_info() {
+    echo "[INFO] $*" >&2
+}
+
+log_warn() {
+    echo "[WARN] $*" >&2
+}
+
+log_error() {
+    echo "[ERROR] $*" >&2
+}
+
+# Check if file exists and is executable
+is_executable() {
+    [[ -f "$1" ]] && [[ -x "$1" ]]
+}
+
+# Try native Configure script first
+if is_executable "$NATIVE_CONFIGURE"; then
+    log_info "Using native OpenSSL Configure script"
+
+    # Execute with all passed arguments
+    exec "$NATIVE_CONFIGURE" "$@"
+
+elif [[ -f "$NATIVE_CONFIGURE" ]]; then
+    log_warn "Native Configure script exists but is not executable, trying to make it executable"
+    chmod +x "$NATIVE_CONFIGURE"
+
+    if is_executable "$NATIVE_CONFIGURE"; then
+        log_info "Made Configure executable, running it"
+        exec "$NATIVE_CONFIGURE" "$@"
+    fi
+fi
+
+# Fallback to Python configure script
+if [[ -f "$PYTHON_CONFIGURE" ]] && command -v python3 >/dev/null 2>&1; then
+    log_warn "Native Configure not available, falling back to Python configure.py"
+    exec python3 "$PYTHON_CONFIGURE" "$@"
+
+elif [[ -f "$PYTHON_CONFIGURE" ]]; then
+    log_error "Python configure.py exists but python3 command not found"
+    exit 1
+fi
+
+# No configure script available
+log_error "No Configure script found!"
+log_error "Tried:"
+log_error "  - Native Configure: $NATIVE_CONFIGURE"
+log_error "  - Python configure.py: $PYTHON_CONFIGURE"
+log_error "  - python3 command: $(command -v python3 || echo 'not found')"
+exit 1
 
     def detect_platform(self) -> str:
         """Detect the build platform and return appropriate target."""
@@ -211,9 +234,6 @@ Common targets:
         """Generate buildinf.h header file."""
         if not self.quiet:
             print("Generating buildinf.h...")
-
-        # Create include directory if it doesn't exist
-        os.makedirs('include/openssl', exist_ok=True)
 
         # Import the build info generator
         sys.path.insert(0, 'util/python')

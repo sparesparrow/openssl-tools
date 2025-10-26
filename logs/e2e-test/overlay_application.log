@@ -1,0 +1,7 @@
+Overlay application started: Sun Oct 26 03:12:01 2025
+✅ Copied file: conanfile.py
+⚠️ Not found in fork: configure.py
+⚠️ Not found in fork: util/python
+✅ Copied directory: .github/workflows
+✅ Copied directory: test_package
+⚠️ Not found in fork: pyproject.toml
