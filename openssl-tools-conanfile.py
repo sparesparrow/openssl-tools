@@ -47,7 +47,7 @@ class OpenSSLToolsConan(ConanFile):
         "pyproject.toml"
     )
 
-    python_requires = "openssl-profiles/2.0.1"
+    python_requires = "openssl-profiles/2.0.2"
 
     def layout(self):
         cmake_layout(self)
@@ -272,9 +272,11 @@ export CMAKE_TOOLCHAIN_FILE="${{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
 
     def package(self):
         """Package OpenSSL tools with vcpkg integration"""
-        # Copy Python package
+        # Copy Python package to python subdirectory
         if os.path.exists("openssl_tools"):
-            copy(self, "openssl_tools/*", src=".", dst=self.package_folder)
+            copy(self, "openssl_tools/*",
+                 src=self.source_folder,
+                 dst=os.path.join(self.package_folder, "python"))
         
         # Copy scripts
         if os.path.exists("scripts"):
@@ -312,8 +314,9 @@ export CMAKE_TOOLCHAIN_FILE="${{VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake"
             for key, value in self._vcpkg_env.items():
                 self.env_info.define(key, value)
         
-        # Set Python path for openssl_tools
-        self.env_info.PYTHONPATH.append(os.path.join(self.package_folder, "openssl_tools"))
+        # Set Python path for openssl_tools (Conan 2.x compatible)
+        python_path = os.path.join(self.package_folder, "openssl_tools")
+        self.runenv_info.define("PYTHONPATH", python_path)
         
         # Set build system information
         self.user_info.vcpkg_integration = str(self.options.vcpkg_integration)

@@ -20,7 +20,9 @@ __all__ = [
     # Python requires classes (exposed at top level)
     "VersionManager",
     "ProfileValidator",
-    "OpenSSLBuildOrchestrator"
+    "OpenSSLBuildOrchestrator",
+    "CryptoBuildOrchestrator",
+    "SSLBuildOrchestrator"
 ]
 
 __version__ = "1.2.0"
@@ -36,3 +38,4 @@ from . import statistics
 from .base.version_manager import VersionManager
 from .base.profile_validator import ProfileValidator
 from .foundation.build_orchestrator import OpenSSLBuildOrchestrator
+from .foundation.component_orchestrators import CryptoBuildOrchestrator, SSLBuildOrchestrator

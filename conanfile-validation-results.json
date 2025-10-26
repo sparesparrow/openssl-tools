@@ -1,0 +1,1519 @@
+{
+  "validation_timestamp": "2025-10-24T03:56:23.187409",
+  "total_files": 30,
+  "valid_files": 14,
+  "invalid_files": 16,
+  "files": [
+    {
+      "file_path": "conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLConan",
+          "attributes": {
+            "name": "openssl",
+            "description": "OpenSSL cryptographic library",
+            "homepage": "https://www.openssl.org",
+            "url": "https://github.com/sparesparrow/openssl",
+            "license": "Apache-2.0",
+            "requires": "list",
+            "python_requires": "list"
+          },
+          "methods": [
+            "set_version",
+            "configure",
+            "export_sources",
+            "source",
+            "build",
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "version_dynamic": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "set_version",
+          "configure",
+          "export_sources",
+          "source",
+          "build",
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-profiles/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-profiles/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLProfilesConan",
+          "attributes": {
+            "name": "openssl-profiles",
+            "version": "2.0.1",
+            "package_type": "python-require",
+            "description": "Conan 2.x python_requires package providing OpenSSL build profiles and FIPS 140-3 policy integration",
+            "license": "MIT",
+            "url": "https://github.com/sparesparrow/openssl-profiles",
+            "homepage": "https://github.com/sparesparrow/openssl-profiles"
+          },
+          "methods": [
+            "layout",
+            "package",
+            "package_info",
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "2.0.1",
+        "package_type": "python-require",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "layout",
+          "package",
+          "package_info",
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLToolsConan",
+          "attributes": {
+            "name": "openssl-tools",
+            "version": "1.2.6",
+            "description": "OpenSSL build tools, automation scripts, and infrastructure components",
+            "license": "Apache-2.0",
+            "url": "https://github.com/sparesparrow/openssl-tools",
+            "homepage": "https://github.com/sparesparrow/openssl-tools",
+            "package_type": "python-require",
+            "python_requires": "openssl-base/1.0.0@sparesparrow/stable"
+          },
+          "methods": [
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "1.2.6",
+        "package_type": "python-require",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": true,
+          "has_package_tracking": true,
+          "has_config_validation": false,
+          "integration_level": "full"
+        }
+      }
+    },
+    {
+      "file_path": "test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "generators": "VirtualRunEnv",
+            "python_requires": "openssl-tools/1.2.4@sparesparrow/stable"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Invalid tool_requires format: strawberryperl/5.32.1.1",
+        "Invalid tool_requires format: nasm/2.15.05"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLConan",
+          "attributes": {
+            "name": "openssl",
+            "description": "OpenSSL cryptographic library",
+            "license": "Apache-2.0",
+            "url": "https://github.com/sparesparrow/openssl",
+            "homepage": "https://www.openssl.org",
+            "requires": "zlib/1.3.1",
+            "python_requires": "list"
+          },
+          "methods": [
+            "requirements",
+            "build_requirements",
+            "layout",
+            "set_version",
+            "export_sources",
+            "configure",
+            "generate",
+            "_manual_build",
+            "package",
+            "_relocate_install",
+            "_copy_fips_module",
+            "_copy_pkgconfig_files",
+            "_generate_sbom",
+            "_enumerate_dependencies",
+            "build",
+            "_start_build_metrics",
+            "_collect_build_metrics",
+            "_get_optimal_cpu_count",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [
+            "openssl-fips-data/140-3.2@sparesparrow/stable"
+          ],
+          "tool_requires": [
+            "strawberryperl/5.32.1.1",
+            "nasm/2.15.05"
+          ]
+        },
+        "has_name": true,
+        "has_version": true,
+        "version_dynamic": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "requires": [
+          "openssl-fips-data/140-3.2@sparesparrow/stable"
+        ],
+        "tool_requires": [
+          "strawberryperl/5.32.1.1",
+          "nasm/2.15.05"
+        ],
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "requirements",
+          "build_requirements",
+          "layout",
+          "set_version",
+          "export_sources",
+          "configure",
+          "generate",
+          "_manual_build",
+          "package",
+          "_relocate_install",
+          "_copy_fips_module",
+          "_copy_pkgconfig_files",
+          "_generate_sbom",
+          "_enumerate_dependencies",
+          "build",
+          "_start_build_metrics",
+          "_collect_build_metrics",
+          "_get_optimal_cpu_count",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "test-package-reuse/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/test-package-reuse/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: license"
+      ],
+      "warnings": [
+        "Invalid requires format: openssl-base/1.0.0",
+        "Invalid requires format: openssl-fips-data/140-3.1",
+        "Invalid requires format: openssl-tools/1.0.0"
+      ],
+      "info": {
+        "class_info": {
+          "name": "TestPackageReuseConan",
+          "attributes": {
+            "name": "test-package-reuse",
+            "version": "1.0.0",
+            "description": "Test package to verify OpenSSL ecosystem package reuse"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [
+            "openssl-base/1.0.0",
+            "openssl-fips-data/140-3.1",
+            "openssl-tools/1.0.0"
+          ],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_description": true,
+        "version": "1.0.0",
+        "requires": [
+          "openssl-base/1.0.0",
+          "openssl-fips-data/140-3.1",
+          "openssl-tools/1.0.0"
+        ],
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-conan-base/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-conan-base/conanfile.py",
+      "valid": false,
+      "errors": [
+        "No ConanFile class found"
+      ],
+      "warnings": [],
+      "info": {}
+    },
+    {
+      "file_path": "mcp-project-orchestrator/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/mcp-project-orchestrator/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "MCPProjectOrchestratorConan",
+          "attributes": {
+            "name": "mcp-project-orchestrator",
+            "version": "0.1.0",
+            "license": "MIT",
+            "url": "https://github.com/sparesparrow/mcp-project-orchestrator",
+            "description": "Main Conan manager and Python environment source for orchestrating MCP development flow.",
+            "settings": null,
+            "package_type": "application"
+          },
+          "methods": [
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "version": "0.1.0",
+        "package_type": "application",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-fips-policy/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-fips-policy/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Version '140-3.2' doesn't follow semantic versioning"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLFIPSDataConan",
+          "attributes": {
+            "name": "openssl-fips-data",
+            "version": "140-3.2",
+            "description": "FIPS 140-3 certificates, compliance data, and validation artifacts",
+            "license": "Public-Domain",
+            "url": "https://github.com/sparesparrow/openssl-fips-policy",
+            "homepage": "https://github.com/sparesparrow/openssl-fips-policy",
+            "package_type": "data"
+          },
+          "methods": [
+            "init",
+            "layout",
+            "requirements",
+            "package",
+            "package_info",
+            "package_id",
+            "validate"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "140-3.2",
+        "package_type": "data",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "init",
+          "layout",
+          "requirements",
+          "package",
+          "package_info",
+          "package_id",
+          "validate"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-profiles/fips/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-profiles/fips/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Version '140-3.2' doesn't follow semantic versioning"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLFIPSDataConan",
+          "attributes": {
+            "name": "openssl-fips-data",
+            "version": "140-3.2",
+            "description": "FIPS 140-3 certificates, compliance data, and validation artifacts",
+            "license": "Public-Domain",
+            "url": "https://github.com/sparesparrow/openssl-fips-policy",
+            "homepage": "https://github.com/sparesparrow/openssl-fips-policy",
+            "package_type": "data"
+          },
+          "methods": [
+            "init",
+            "layout",
+            "requirements",
+            "package",
+            "package_info",
+            "package_id",
+            "validate"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "140-3.2",
+        "package_type": "data",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "init",
+          "layout",
+          "requirements",
+          "package",
+          "package_info",
+          "package_id",
+          "validate"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-profiles/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-profiles/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/tests/e2e/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/tests/e2e/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [
+        "Invalid tool_requires format: cmake/[>=3.15]"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLTestConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "build_requirements",
+            "layout",
+            "generate",
+            "build",
+            "test",
+            "_validate_headers",
+            "_validate_libraries",
+            "_validate_environment"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": [
+            "cmake/[>=3.15]"
+          ]
+        },
+        "tool_requires": [
+          "cmake/[>=3.15]"
+        ],
+        "methods": [
+          "requirements",
+          "build_requirements",
+          "layout",
+          "generate",
+          "build",
+          "test",
+          "_validate_headers",
+          "_validate_libraries",
+          "_validate_environment"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/tests/e2e/test_consumer/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/tests/e2e/test_consumer/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestConsumer",
+          "attributes": {
+            "name": "test_consumer",
+            "version": "1.0.0",
+            "requires": "openssl-tools/0.1.0-10-g168b04c-dirty"
+          },
+          "methods": [
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "version": "1.0.0",
+        "methods": [
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/tests/e2e/test_package/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/tests/e2e/test_package/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Syntax error at line 17: invalid syntax. Perhaps you forgot a comma?"
+      ],
+      "warnings": [],
+      "info": {}
+    },
+    {
+      "file_path": "openssl-tools/extensions/openssl-hooks/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/extensions/openssl-hooks/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLHooksConan",
+          "attributes": {
+            "name": "openssl-hooks",
+            "version": "1.2.0",
+            "description": "Conan hooks for OpenSSL projects - build validation, security checks, and quality assurance",
+            "license": "Apache-2.0",
+            "author": "OpenSSL Tools Team <openssl-tools@example.com>",
+            "url": "https://github.com/sparesparrow/openssl-tools",
+            "homepage": "https://github.com/sparesparrow/openssl-tools",
+            "topics": "list",
+            "exports": "hooks/*"
+          },
+          "methods": [
+            "package",
+            "package_info",
+            "validate",
+            "requirements",
+            "build_requirements",
+            "configure",
+            "config_options",
+            "generate",
+            "build",
+            "test",
+            "_test_hook_registration",
+            "_test_hook_files",
+            "_test_environment_variables"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "has_topics": true,
+        "version": "1.2.0",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "package",
+          "package_info",
+          "validate",
+          "requirements",
+          "build_requirements",
+          "configure",
+          "config_options",
+          "generate",
+          "build",
+          "test",
+          "_test_hook_registration",
+          "_test_hook_files",
+          "_test_environment_variables"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/extensions/openssl-hooks/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/extensions/openssl-hooks/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLHooksTestConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "build",
+            "test",
+            "_source_environment",
+            "_create_test_source_structure",
+            "_test_hook_registration",
+            "_test_environment_variables",
+            "_test_hook_files"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "build",
+          "test",
+          "_source_environment",
+          "_create_test_source_structure",
+          "_test_hook_registration",
+          "_test_environment_variables",
+          "_test_hook_files"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/conan-recipes/arm-toolchain/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/conan-recipes/arm-toolchain/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Version '13.2' doesn't follow semantic versioning"
+      ],
+      "info": {
+        "class_info": {
+          "name": "ArmToolchainPackage",
+          "attributes": {
+            "name": "arm-toolchain",
+            "version": "13.2",
+            "license": "ARM-GNU-Toolchain-EULA",
+            "url": "https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads",
+            "description": "ARM GNU prebuilt cross-compilation toolchain for Linux x86_64 targeting Linux ARM (32/64). Packaged as a Conan tool_require.",
+            "package_type": "application",
+            "exports_sources": "LICENSE*"
+          },
+          "methods": [
+            "_archs32",
+            "_archs64",
+            "_get_toolchain",
+            "validate",
+            "source",
+            "build",
+            "package_id",
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "version": "13.2",
+        "package_type": "application",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "_archs32",
+          "_archs64",
+          "_get_toolchain",
+          "validate",
+          "source",
+          "build",
+          "package_id",
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl-tools/conan-recipes/arm-toolchain/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl-tools/conan-recipes/arm-toolchain/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {},
+          "methods": [
+            "build_requirements",
+            "layout",
+            "build",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "build_requirements",
+          "layout",
+          "build",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/crypto-package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/crypto-package/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Invalid tool_requires format: openssl-tools/1.2.6"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLCryptoConan",
+          "attributes": {
+            "name": "openssl-crypto",
+            "version": "4.0.0-dev",
+            "description": "OpenSSL cryptographic library component",
+            "license": "Apache-2.0",
+            "url": "https://github.com/openssl/openssl",
+            "homepage": "https://www.openssl.org/",
+            "package_type": "library",
+            "python_requires": "list"
+          },
+          "methods": [
+            "layout",
+            "configure",
+            "requirements",
+            "build_requirements",
+            "generate",
+            "build",
+            "package",
+            "_create_pkg_config",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": [
+            "openssl-tools/1.2.6"
+          ]
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "4.0.0-dev",
+        "package_type": "library",
+        "tool_requires": [
+          "openssl-tools/1.2.6"
+        ],
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "layout",
+          "configure",
+          "requirements",
+          "build_requirements",
+          "generate",
+          "build",
+          "package",
+          "_create_pkg_config",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "layout",
+            "generate",
+            "build",
+            "test",
+            "_generate_test_sources"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "layout",
+          "generate",
+          "build",
+          "test",
+          "_generate_test_sources"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/ssl-package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/ssl-package/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Invalid requires format: openssl-crypto/4.0.0-dev",
+        "Invalid tool_requires format: openssl-tools/1.2.6"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLSSLConan",
+          "attributes": {
+            "name": "openssl-ssl",
+            "version": "4.0.0-dev",
+            "description": "OpenSSL SSL/TLS library component",
+            "license": "Apache-2.0",
+            "url": "https://github.com/openssl/openssl",
+            "homepage": "https://www.openssl.org/",
+            "package_type": "library",
+            "python_requires": "list"
+          },
+          "methods": [
+            "layout",
+            "configure",
+            "requirements",
+            "build_requirements",
+            "generate",
+            "build",
+            "package",
+            "_create_pkg_config",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [
+            "openssl-crypto/4.0.0-dev"
+          ],
+          "tool_requires": [
+            "openssl-tools/1.2.6"
+          ]
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "4.0.0-dev",
+        "package_type": "library",
+        "requires": [
+          "openssl-crypto/4.0.0-dev"
+        ],
+        "tool_requires": [
+          "openssl-tools/1.2.6"
+        ],
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "layout",
+          "configure",
+          "requirements",
+          "build_requirements",
+          "generate",
+          "build",
+          "package",
+          "_create_pkg_config",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/crypto-package/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/crypto-package/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLCryptoTestConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "build",
+            "layout",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "build",
+          "layout",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "openssl/ssl-package/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/openssl/ssl-package/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLSSLTestConan",
+          "attributes": {
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "build",
+            "layout",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "build",
+          "layout",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "test-package-reuse/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/test-package-reuse/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "generators": "VirtualRunEnv"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "mcp-project-orchestrator/test_package/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/mcp-project-orchestrator/test_package/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: name",
+        "Missing required attribute: version",
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "TestPackageConan",
+          "attributes": {
+            "settings": null,
+            "test_type": "explicit"
+          },
+          "methods": [
+            "requirements",
+            "test"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "methods": [
+          "requirements",
+          "test"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "mcp-project-orchestrator/mcp-project-orchestrator/openssl/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/mcp-project-orchestrator/mcp-project-orchestrator/openssl/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Invalid requires format: python_requires/click/8.0.0",
+        "Invalid requires format: python_requires/jinja2/3.0.0"
+      ],
+      "info": {
+        "class_info": {
+          "name": "MCPProjectOrchestratorOpenSSLConan",
+          "attributes": {
+            "name": "mcp-project-orchestrator-openssl",
+            "version": "0.1.0",
+            "description": "Cursor configuration management for OpenSSL development",
+            "license": "MIT",
+            "url": "https://github.com/sparesparrow/mcp-project-orchestrator",
+            "homepage": "https://github.com/sparesparrow/mcp-project-orchestrator",
+            "package_type": "python-require"
+          },
+          "methods": [
+            "configure",
+            "layout",
+            "requirements",
+            "build_requirements",
+            "source",
+            "build",
+            "package",
+            "package_info",
+            "deploy",
+            "package_id"
+          ],
+          "python_requires": [],
+          "requires": [
+            "python_requires/click/8.0.0",
+            "python_requires/jinja2/3.0.0"
+          ],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "0.1.0",
+        "package_type": "python-require",
+        "requires": [
+          "python_requires/click/8.0.0",
+          "python_requires/jinja2/3.0.0"
+        ],
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "configure",
+          "layout",
+          "requirements",
+          "build_requirements",
+          "source",
+          "build",
+          "package",
+          "package_info",
+          "deploy",
+          "package_id"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "mcp-project-orchestrator/mcp-project-orchestrator/openssl/examples/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/mcp-project-orchestrator/mcp-project-orchestrator/openssl/examples/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLToolsConan",
+          "attributes": {
+            "name": "openssl-tools",
+            "version": "1.2.5",
+            "description": "OpenSSL build tools, automation scripts, and infrastructure components",
+            "license": "Apache-2.0",
+            "url": "https://github.com/sparesparrow/openssl-tools",
+            "homepage": "https://github.com/sparesparrow/openssl-tools",
+            "package_type": "python-require",
+            "python_requires": "openssl-profiles/2.0.1"
+          },
+          "methods": [
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "1.2.5",
+        "package_type": "python-require",
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "mcp-project-orchestrator/mcp-project-orchestrator/openssl/examples/example-workspace/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/mcp-project-orchestrator/mcp-project-orchestrator/openssl/examples/example-workspace/conanfile.py",
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        "Invalid requires format: openssl/3.1.0",
+        "Invalid requires format: zlib/1.2.13",
+        "Invalid tool_requires format: cmake/[>=3.15]"
+      ],
+      "info": {
+        "class_info": {
+          "name": "OpenSSLExampleConan",
+          "attributes": {
+            "name": "openssl-example",
+            "version": "1.0.0",
+            "description": "Example OpenSSL project with Cursor AI configuration",
+            "license": "MIT",
+            "url": "https://github.com/sparesparrow/openssl-example",
+            "homepage": "https://github.com/sparesparrow/openssl-example"
+          },
+          "methods": [
+            "config_options",
+            "configure",
+            "layout",
+            "requirements",
+            "build_requirements",
+            "build",
+            "package",
+            "package_info"
+          ],
+          "python_requires": [],
+          "requires": [
+            "openssl/3.1.0",
+            "zlib/1.2.13"
+          ],
+          "tool_requires": [
+            "cmake/[>=3.15]"
+          ]
+        },
+        "has_name": true,
+        "has_version": true,
+        "has_license": true,
+        "has_description": true,
+        "has_url": true,
+        "has_homepage": true,
+        "version": "1.0.0",
+        "requires": [
+          "openssl/3.1.0",
+          "zlib/1.2.13"
+        ],
+        "tool_requires": [
+          "cmake/[>=3.15]"
+        ],
+        "has_package_info": true,
+        "has_package": true,
+        "methods": [
+          "config_options",
+          "configure",
+          "layout",
+          "requirements",
+          "build_requirements",
+          "build",
+          "package",
+          "package_info"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    },
+    {
+      "file_path": "integration-tests/basic-consumer/conanfile.py",
+      "absolute_path": "/home/sparrow/projects/openssl-devenv/integration-tests/basic-consumer/conanfile.py",
+      "valid": false,
+      "errors": [
+        "Missing required attribute: license"
+      ],
+      "warnings": [],
+      "info": {
+        "class_info": {
+          "name": "BasicConsumerConan",
+          "attributes": {
+            "name": "basic-consumer",
+            "version": "1.0.0"
+          },
+          "methods": [
+            "requirements",
+            "layout",
+            "generate",
+            "build",
+            "test",
+            "_generate_test_sources"
+          ],
+          "python_requires": [],
+          "requires": [
+            "openssl/4.0.0-dev@sparesparrow/stable"
+          ],
+          "tool_requires": []
+        },
+        "has_name": true,
+        "has_version": true,
+        "version": "1.0.0",
+        "requires": [
+          "openssl/4.0.0-dev@sparesparrow/stable"
+        ],
+        "methods": [
+          "requirements",
+          "layout",
+          "generate",
+          "build",
+          "test",
+          "_generate_test_sources"
+        ],
+        "database_integration": {
+          "has_database_import": false,
+          "has_package_tracking": false,
+          "has_config_validation": false,
+          "integration_level": "none"
+        }
+      }
+    }
+  ]
+}

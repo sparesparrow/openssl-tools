@@ -91,6 +91,11 @@ class OpenSSLBuildOrchestrator:
             self.conanfile.output.info(f"Building OpenSSL with {cpu_count} parallel jobs")
             self.conanfile.run(f"make -j{cpu_count}")
 
+    def install_and_package(self):
+        """Install OpenSSL and handle post-install packaging"""
+        self.install_openssl()
+        # Additional packaging steps can be added here if needed
+
     def install_openssl(self):
         """Install OpenSSL using DESTDIR staging"""
         with os.chdir(self.source_folder):

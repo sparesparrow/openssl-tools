@@ -1,0 +1,165 @@
+---
+globs: ["**/*"]
+alwaysApply: true
+description: Directory structure, file placement, and naming conventions policy
+---
+
+# Directory Structure and Organization Policy
+
+## Root Directory Contents
+
+Only these directories/files allowed in repository root:
+- `.github/` - GitHub Actions workflows, issue templates, PR templates
+- `.cursor/` - Cursor AI rules and detailed technical documentation
+- `conan-profiles/` - Version-controlled Conan profiles (ci/, dev/, platform/)
+- `database/` - Database schemas, migrations, backups
+- `docker/` - Dockerfile, docker-compose, container configs
+- `extensions/` - Conan extensions and hooks for OpenSSL
+- `github-tools/` - GitHub API automation (bots, webhooks)
+- `nist-conversion/` - NIST cryptographic test data conversion
+- `openssl_tools/` - Main Python package (src layout)
+- `release-tools/` - Release automation (Perl/shell scripts)
+- `review-tools/` - Code review utilities
+- `scripts/` - Categorized utility scripts (build/, ci/, conan/, deploy/, etc.)
+- `templates/` - Reusable CI/CD workflow templates
+- `tests/` - All tests (unit/, integration/, e2e/, fixtures/)
+- Configuration files: `pyproject.toml`, `conanfile.py`, `.gitignore`, `requirements*.txt`
+- Documentation: `README.md`, `CHANGELOG.md`, `LICENSE`
+- Development: `docker-compose.dev.yml`, `Dockerfile.dev`, `CMakePresets.json`
+
+## File Placement Rules
+
+### Python Code
+- Production code: `openssl_tools/<module>/`
+- Tests: `tests/unit/` or `tests/integration/`
+- Scripts: `scripts/<category>/` (never in root)
+- Entry points: Define in `pyproject.toml` `[project.scripts]`
+
+### Conan Profiles
+- CI profiles: `conan-profiles/ci/<name>.profile`
+- Dev profiles: `conan-profiles/dev/<name>.profile`
+- Platform profiles: `conan-profiles/platform/<name>.profile`
+- Load with: `conan install --profile=conan-profiles/ci/linux-gcc.profile`
+
+### Documentation
+- User-facing: `README.md`, `docs/README.md` (getting started only)
+- Contributor guide: `docs/CONTRIBUTING.md`
+- Technical details: `.cursor/docs/<topic>.md`
+- AI agent rules: `.cursor/rules/<rule>.mdc`
+- Avoid duplication: Reference .cursor/docs/ instead of copying
+
+### Tests
+- Unit tests: `tests/unit/<module>/test_<feature>.py`
+- Integration tests: `tests/integration/test_<integration>.py`
+- E2E tests: `tests/e2e/<scenario>/`
+- Fixtures: `tests/fixtures/<type>/`
+- Follow pytest discovery: `test_*.py` or `*_test.py`
+
+### Scripts
+- Build: `scripts/build/<script>`
+- CI/CD: `scripts/ci/<script>`
+- Conan: `scripts/conan/<script>`
+- Deployment: `scripts/deploy/<script>`
+- Development: `scripts/dev/<script>`
+- Validation: `scripts/validation/<script>`
+- Each script should be self-contained or import from openssl_tools/
+
+## Naming Conventions
+
+### Python Files/Modules
+- Modules: `lowercase_with_underscores.py`
+- Packages: `lowercase` (no underscores if possible)
+- Classes: `PascalCase`
+- Functions: `lowercase_with_underscores()`
+- Constants: `UPPERCASE_WITH_UNDERSCORES`
+- Private: `_leading_underscore`
+
+### Scripts
+- Shell: `kebab-case.sh` (e.g., `build-openssl.sh`)
+- Python: `snake_case.py` (e.g., `build_matrix.py`)
+- Entry points: `openssl-<action>` (e.g., `openssl-build`, `openssl-test`)
+
+### Conan Profiles
+- Format: `<purpose>-<platform>-<compiler>.profile`
+- Examples: `ci-linux-gcc11.profile`, `dev-macos-clang.profile`
+
+### Directories
+- Python packages: `lowercase` (e.g., `openssl_tools`, `automation`)
+- Script categories: `lowercase` (e.g., `build`, `deploy`, `validation`)
+- Multi-word: `lowercase_with_underscores` if needed
+
+## Prohibited Patterns
+
+### Root Directory
+- ❌ No Python scripts in root (use `scripts/` or `openssl_tools/`)
+- ❌ No duplicate directories (e.g., `util/` AND `openssl_tools/util/`)
+- ❌ No build artifacts (`build/`, `dist/`, `*.egg-info/`)
+- ❌ No log files (`*.log`)
+- ❌ No temporary docs (`*_STATUS.md`, `*_SUMMARY.md`, `*_PLAN.md`)
+
+### Code Organization
+- ❌ No duplicate functionality (consolidate or import)
+- ❌ No circular dependencies between modules
+- ❌ No mixing test code with production code (use tests/)
+
+### Documentation
+- ❌ No extensive documentation in docs/ (use .cursor/docs/ instead)
+- ❌ No duplicating rule content in markdown (single source of truth)
+- ❌ No outdated docs (update or delete)
+
+## Adding New Files
+
+### Before Creating a File
+1. Check if functionality already exists (avoid duplication)
+2. Determine correct location based on rules above
+3. Use appropriate naming convention
+4. Update relevant documentation
+
+### New Python Module
+1. Add to `openssl_tools/<category>/`
+2. Create `__init__.py` if new package
+3. Add tests to `tests/unit/<category>/`
+4. Add CLI entry point if user-facing (pyproject.toml)
+
+### New Script
+1. Choose category: build, ci, conan, deploy, dev, validation
+2. Place in `scripts/<category>/`
+3. Make executable (`chmod +x`)
+4. Add shebang line
+5. Document usage in script header
+
+### New Test
+1. Unit test: `tests/unit/<module>/test_<feature>.py`
+2. Integration test: `tests/integration/test_<integration>.py`
+3. Follow pytest naming: `test_*` or `*_test`
+4. Use fixtures from `tests/fixtures/`
+
+## Documentation Policy
+
+### Prefer "Show Over Tell"
+- ✅ Runnable examples and code snippets
+- ✅ Mermaid diagrams for workflows
+- ✅ Type hints and docstrings in code
+- ✅ Brief commit messages
+- ❌ Long prose explanations
+- ❌ Duplicating information
+
+### Documentation Hierarchy
+1. Code is primary documentation (clear names, types, docstrings)
+2. README.md for quick start
+3. .cursor/rules/ for AI agents and detailed policies
+4. .cursor/docs/ for technical deep dives
+5. Commit messages for change rationale
+
+### When to Create GitHub Issues
+- Bugs found during inspection (don't fix immediately)
+- Technical debt to address later
+- Feature requests for future work
+- Breaking changes requiring discussion
+
+## Enforcement
+
+- All PRs must follow these conventions
+- Pre-commit hooks validate structure
+- CI checks for prohibited patterns
+- Periodic audits to remove violations

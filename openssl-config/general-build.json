@@ -1,0 +1,12 @@
+{
+  "config_name": "general-build",
+  "openssl_version": "3.4.1",
+  "fips_enabled": false,
+  "enable_quic": true,
+  "enable_ktls": true,
+  "enable_zlib": true,
+  "enable_zstd": true,
+  "shared": true,
+  "deployment_target": "general",
+  "description": "General purpose OpenSSL build with modern features"
+}
