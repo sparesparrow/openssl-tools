@@ -2,9 +2,21 @@
 
 Build tools, automation scripts, and infrastructure components for the modernized OpenSSL CI/CD pipeline.
 
+**Version 2.2.3** - Includes bundled Python 3.12.3 for cross-platform compatibility.
+
 ## Quick Start
 
-### Installation
+### Installation via Conan
+
+```bash
+# Install with Conan (recommended)
+conan install openssl-tools/2.2.3@sparesparrow/stable --build=missing
+
+# Or build from source
+conan create . --version=2.2.3 --build=missing
+```
+
+### Legacy Installation
 
 ```bash
 pip install -e .
@@ -24,6 +36,38 @@ openssl-build
 
 # Validate setup
 openssl-validate
+```
+
+### Bundled Python 3.12.3
+
+This package includes a bundled Python 3.12.3 interpreter for cross-platform compatibility:
+
+**Features:**
+- ✅ Cross-platform Python 3.12.3 runtime
+- ✅ Automatic environment setup
+- ✅ Conan cache integration
+- ✅ Wrapper scripts for Unix/Windows
+
+**Cross-Platform Usage:**
+
+```bash
+# Unix/Linux/macOS
+/path/to/openssl-tools/bin/openssl-tools --version
+
+# Windows
+C:\\path\\to\\openssl-tools\\bin\\openssl-tools.bat --version
+```
+
+**Bootstrap Setup:**
+```bash
+# Run bootstrap script to validate and set up environment
+python bootstrap-init.py
+
+# This will:
+# - Validate Conan installation
+# - Check bundled Python availability
+# - Test Python environment
+# - Create activation scripts
 ```
 
 ## Architecture
