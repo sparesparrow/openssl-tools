@@ -6,13 +6,13 @@ on:
     paths:
       - 'conanfile.py'
       - 'scripts/**'
-      - 'conan/**'
+      - 'openssl_tools/**'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'conanfile.py'
       - 'scripts/**'
-      - 'conan/**'
+      - 'openssl_tools/**'
   workflow_dispatch:
 
 jobs:
@@ -25,13 +25,13 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
       - name: Install Conan
         run: |
-          pip install conan>=2.0
+          pip install "conan>=2.0,<3.0"
           conan --version
       
       - name: Validate conanfile.py syntax
@@ -56,6 +56,8 @@ jobs:
               
           except Exception as e:
               print(f'❌ Validation failed: {e}')
+              import traceback
+              traceback.print_exc()
               sys.exit(1)
           "
       
@@ -73,6 +75,8 @@ jobs:
           if [ -d "scripts" ]; then
             echo "✅ scripts directory exists"
             ls -la scripts/ | head -10
+            echo "📁 Conan scripts:"
+            ls -la scripts/conan/ | head -5
           else
             echo "❌ scripts directory missing"
             exit 1
@@ -87,17 +91,42 @@ jobs:
           
           # Test core modules
           try:
-              from util.custom_logging import setup_logging_from_config
-              print('✅ util.custom_logging imports successfully')
+              from openssl_tools.util.custom_logging import setup_logging_from_config
+              print('✅ openssl_tools.util.custom_logging imports successfully')
           except ImportError as e:
-              print(f'❌ util.custom_logging import failed: {e}')
+              print(f'❌ openssl_tools.util.custom_logging import failed: {e}')
               sys.exit(1)
               
           try:
-              from conan.conan_functions import get_default_conan
-              print('✅ conan.conan_functions imports successfully')
+              from scripts.conan.conan_functions import get_default_conan
+              print('✅ scripts.conan.conan_functions imports successfully')
           except ImportError as e:
-              print(f'❌ conan.conan_functions import failed: {e}')
+              print(f'❌ scripts.conan.conan_functions import failed: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Test conan_functions module
+        run: |
+          echo "🔧 Testing conan_functions module..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, './scripts/conan')
+          
+          try:
+              from conan_functions import validate_conan_installation, get_conan_profiles
+              print('✅ conan_functions module functions available')
+              
+              # Test validation function
+              valid, msg = validate_conan_installation()
+              print(f'Conan validation: {valid} - {msg}')
+              
+              profiles = get_conan_profiles()
+              print(f'Available profiles: {profiles}')
+              
+          except Exception as e:
+              print(f'❌ conan_functions test failed: {e}')
+              import traceback
+              traceback.print_exc()
               sys.exit(1)
           "
       
