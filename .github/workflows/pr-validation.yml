@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   fast-validation:
     name: Fast Validation (3-5 min)
@@ -14,72 +17,67 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         
-      - name: Setup Perl
-        uses: shogo82148/actions-setup-perl@v1
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          perl-version: '5.32'
+          python-version: '3.11'
           
-      - name: Lint & Format Check
+      - name: Install dependencies
         run: |
-          echo "Running lint and format checks..."
-          # Basic Perl syntax check
-          find . -name "*.pl" -exec perl -c {} \;
-          # Check for common issues
-          grep -r "use strict" . --include="*.pl" || echo "Warning: Some Perl files missing 'use strict'"
+          pip install conan>=2.0
+          conan --version
           
-      - name: Syntax Validation
+      - name: Validate conanfile.py
         run: |
-          echo "Running syntax validation..."
-          # Check OpenSSL configuration syntax
-          if [ -f "Configure" ]; then
-            perl Configure --help > /dev/null 2>&1 || echo "Configure syntax check failed"
+          echo "🔍 Validating conanfile.py..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from conanfile import OpenSSLToolsConan
+              print('✅ conanfile.py imports successfully')
+          except Exception as e:
+              print(f'❌ conanfile.py validation failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Test Python imports
+        run: |
+          echo "🐍 Testing Python imports..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              import openssl_tools
+              print('✅ openssl_tools imports successfully')
+          except ImportError as e:
+              print(f'❌ openssl_tools import failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Validate scripts structure
+        run: |
+          echo "📁 Validating scripts structure..."
+          if [ -d "scripts" ]; then
+            echo "✅ scripts directory exists"
+            ls -la scripts/ | head -5
+          else
+            echo "❌ scripts directory missing"
+            exit 1
           fi
           
-      - name: Single Platform Build
+      - name: Test Conan configuration
         run: |
-          echo "Running single platform build..."
-          # Quick build test on Ubuntu
-          ./config --prefix=/tmp/openssl-test
-          make -j$(nproc) > /dev/null 2>&1 || echo "Build failed"
+          echo "🔧 Testing Conan configuration..."
+          conan profile detect --force
+          conan config init
+          conan profile show default
           
-      - name: Quick Unit Tests
-        run: |
-          echo "Running quick unit tests..."
-          # Run basic tests if build succeeded
-          if [ -f "test/bntest" ]; then
-            ./test/bntest > /dev/null 2>&1 || echo "Basic tests failed"
-          fi
-          
-      - name: Report Fast Check Status
+      - name: Report validation status
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            echo "✅ Fast validation passed"
+            echo "✅ PR validation passed"
           else
-            echo "❌ Fast validation failed"
+            echo "❌ PR validation failed"
           fi
-          
-      - name: Trigger Comprehensive Build
-        if: success()
-        run: |
-          echo "Fast checks passed, triggering comprehensive build in openssl-tools..."
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.DISPATCH_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/sparesparrow/openssl-tools/dispatches \
-            -d '{
-              "event_type": "pr-validation",
-              "client_payload": {
-                "pr_number": "${{ github.event.pull_request.number }}",
-                "sha": "${{ github.sha }}",
-                "head_ref": "${{ github.head_ref }}",
-                "base_ref": "${{ github.base_ref }}",
-                "repository": "${{ github.repository }}"
-              }
-            }'
-            
-      - name: Block PR on Fast Check Failure
-        if: failure()
-        run: |
-          echo "❌ Fast validation failed - blocking PR merge"
-          exit 1

@@ -31,9 +31,13 @@ env:
   CONAN_REPOSITORY_NAME: ${{ vars.CONAN_REPOSITORY_NAME || 'sparesparrow-conan' }}
   CONAN_REPOSITORY_URL: ${{ vars.CONAN_REPOSITORY_URL || 'https://conan.cloudsmith.io/sparesparrow-conan/openssl-conan/' }}
 
+permissions:
+  contents: read
+
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       openssl-changed: ${{ steps.changes.outputs.openssl }}
       conan-changed: ${{ steps.changes.outputs.conan }}
@@ -65,6 +69,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.openssl-changed == 'true' || needs.detect-changes.outputs.conan-changed == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
     strategy:
@@ -157,7 +162,7 @@ jobs:
           if [ "$missing" -ne 0 ]; then exit 1; fi
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
@@ -380,6 +385,7 @@ jobs:
     needs: [detect-changes, compile-changes]
     if: always() && needs.compile-changes.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       

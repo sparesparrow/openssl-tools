@@ -15,6 +15,9 @@ on:
       - 'conan/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   basic-validation:
     runs-on: ubuntu-latest
@@ -25,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
@@ -87,17 +90,17 @@ jobs:
           
           # Test core modules
           try:
-              from util.custom_logging import setup_logging_from_config
-              print('✅ util.custom_logging imports successfully')
+              from openssl_tools.util.custom_logging import setup_logging_from_config
+              print('✅ openssl_tools.util.custom_logging imports successfully')
           except ImportError as e:
-              print(f'❌ util.custom_logging import failed: {e}')
+              print(f'❌ openssl_tools.util.custom_logging import failed: {e}')
               sys.exit(1)
               
           try:
-              from conan.conan_functions import get_default_conan
-              print('✅ conan.conan_functions imports successfully')
+              from scripts.conan.conan_functions import get_default_conan
+              print('✅ scripts.conan.conan_functions imports successfully')
           except ImportError as e:
-              print(f'❌ conan.conan_functions import failed: {e}')
+              print(f'❌ scripts.conan.conan_functions import failed: {e}')
               sys.exit(1)
           "
       
