@@ -1,0 +1,212 @@
+name: Core CI - Tools Repository
+
+on:
+  push:
+    branches: [main, master, "release/*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  CONAN_VERSION: ${{ vars.CONAN_VERSION || '2.0.17' }}
+  PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.11' }}
+
+jobs:
+  # Change detection for tools-specific files
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tools: ${{ steps.filter.outputs.tools }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+      conan: ${{ steps.filter.outputs.conan }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            tools:
+              - 'openssl_tools/**'
+              - 'conanfile.py'
+            scripts:
+              - 'scripts/**'
+            conan:
+              - 'conanfile.py'
+              - 'conan-dev/**'
+            workflows:
+              - '.github/workflows/**'
+
+  # Python tools validation
+  python-tools:
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          
+      - name: Install dependencies
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          pip install pytest pytest-cov black flake8 mypy
+          
+      - name: Test Python imports
+        run: |
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              import openssl_tools
+              print('✅ openssl_tools imports successfully')
+          except ImportError as e:
+              print(f'❌ openssl_tools import failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Run linting
+        run: |
+          black --check .
+          flake8 .
+          mypy --ignore-missing-imports .
+          
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --cov=. --cov-report=xml
+          
+  # Conan package validation
+  conan-validation:
+    needs: changes
+    if: needs.changes.outputs.conan == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          
+      - name: Install Conan
+        run: |
+          pip install conan==${{ env.CONAN_VERSION }}
+          conan --version
+          
+      - name: Validate conanfile.py
+        run: |
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from conanfile import OpenSSLToolsConan
+              print('✅ conanfile.py imports successfully')
+              conan = OpenSSLToolsConan()
+              print('✅ OpenSSLToolsConan instantiated')
+          except Exception as e:
+              print(f'❌ conanfile.py validation failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Test Conan configuration
+        run: |
+          conan profile detect --force
+          conan config init
+          conan profile show default
+          
+  # Security scanning
+  security-scan:
+    needs: changes
+    if: always() && (needs.changes.outputs.tools == 'true' || needs.changes.outputs.conan == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          
+      - name: Install security tools
+        run: |
+          pip install bandit safety semgrep
+          
+      - name: Run Bandit security scan
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+          
+      - name: Run Safety check
+        run: |
+          safety check --json --output safety-report.json || true
+          
+      - name: Run Semgrep scan
+        run: |
+          semgrep --config=auto --json --output=semgrep-report.json . || true
+          
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+            semgrep-report.json
+            
+  # Final status check
+  ci-status:
+    needs: [changes, python-tools, conan-validation, security-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Generate CI Summary
+        run: |
+          echo "## 🚀 Core CI Summary - Tools Repository" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Change Detection" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tools changes**: ${{ needs.changes.outputs.tools }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scripts changes**: ${{ needs.changes.outputs.scripts }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conan changes**: ${{ needs.changes.outputs.conan }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workflow changes**: ${{ needs.changes.outputs.workflows }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python tools**: ${{ needs.python-tools.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conan validation**: ${{ needs.conan-validation.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security scan**: ${{ needs.security-scan.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 Tools Repository Focus" >> $GITHUB_STEP_SUMMARY
+          echo "- **Purpose**: OpenSSL build tools and automation" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scope**: Python utilities, Conan packages, CI/CD workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- **Performance**: Fast validation for tools-specific changes" >> $GITHUB_STEP_SUMMARY
+
+          # Fail if any required job failed
+          if [[ "${{ needs.python-tools.result }}" == "failure" ]]; then
+            echo "❌ Python tools validation failed - blocking merge"
+            exit 1
+          fi
+
+          if [[ "${{ needs.conan-validation.result }}" == "failure" ]]; then
+            echo "❌ Conan validation failed - blocking merge"
+            exit 1
+          fi
+
+          echo "✅ Core CI passed - ready for merge"

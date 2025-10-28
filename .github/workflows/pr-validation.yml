@@ -1,0 +1,83 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  fast-validation:
+    name: Fast Validation (3-5 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          pip install conan>=2.0
+          conan --version
+          
+      - name: Validate conanfile.py
+        run: |
+          echo "🔍 Validating conanfile.py..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from conanfile import OpenSSLToolsConan
+              print('✅ conanfile.py imports successfully')
+          except Exception as e:
+              print(f'❌ conanfile.py validation failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Test Python imports
+        run: |
+          echo "🐍 Testing Python imports..."
+          python3 -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              import openssl_tools
+              print('✅ openssl_tools imports successfully')
+          except ImportError as e:
+              print(f'❌ openssl_tools import failed: {e}')
+              sys.exit(1)
+          "
+          
+      - name: Validate scripts structure
+        run: |
+          echo "📁 Validating scripts structure..."
+          if [ -d "scripts" ]; then
+            echo "✅ scripts directory exists"
+            ls -la scripts/ | head -5
+          else
+            echo "❌ scripts directory missing"
+            exit 1
+          fi
+          
+      - name: Test Conan configuration
+        run: |
+          echo "🔧 Testing Conan configuration..."
+          conan profile detect --force
+          conan config init
+          conan profile show default
+          
+      - name: Report validation status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ PR validation passed"
+          else
+            echo "❌ PR validation failed"
+          fi
