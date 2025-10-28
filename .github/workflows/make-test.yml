@@ -1,0 +1,153 @@
+name: "OpenSSL Make Test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-target:
+        description: 'Test target to run'
+        required: false
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - test_fuzz
+          - test_external
+      harness-jobs:
+        description: 'Number of parallel test jobs'
+        required: false
+        default: '2'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  make-test:
+    name: "Run OpenSSL Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libssl-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            wget \
+            curl \
+            llvm \
+            libncurses5-dev \
+            libncursesw5-dev \
+            xz-utils \
+            tk-dev \
+            libffi-dev \
+            liblzma-dev
+            
+      - name: Setup test environment
+        run: |
+          # Create artifacts directory
+          OSSL_CI_ARTIFACTS_PATH="artifacts/"
+          if [ -n "${GITHUB_RUN_NUMBER}" ]; then
+              OSSL_CI_ARTIFACTS_PATH="artifacts/github-${GITHUB_JOB}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ID}/"
+          fi
+          mkdir -p "$OSSL_CI_ARTIFACTS_PATH"
+          echo "OSSL_CI_ARTIFACTS_PATH=$(cd "$OSSL_CI_ARTIFACTS_PATH"; pwd)" >> $GITHUB_ENV
+          echo "HARNESS_JOBS=${{ github.event.inputs.harness-jobs || '2' }}" >> $GITHUB_ENV
+          
+      - name: Run tests
+        id: run-tests
+        run: |
+          # Check if we have OpenSSL build files
+          if [ ! -f "Makefile" ] && [ ! -f "Configure" ]; then
+            echo "No OpenSSL build files found. This appears to be a tools repository."
+            echo "Creating mock test structure..."
+            
+            # Create a basic test structure for demonstration
+            mkdir -p test-runs/test_basic
+            echo "Mock test results" > test-runs/test_basic/test.log
+            echo "TEST_RESULT=mock" >> $GITHUB_ENV
+          else
+            echo "Found OpenSSL build files, running actual tests..."
+            
+            # Configure if needed
+            if [ ! -f "Makefile" ] && [ -f "Configure" ]; then
+              ./Configure linux-x86_64
+            fi
+            
+            # Run the tests with timeout
+            set +e
+            timeout 3600 make ${{ github.event.inputs.test-target || 'test' }} HARNESS_JOBS=${HARNESS_JOBS} || {
+                RESULT=$?
+                if [ $RESULT -eq 124 ]; then
+                    echo "Test execution timed out after 60 minutes"
+                    echo "TEST_RESULT=timeout" >> $GITHUB_ENV
+                else
+                    echo "TEST_RESULT=failed" >> $GITHUB_ENV
+                fi
+                exit $RESULT
+            }
+            echo "TEST_RESULT=success" >> $GITHUB_ENV
+            set -e
+          fi
+          
+      - name: Collect artifacts
+        if: always()
+        run: |
+          # Move interesting test data to artifacts
+          for test_name in quic_multistream basic mock; do
+              if [ -d "test-runs/test_${test_name}" ]; then
+                  mv "test-runs/test_${test_name}" "$OSSL_CI_ARTIFACTS_PATH/" || true
+              fi
+          done
+          
+          # Log the artifact tree
+          echo "::group::Artifact files generated"
+          echo "Test result: $TEST_RESULT, artifacts path: $OSSL_CI_ARTIFACTS_PATH"
+          if [ -d "$OSSL_CI_ARTIFACTS_PATH" ]; then
+              (cd "$OSSL_CI_ARTIFACTS_PATH"; find . -type f | sort)
+          fi
+          echo "::endgroup::"
+          
+      - name: Archive test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-test-results
+          path: artifacts/
+          retention-days: 7
+          
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          case "$TEST_RESULT" in
+            "success")
+              echo "✅ **Tests PASSED**" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "failed")
+              echo "❌ **Tests FAILED**" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "timeout")
+              echo "⏱️ **Tests TIMED OUT** (after 60 minutes)" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "mock")
+              echo "🎦 **Mock Tests** (no OpenSSL source found)" >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "❓ **Unknown test result**" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ github.event.inputs.test-target || 'test' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Jobs**: ${{ env.HARNESS_JOBS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifacts**: Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY

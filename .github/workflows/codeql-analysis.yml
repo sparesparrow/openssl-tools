@@ -1,0 +1,57 @@
+name: "CodeQL Analysis"
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  schedule:
+    - cron: '18 9 * * 2'  # Tuesdays at 9:18 AM UTC
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp', 'python' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+        
+    - name: Autobuild (for C++)
+      if: matrix.language == 'cpp'
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Manual build (for Python)
+      if: matrix.language == 'python'
+      run: |
+        # Install Python dependencies if they exist
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt || true
+        fi
+        if [ -f "setup.py" ]; then
+          pip install -e . || true
+        fi
+        # Install common packages that might be needed
+        pip install conan>=2.0.0 || true
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"

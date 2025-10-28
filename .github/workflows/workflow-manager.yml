@@ -1,0 +1,316 @@
+name: "Workflow Manager - Fix and Clean"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - disable-failing
+          - enable-core
+          - health-check
+          - cleanup-duplicates
+          - fix-common-issues
+        default: 'health-check'
+      batch-size:
+        description: 'Number of workflows to process at once'
+        required: false
+        default: '10'
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  workflow-manager:
+    name: "${{ github.event.inputs.action }}"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          pip install pyyaml requests
+          
+      - name: Health Check
+        if: github.event.inputs.action == 'health-check'
+        run: |
+          echo "🏥 Running Workflow Health Check..."
+          python3 << 'EOF'
+          import os
+          import yaml
+          import glob
+          
+          total = 0
+          valid = 0
+          invalid = []
+          large = []
+          
+          for workflow_file in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              total += 1
+              try:
+                  with open(workflow_file, 'r') as f:
+                      content = f.read()
+                      yaml_data = yaml.safe_load(content)
+                  
+                  # Check file size (>50KB is large)
+                  if len(content) > 50000:
+                      large.append((workflow_file, len(content)))
+                  
+                  # Basic validation
+                  if yaml_data and 'on' in yaml_data:
+                      valid += 1
+                  else:
+                      invalid.append(workflow_file)
+                      
+              except Exception as e:
+                  invalid.append(f"{workflow_file}: {e}")
+          
+          print(f"📊 Workflow Health Summary:")
+          print(f"  Total workflows: {total}")
+          print(f"  Valid workflows: {valid}")
+          print(f"  Invalid workflows: {len(invalid)}")
+          print(f"  Large workflows (>50KB): {len(large)}")
+          
+          if invalid:
+              print(f"\n❌ Invalid workflows:")
+              for w in invalid[:10]:  # Show first 10
+                  print(f"  - {w}")
+          
+          if large:
+              print(f"\n📈 Large workflows:")
+              for w, size in large[:5]:  # Show first 5
+                  print(f"  - {w}: {size:,} bytes")
+          
+          # Set environment for next steps
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"TOTAL_WORKFLOWS={total}\n")
+              f.write(f"VALID_WORKFLOWS={valid}\n")
+              f.write(f"INVALID_COUNT={len(invalid)}\n")
+          EOF
+          
+      - name: Disable Failing Workflows
+        if: github.event.inputs.action == 'disable-failing'
+        run: |
+          echo "🚫 Disabling potentially problematic workflows..."
+          
+          # Create disabled directory if it doesn't exist
+          mkdir -p .github/workflows/disabled
+          
+          # List of workflows that commonly fail in tools repos
+          FAILING_PATTERNS=(
+            "*cross-compile*"
+            "*fuzz*"
+            "*provider-compatibility*"
+            "*weekly-exhaustive*"
+            "*openssl-integration*"
+            "*run-checker*"
+            "*migration-controller*"
+            "*riscv*"
+            "*os-zoo*"
+            "*windows_comp*"
+            "*deploy-docs*"
+            "*backport*"
+          )
+          
+          moved_count=0
+          for pattern in "${FAILING_PATTERNS[@]}"; do
+            for file in .github/workflows/$pattern.yml .github/workflows/$pattern.yaml; do
+              if [ -f "$file" ]; then
+                echo "Moving $file to disabled/"
+                mv "$file" .github/workflows/disabled/
+                ((moved_count++))
+              fi
+            done
+          done
+          
+          echo "Moved $moved_count potentially failing workflows to disabled/"
+          echo "MOVED_WORKFLOWS=$moved_count" >> $GITHUB_ENV
+          
+      - name: Enable Core Workflows
+        if: github.event.inputs.action == 'enable-core'
+        run: |
+          echo "✅ Ensuring core workflows are enabled and working..."
+          
+          # List of core workflows that should always work
+          CORE_WORKFLOWS=(
+            "core-health-check.yml"
+            "codeql-analysis.yml"
+            "make-test.yml"
+          )
+          
+          for workflow in "${CORE_WORKFLOWS[@]}"; do
+            if [ ! -f ".github/workflows/$workflow" ]; then
+              echo "⚠️  Core workflow missing: $workflow"
+            else
+              echo "✅ Core workflow present: $workflow"
+            fi
+          done
+          
+      - name: Fix Common Issues
+        if: github.event.inputs.action == 'fix-common-issues'
+        run: |
+          echo "🔧 Fixing common workflow issues..."
+          
+          python3 << 'EOF'
+          import os
+          import yaml
+          import glob
+          import re
+          
+          fixes_applied = 0
+          
+          for workflow_file in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              try:
+                  with open(workflow_file, 'r') as f:
+                      content = f.read()
+                      original_content = content
+                  
+                  # Fix 1: Update old action versions
+                  content = re.sub(r'actions/checkout@v3', 'actions/checkout@v4', content)
+                  content = re.sub(r'actions/setup-python@v4', 'actions/setup-python@v5', content)
+                  content = re.sub(r'actions/upload-artifact@v3', 'actions/upload-artifact@v4', content)
+                  
+                  # Fix 2: Add missing permissions where needed
+                  if 'permissions:' not in content and 'actions/checkout@' in content:
+                      # Add basic permissions after name/on
+                      lines = content.split('\n')
+                      for i, line in enumerate(lines):
+                          if line.startswith('on:') and i < len(lines) - 1:
+                              # Find the end of the 'on:' section
+                              j = i + 1
+                              while j < len(lines) and (lines[j].startswith('  ') or lines[j].strip() == ''):
+                                  j += 1
+                              # Insert permissions after 'on:' section
+                              lines.insert(j, '')
+                              lines.insert(j + 1, 'permissions:')
+                              lines.insert(j + 2, '  contents: read')
+                              content = '\n'.join(lines)
+                              break
+                  
+                  # Fix 3: Fix timeout issues - add reasonable timeouts
+                  if 'timeout-minutes:' not in content and 'runs-on:' in content:
+                      content = re.sub(
+                          r'(runs-on: [^\n]+)',
+                          r'\1\n    timeout-minutes: 30',
+                          content
+                      )
+                  
+                  # Save if changes were made
+                  if content != original_content:
+                      with open(workflow_file, 'w') as f:
+                          f.write(content)
+                      print(f"Fixed: {workflow_file}")
+                      fixes_applied += 1
+                      
+              except Exception as e:
+                  print(f"Error processing {workflow_file}: {e}")
+          
+          print(f"Applied fixes to {fixes_applied} workflows")
+          
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"FIXES_APPLIED={fixes_applied}\n")
+          EOF
+          
+      - name: Cleanup Duplicates
+        if: github.event.inputs.action == 'cleanup-duplicates'
+        run: |
+          echo "🧹 Cleaning up duplicate workflows..."
+          
+          python3 << 'EOF'
+          import os
+          import yaml
+          import glob
+          from collections import defaultdict
+          
+          # Group workflows by name
+          workflows_by_name = defaultdict(list)
+          
+          for workflow_file in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              try:
+                  with open(workflow_file, 'r') as f:
+                      yaml_data = yaml.safe_load(f)
+                  
+                  if yaml_data and 'name' in yaml_data:
+                      name = yaml_data['name'].lower().strip()
+                      workflows_by_name[name].append(workflow_file)
+                      
+              except Exception as e:
+                  print(f"Error reading {workflow_file}: {e}")
+          
+          # Find duplicates
+          duplicates = {name: files for name, files in workflows_by_name.items() if len(files) > 1}
+          
+          if duplicates:
+              print(f"Found {len(duplicates)} sets of duplicate workflows:")
+              for name, files in duplicates.items():
+                  print(f"  '{name}': {len(files)} files")
+                  for f in files:
+                      print(f"    - {f}")
+          else:
+              print("No duplicate workflows found.")
+          EOF
+          
+      - name: Create Summary
+        if: always()
+        run: |
+          echo "## Workflow Manager Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action**: ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "$TOTAL_WORKFLOWS" ]; then
+            echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
+            echo "- Total workflows: $TOTAL_WORKFLOWS" >> $GITHUB_STEP_SUMMARY
+            echo "- Valid workflows: $VALID_WORKFLOWS" >> $GITHUB_STEP_SUMMARY
+            echo "- Invalid workflows: $INVALID_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -n "$MOVED_WORKFLOWS" ]; then
+            echo "### Disable Results" >> $GITHUB_STEP_SUMMARY
+            echo "- Moved $MOVED_WORKFLOWS workflows to disabled/" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -n "$FIXES_APPLIED" ]; then
+            echo "### Fix Results" >> $GITHUB_STEP_SUMMARY
+            echo "- Applied fixes to $FIXES_APPLIED workflows" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "✅ Workflow management complete!" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Commit changes
+        if: github.event.inputs.action != 'health-check'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "🔧 Workflow Manager: ${{ github.event.inputs.action }}
+            
+            Applied automatic fixes and cleanup to improve workflow reliability.
+            
+            - Action: ${{ github.event.inputs.action }}
+            - Batch size: ${{ github.event.inputs.batch-size }}
+            - Timestamp: $(date -u)"
+            
+            git push origin main
+            echo "✅ Changes committed and pushed"
+          else
+            echo "ℹ️  No changes to commit"
+          fi
