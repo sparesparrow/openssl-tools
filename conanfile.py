@@ -18,7 +18,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class OpensslToolsConan(ConanFile):
+class OpenSSLConan(ConanFile):
     name = "openssl-tools"
     version = "1.1.1"
     requires = "openssl/3.4.0@sparesparrow/stable"
