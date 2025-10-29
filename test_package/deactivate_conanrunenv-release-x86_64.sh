@@ -1,4 +1,4 @@
 echo Restoring environment
+unset PYTHONPATH
 unset OPENSSL_TOOLS_VERSION
 unset OPENSSL_TOOLS_ROOT
-unset PYTHONPATH

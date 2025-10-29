@@ -1,0 +1,50 @@
+2025-10-26 03:10:56,329 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1041 - 🚀 Starting OpenSSL Tools E2E Test Framework
+2025-10-26 03:10:56,329 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:392 - Phase: Bootstrap Environment
+2025-10-26 03:10:56,329 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:452 - Performing manual bootstrap...
+2025-10-26 03:10:56,329 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /usr/bin/python3 -m venv /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing
+2025-10-26 03:11:03,390 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/pip install conan==2.21.0
+2025-10-26 03:11:05,675 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan remote add conancenter https://center.conan.io
+2025-10-26 03:11:06,441 - openssl_tools_e2e_test - ERROR - openssl_tools_e2e_test.py:377 - Command failed with code 1: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan remote add conancenter https://center.conan.io
+2025-10-26 03:11:06,442 - openssl_tools_e2e_test - ERROR - openssl_tools_e2e_test.py:379 - STDERR: ERROR: Error loading custom command openssl.cmd_benchmark: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_build: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_configure: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_docs: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_graph: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading cu...
+2025-10-26 03:11:06,442 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/
+2025-10-26 03:11:07,287 - openssl_tools_e2e_test - ERROR - openssl_tools_e2e_test.py:377 - Command failed with code 1: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan remote add sparesparrow-conan https://cloudsmith.io/~sparesparrow-conan/repos/openssl-conan/
+2025-10-26 03:11:07,288 - openssl_tools_e2e_test - ERROR - openssl_tools_e2e_test.py:379 - STDERR: ERROR: Error loading custom command openssl.cmd_benchmark: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_build: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_configure: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_docs: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading custom command openssl.cmd_graph: invalid syntax (cmd_build.py, line 38)
+ERROR: Error loading cu...
+2025-10-26 03:11:07,288 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan profile detect --force
+2025-10-26 03:11:09,042 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/bin/conan --version
+2025-10-26 03:11:09,951 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1059 - ✅ bootstrap completed successfully in 13.6s
+2025-10-26 03:11:09,951 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:518 - Phase: Repository Setup
+2025-10-26 03:11:10,434 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: git clone --depth 1 --branch master https://github.com/openssl/openssl.git /home/sparrow/OSSL_TEST/openssl-tools/upstream-repo
+2025-10-26 03:11:35,299 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:542 - Successfully cloned upstream repository
+2025-10-26 03:11:35,299 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: git rev-parse --short HEAD
+2025-10-26 03:11:35,305 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: git clone --depth 1 --branch master https://github.com/sparesparrow/openssl.git /home/sparrow/OSSL_TEST/openssl-tools/fork-repo
+2025-10-26 03:12:01,021 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:542 - Successfully cloned fork repository
+2025-10-26 03:12:01,022 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: git rev-parse --short HEAD
+2025-10-26 03:12:01,027 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1059 - ✅ repository_setup completed successfully in 51.1s
+2025-10-26 03:12:01,028 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:586 - Phase: Overlay Application
+2025-10-26 03:12:01,048 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:352 - Executing: git status --porcelain
+2025-10-26 03:12:01,395 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1059 - ✅ overlay_application completed successfully in 0.4s
+2025-10-26 03:12:01,395 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:668 - Phase: Repository Consolidation Analysis
+2025-10-26 03:12:01,395 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:119 - Starting repository consolidation analysis...
+2025-10-26 03:12:01,396 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:150 - Scanning directory structure...
+2025-10-26 03:12:01,826 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:190 - Detecting duplicate functionality...
+2025-10-26 03:12:01,826 - openssl_tools_e2e_test - WARNING - openssl_tools_e2e_test.py:211 - Found potential duplicates in setup: 34 files
+2025-10-26 03:12:01,827 - openssl_tools_e2e_test - WARNING - openssl_tools_e2e_test.py:211 - Found potential duplicates in environment: 13 files
+2025-10-26 03:12:01,827 - openssl_tools_e2e_test - WARNING - openssl_tools_e2e_test.py:211 - Found potential duplicates in orchestrator: 8 files
+2025-10-26 03:12:01,827 - openssl_tools_e2e_test - WARNING - openssl_tools_e2e_test.py:211 - Found potential duplicates in utilities: 6 files
+2025-10-26 03:12:01,990 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1059 - ✅ consolidation_analysis completed successfully in 0.6s
+2025-10-26 03:12:01,991 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:875 - Phase: GitHub Integration
+2025-10-26 03:12:01,992 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:882 - PR feedback disabled, skipping GitHub integration
+2025-10-26 03:12:01,992 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1059 - ✅ pr_integration completed successfully in 0.0s
+2025-10-26 03:12:01,992 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1086 - Generating final comprehensive report...
+2025-10-26 03:12:01,997 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1234 - Final report generated: /home/sparrow/OSSL_TEST/openssl-tools/logs/e2e-test/comprehensive_test_report.md
+2025-10-26 03:12:01,997 - openssl_tools_e2e_test - INFO - openssl_tools_e2e_test.py:1075 - 📊 Overall results: 5/5 phases successful
