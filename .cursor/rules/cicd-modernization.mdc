@@ -1,0 +1,361 @@
+---
+description: Modern CI/CD rules for OpenSSL (containers, caching, quality gates)
+globs: [".github/workflows/**/*.yml", "**/Dockerfile*", "**/docker-compose*.yml", "scripts/**/*.py", "conan/**", "**/conanfile.py", "**/*.yaml", "**/*.yml"]
+alwaysApply: false
+---
+
+# CI/CD Modernization Rules
+
+Based on analysis of oms-dev DevOps practices and modern CI/CD best practices for OpenSSL.
+
+## Modern CI/CD Architecture
+
+### Container-First Approach
+- **Use multi-stage Docker builds** for consistent environments
+- **Implement hermetic containers** with pinned base images
+- **Use container registries** for caching and distribution
+- **Set up development containers** for local development
+
+### Pipeline Design Principles
+- **Implement pipeline-as-code** with version control
+- **Use declarative pipeline definitions** (YAML/JSON)
+- **Implement proper pipeline stages** (build, test, security, deploy)
+- **Set up pipeline templates** for consistency
+
+### Build Optimization
+- **Use intelligent caching** at multiple levels (source, binary, container)
+- **Implement parallel execution** where possible
+- **Set up build matrix optimization** to reduce redundant work
+- **Use build artifacts** for sharing between jobs
+
+## Michal's CI/CD Patterns
+
+### Automated Package Updates
+```yaml
+# Pattern from oms-dev: Automated conan package updates
+name: Automated Package Updates
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+  workflow_dispatch:
+
+jobs:
+  update-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for package updates
+        run: |
+          python3 scripts/check_package_updates.py
+          
+      - name: Update conanfile.py
+        run: |
+          python3 scripts/update_conan_packages.py
+          
+      - name: Validate updates
+        run: |
+          conan install . --build=missing
+          conan test test_package openssl/3.5.0@
+          
+      - name: Create pull request
+        run: |
+          python3 scripts/create_update_pr.py
+```
+
+### Build Configuration Management
+```yaml
+# Pattern from oms-dev: Multiple build configurations
+strategy:
+  matrix:
+    include:
+      - profile: hermetic-linux-gcc11
+        config: Release
+        platform: linux
+      - profile: abi-strict-clang15
+        config: Debug
+        platform: linux
+      - profile: windows-vs2022
+        config: Release
+        platform: windows
+```
+
+### Quality Gates
+```yaml
+# Pattern from oms-dev: Comprehensive quality checks
+jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Security scan
+        run: |
+          conan create . --profile=security.profile
+          python3 scripts/security_scan.py
+          
+      - name: Performance test
+        run: |
+          python3 scripts/performance_test.py
+          
+      - name: Compliance check
+        run: |
+          python3 scripts/compliance_check.py
+```
+
+## OpenSSL-Specific CI/CD
+
+### Security-First Pipeline
+```yaml
+name: Security-First Build
+on: [push, pull_request]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vulnerability scan
+        run: |
+          # Scan OpenSSL and dependencies
+          python3 scripts/vulnerability_scan.py
+          
+      - name: FIPS validation
+        run: |
+          # Validate FIPS compliance
+          conan create . -o fips=True
+          python3 scripts/fips_validation.py
+          
+      - name: Cryptographic validation
+        run: |
+          # Test cryptographic functions
+          python3 scripts/crypto_validation.py
+```
+
+### Multi-Platform Support
+```yaml
+name: Multi-Platform Build
+strategy:
+  matrix:
+    include:
+      - os: ubuntu-22.04
+        arch: x86_64
+        compiler: gcc-11
+      - os: ubuntu-22.04
+        arch: arm64
+        compiler: gcc-11
+      - os: macos-12
+        arch: x86_64
+        compiler: clang-14
+      - os: windows-2022
+        arch: x86_64
+        compiler: msvc-19
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Build OpenSSL
+        run: |
+          conan create . --profile=conan/profiles/${{ matrix.compiler }}.profile
+```
+
+### Performance Optimization
+```yaml
+name: Optimized Build
+jobs:
+  build-with-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan/locks/*.lock') }}
+          
+      - name: Cache compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          
+      - name: Build with optimization
+        run: |
+          conan install . --lockfile=conan/locks/optimized.lock
+          conan build . --build-folder=build
+```
+
+## Advanced CI/CD Features
+
+### Intelligent Build Selection
+```yaml
+name: Smart Build Selection
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      openssl-changed: ${{ steps.changes.outputs.openssl }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+      docs-changed: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            openssl:
+              - 'crypto/**'
+              - 'ssl/**'
+              - 'apps/**'
+            tests:
+              - 'test/**'
+            docs:
+              - 'doc/**'
+              
+  conditional-build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.openssl == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build OpenSSL
+        run: |
+          conan create . --profile=hermetic-linux-gcc11
+```
+
+### Artifact Management
+```yaml
+name: Artifact Management
+jobs:
+  build-and-store:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build packages
+        run: |
+          conan create . --profile=production.profile
+          
+      - name: Upload to artifact registry
+        run: |
+          conan upload "*" -r=production-registry --confirm
+          
+      - name: Generate SBOM
+        run: |
+          python3 scripts/generate_sbom.py
+          
+      - name: Store artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-artifacts
+          path: |
+            ~/.conan2/p/*/p/
+            sbom.json
+```
+
+### Deployment Automation
+```yaml
+name: Automated Deployment
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to production
+        run: |
+          # Deploy to production registry
+          conan upload "*" -r=production-registry --confirm
+          
+          # Update package indexes
+          python3 scripts/update_package_index.py
+          
+          # Notify stakeholders
+          python3 scripts/notify_deployment.py
+```
+
+## Monitoring and Observability
+
+### Build Metrics Collection
+```yaml
+name: Build Metrics
+jobs:
+  collect-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect build metrics
+        run: |
+          python3 scripts/collect_build_metrics.py
+          
+      - name: Upload metrics
+        run: |
+          # Upload to monitoring system
+          python3 scripts/upload_metrics.py
+```
+
+### Quality Metrics
+```yaml
+name: Quality Metrics
+jobs:
+  quality-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate quality report
+        run: |
+          python3 scripts/generate_quality_report.py
+          
+      - name: Upload quality metrics
+        run: |
+          python3 scripts/upload_quality_metrics.py
+```
+
+## Security and Compliance
+
+### Security Pipeline
+```yaml
+name: Security Pipeline
+jobs:
+  security-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dependency scan
+        run: |
+          python3 scripts/dependency_scan.py
+          
+      - name: Code security scan
+        run: |
+          python3 scripts/code_security_scan.py
+          
+      - name: Container security scan
+        run: |
+          python3 scripts/container_security_scan.py
+```
+
+### Compliance Validation
+```yaml
+name: Compliance Validation
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: License compliance
+        run: |
+          python3 scripts/license_compliance.py
+          
+      - name: Export compliance
+        run: |
+          python3 scripts/export_compliance.py
+          
+      - name: Generate compliance report
+        run: |
+          python3 scripts/generate_compliance_report.py
+```
+
+## Best Practices Summary
+
+1. **Containerization**: Use containers for consistent environments
+2. **Automation**: Automate repetitive tasks and package updates
+3. **Caching**: Implement intelligent caching at multiple levels
+4. **Security**: Integrate security scanning throughout the pipeline
+5. **Quality**: Implement comprehensive quality gates
+6. **Monitoring**: Collect and analyze build and quality metrics
+7. **Compliance**: Ensure regulatory and license compliance
+8. **Scalability**: Design for growth and platform expansion
+9. **Reliability**: Implement proper error handling and recovery
+10. **Documentation**: Maintain clear pipeline documentation
+
+These rules ensure modern, efficient, and secure CI/CD practices for OpenSSL development.

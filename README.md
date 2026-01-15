@@ -347,24 +347,34 @@ This repository automatically receives build triggers from [sparesparrow/openssl
 - **Job: build-openssl**: Builds OpenSSL in parallel across selected configurations
 - **Job: report-status**: Reports results back to OpenSSL repository
 
-#### Build Matrix Generator (`scripts/build_matrix_generator.py`)
-- Analyzes file changes using GitHub API
-- Maps changes to relevant build profiles:
-  - `crypto/` changes → linux-gcc-release, windows-msvc, macos-clang
-  - `providers/fips/` changes → linux-fips (separate cache)
-  - `test/` changes → linux-gcc-debug
-  - `conanfile.py` changes → FULL MATRIX
-- Fallback to minimal build if analysis fails
+## Consolidated Script Architecture (2025)
 
-#### Status Reporter (`scripts/status_reporter.py`)
-- **Commit Status API**: Creates status checks visible in PR
-- **Check Runs API**: Provides detailed build reports with performance metrics
-- **PR Comments**: Posts formatted tables with build results and cache statistics
+### Core Scripts (5 Critical - Never Remove)
+- **`openssl_tools/foundation/build_orchestrator.py`** - 5-phase OpenSSL build engine
+- **`scripts/conan/conan_orchestrator.py`** - CI/CD automation backbone
+- **`scripts/conan/dependency_manager.py`** - Security compliance + updates
+- **`scripts/setup-openssl-tools-conan.py`** - Complete environment setup
+- **`scripts/conan/package-registry-manager.py`** - Cloudsmith publishing
 
-#### Performance Analyzer (`scripts/performance_analyzer.py`)
-- Analyzes Conan build output for performance metrics
-- Calculates cache hit rates and build times
-- Generates detailed performance reports
+### Supporting Scripts (10 Essential)
+- **`scripts/workflow-manager.py`** - Unified workflow management (replaces 5 tools)
+- **`scripts/build_matrix_generator.py`** - Intelligent CI optimization
+- **`scripts/upload-conan-package.py`** - GitHub release automation
+- **`scripts/conan/conan-install.py`** - Cross-platform install
+- **`scripts/create-github-release.py`** - Release management
+- **`scripts/conan/conan_cli.py`** - CLI wrapper
+- **`scripts/conan/full_deploy_enhanced.py`** - SBOM + zero-copy deployment
+- **`scripts/test-openssl-tools-conan.py`** - Package QA testing
+- **`scripts/validation/pre-build-validation.py`** - Unified validation
+- **`scripts/openssl_conan/conan/openssl_conan_example.py`** - Documentation
+
+### Archived Scripts (Moved to organized directories)
+- **`archive/migration/`** - Legacy migration scripts
+- **`archive/legacy/`** - Deprecated scripts kept for reference
+- **`experimental/`** - MCP and AI-assisted development tools
+- **`utilities/testing/`** - Testing utilities and servers
+- **`utilities/performance/`** - Performance analysis tools
+- **`utilities/monitoring/`** - System monitoring utilities
 
 ## Required GitHub Secrets
 

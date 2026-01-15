@@ -1,0 +1,223 @@
+---
+description: Dependency management best practices for OpenSSL projects (Conan, Python, CI/CD integration)
+globs: ["conanfile.py", "conanfile.txt", "requirements*.txt", "pyproject.toml", "setup.py", "**/conan/**", "**/profiles/*.profile", ".github/workflows/**/*.yml", "scripts/**/*.py"]
+alwaysApply: false
+---
+
+# Dependency Management Rules for OpenSSL Projects
+
+Based on analysis of openssl-tools repository and modern dependency management practices.
+
+## Core Principles
+
+### Semantic Versioning
+- **Use semantic versioning** (MAJOR.MINOR.PATCH) for all packages
+- **Pin exact versions** for production builds to ensure reproducibility
+- **Use version ranges carefully** - prefer exact pins for critical dependencies
+- **Maintain compatibility matrices** between OpenSSL versions and dependencies
+
+### Reproducible Builds
+- **Generate lockfiles** for each environment (dev, staging, prod)
+- **Use hermetic profiles** with pinned toolchain versions
+- **Implement proper package_id()** to optimize caching and avoid unnecessary rebuilds
+- **Document all external dependencies** and their versions
+
+## Conan Package Management
+
+### Recipe Structure
+```python
+class OpenSSLConan(ConanFile):
+    name = "openssl"
+    version = "3.5.0"  # Dynamic from VERSION.dat
+    
+    # Comprehensive options for flexibility
+    options = {
+        "shared": [True, False],
+        "fips": [True, False],
+        "enable_quic": [True, False],
+        "enable_ktls": [True, False],
+        "enable_zlib": [True, False],
+        "enable_zstd": [True, False],
+        "enable_sctp": [True, False],
+        "enable_asan": [True, False],
+        "enable_ubsan": [True, False],
+        "enable_msan": [True, False],
+        "enable_tsan": [True, False],
+        "no_bulk": [True, False],
+        "no_asm": [True, False],
+        "no_deprecated": [True, False],
+        "no_legacy": [True, False],
+    }
+    
+    def requirements(self):
+        # Pin exact versions for critical dependencies
+        if self.options.enable_zlib:
+            self.requires("zlib/1.3.1")
+        if self.options.enable_zstd:
+            self.requires("zstd/1.5.5")
+    
+    def build_requirements(self):
+        # Build tools with version pinning
+        self.tool_requires("cmake/[>=3.20]")
+        self.tool_requires("ninja/1.11.1")
+    
+    def package_id(self):
+        # Optimize for caching - group compatible configurations
+        del self.info.options.build_tests
+        # Group sanitizer builds together
+        if self.options.enable_asan or self.options.enable_ubsan:
+            self.info.options.enable_asan = True
+            self.info.options.enable_ubsan = True
+```
+
+### Profile Management
+- **Use hermetic profiles** with pinned toolchain versions
+- **Implement ABI-strict configurations** to prevent compatibility issues
+- **Configure compiler caching** (ccache/sccache) for faster builds
+- **Set up proper build parallelization** with jobs parameter
+
+### Dependency Resolution
+- **Implement dependency conflict resolution** in configure() method
+- **Use version ranges carefully** - prefer exact pins for production builds
+- **Test with both newest and oldest supported versions**
+- **Document all external dependencies** and their purposes
+
+## Python Dependency Management
+
+### Requirements Files Structure
+```
+requirements.txt          # Production dependencies
+requirements-dev.txt      # Development dependencies
+requirements-mcp.txt      # MCP-specific dependencies
+pyproject.toml           # Modern Python packaging
+```
+
+### Version Pinning Strategy
+```python
+# requirements.txt - Production dependencies
+conan>=2.0.0,<3.0.0
+PyYAML>=6.0,<7.0
+pytest>=7.0.0,<8.0.0
+pytest-cov>=4.0.0,<5.0.0
+
+# requirements-dev.txt - Development dependencies
+black>=23.0.0,<24.0.0
+flake8>=6.0.0,<7.0.0
+mypy>=1.0.0,<2.0.0
+isort>=5.12.0,<6.0.0
+```
+
+### Virtual Environment Management
+- **Use conan-dev virtual environment** as primary Python environment
+- **Set PYTHON_APPLICATION environment variable** for consistency
+- **Install packages in CI environment** following oms-dev/ngapy-dev patterns
+- **Validate Python version compatibility** across platforms
+
+## CI/CD Integration
+
+### Automated Package Updates
+- **Implement automated conanfile.py updates** for dependency version bumps
+- **Use CI/CD triggers** for automatic package updates when dependencies change
+- **Maintain automated testing** for updated packages
+- **Implement rollback mechanisms** for failed automated updates
+
+### Build Matrix Configuration
+```yaml
+strategy:
+  matrix:
+    include:
+      - name: Linux x86_64 GCC
+        profile: linux-gcc11
+        conan_options: -o fips=True -o enable_demos=True
+      - name: Linux x86_64 Clang
+        profile: linux-clang15
+        conan_options: -o fips=False -o enable_demos=True
+      - name: Windows MSVC 2022
+        profile: windows-msvc2022
+        conan_options: -o fips=True -o enable_demos=True
+      - name: macOS x86_64
+        profile: macos-x86_64
+        conan_options: -o fips=True -o enable_demos=True
+      - name: macOS ARM64
+        profile: macos-arm64
+        conan_options: -o fips=True -o enable_demos=True
+```
+
+### Cache Optimization
+- **Use intelligent caching strategies** to reduce build times
+- **Implement incremental builds** with proper cache keys
+- **Set up cross-platform binary reuse** where ABI-compatible
+- **Optimize package ID strategies** for better cache hit rates
+
+## Security and Compliance
+
+### SBOM Generation
+- **Generate Software Bill of Materials** for all builds
+- **Use CycloneDX format** for standardized reporting
+- **Include component inventory** and dependency tracking
+- **Add security metadata** for vulnerability scanning
+
+### Vulnerability Scanning
+- **Scan dependencies for known vulnerabilities** using safety, bandit, semgrep
+- **Implement security scanning** in CI/CD pipeline
+- **Maintain security update procedures** for critical vulnerabilities
+- **Document security policies** and compliance requirements
+
+### Artifact Signing
+- **Sign all build artifacts** with cryptographic signatures
+- **Generate SHA256 checksums** for integrity validation
+- **Implement provenance tracking** for compliance
+- **Use secure key management** for signing operations
+
+## Monitoring and Observability
+
+### Build Metrics
+- **Track build times** and cache hit rates
+- **Monitor dependency resolution** performance
+- **Measure package promotion** success rates
+- **Analyze rebuild triggers** and optimization opportunities
+
+### Quality Metrics
+- **Track test coverage** across configurations
+- **Monitor security scan** results
+- **Measure package stability** metrics
+- **Analyze dependency vulnerabilities**
+
+### Logging and Debugging
+- **Implement structured logging** for dependency operations
+- **Use appropriate log levels** (DEBUG, INFO, WARNING, ERROR)
+- **Log dependency resolution** decisions and conflicts
+- **Provide debugging information** for failed builds
+
+## Best Practices Summary
+
+1. **Reproducibility**: Use hermetic builds with pinned toolchains and lockfiles
+2. **Security**: Generate SBOMs, scan for vulnerabilities, and sign artifacts
+3. **Performance**: Implement intelligent caching and binary reuse strategies
+4. **Automation**: Automate package updates and testing with proper rollback
+5. **Quality**: Comprehensive testing and validation across all configurations
+6. **Observability**: Monitor and analyze build performance and quality metrics
+7. **Compliance**: Maintain audit trails and provenance for regulatory requirements
+8. **Scalability**: Design for growth and platform expansion
+
+## Implementation Guidelines
+
+### Conan Extension Pattern
+- **Create centralized openssl-tools repository** for all automation scripts
+- **Implement Conan Extension** with custom commands (configure, build, package, docs, benchmark, scan)
+- **Use conan.plugins.openssl** for specialized OpenSSL operations
+- **Provide unified environment** for all OpenSSL projects
+
+### CI/CD Pipeline Structure
+- **Phase 1**: Build packages with lockfiles and validation
+- **Phase 2**: Run comprehensive tests and security scans
+- **Phase 3**: Generate SBOMs and sign artifacts
+- **Phase 4**: Package promotion and deployment with monitoring
+
+### Error Handling and Recovery
+- **Implement robust error handling** for dependency resolution failures
+- **Provide clear error messages** with suggested solutions
+- **Use retry logic** for transient network failures
+- **Implement rollback mechanisms** for failed automated updates
+
+These rules ensure modern, efficient, and secure dependency management for OpenSSL development workflows.

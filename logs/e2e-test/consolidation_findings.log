@@ -1,0 +1,72 @@
+Total files analyzed: 1283
+Duplicate categories found: 4
+Consolidation opportunities: 7
+
+Duplicates in setup:
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl-migration/setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-github-packages-conan.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora-conan.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-advanced-cicd.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/github_packages_setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/ci_setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/conan/conan-dev-setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/test/test_database_setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_vendor/urllib3/util/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/command_line/__init__.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/config_parser.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/config.py
+
+Duplicates in environment:
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/conan_python_env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/env.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py
+
+Duplicates in orchestrator:
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/orchestrator.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/component_orchestrators.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/build_orchestrator.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/matrix_manager.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/registry_manager.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/dependency_manager.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/remote_manager.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/version_manager.py
+
+Duplicates in utilities:
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/util.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/copy_tools.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/tools.py
+  - /home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/autotools.py

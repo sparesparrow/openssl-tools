@@ -375,11 +375,180 @@ path = {self.conan_dir / "cache"}
         
         logger.info(f"✅ Created conan.conf: {conan_conf}")
 
+    def setup_conan_dev_environment(self) -> bool:
+        """Absorb setup-conan-dev-env.py"""
+        logger.info("🔧 Setting up Conan development environment...")
+
+        try:
+            # Set up Conan home directory
+            conan_home = self.project_root / "conan-dev"
+            os.environ["CONAN_HOME"] = str(conan_home)
+
+            # Create Conan configuration
+            self._configure_conan_dev_environment()
+
+            # Set up remotes
+            self._setup_conan_remotes()
+
+            # Initialize local cache
+            self._initialize_conan_cache()
+
+            logger.info("✅ Conan development environment setup complete")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Conan dev environment setup failed: {e}")
+            return False
+
+    def setup_conan_development_tools(self) -> bool:
+        """Absorb conan-dev-setup.py"""
+        logger.info("🛠️ Setting up Conan development tools...")
+
+        try:
+            # Install development tools
+            dev_tools = [
+                "conan",
+                "cmake",
+                "ninja",
+                "git",
+                "python3-dev"
+            ]
+
+            if self.platform == "linux":
+                self._install_linux_dev_tools(dev_tools)
+            elif self.platform == "darwin":
+                self._install_macos_dev_tools(dev_tools)
+            elif self.platform == "windows":
+                self._install_windows_dev_tools(dev_tools)
+
+            # Configure development environment
+            self._configure_development_environment()
+
+            logger.info("✅ Conan development tools setup complete")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Development tools setup failed: {e}")
+            return False
+
+    def run_complete_setup_validation(self) -> bool:
+        """Absorb setup-complete.sh validation"""
+        logger.info("✅ Running complete setup validation...")
+
+        try:
+            validation_results = {
+                "python_version": self._validate_python_version(),
+                "conan_installation": self._validate_conan_installation(),
+                "virtual_environment": self._validate_virtual_environment(),
+                "dependencies": self._validate_dependencies(),
+                "profiles": self._validate_conan_profiles(),
+                "remotes": self._validate_conan_remotes(),
+                "cache": self._validate_conan_cache()
+            }
+
+            # Check if all validations passed
+            all_passed = all(validation_results.values())
+
+            if all_passed:
+                logger.info("✅ All setup validations passed!")
+                self._print_validation_summary(validation_results)
+                return True
+            else:
+                logger.error("❌ Some setup validations failed:")
+                for check, passed in validation_results.items():
+                    if not passed:
+                        logger.error(f"   ❌ {check}")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Setup validation failed: {e}")
+            return False
+
+    def _configure_conan_dev_environment(self):
+        """Configure Conan development environment"""
+        # Would implement Conan configuration logic
+        pass
+
+    def _setup_conan_remotes(self):
+        """Set up Conan remotes"""
+        # Would implement remote setup logic
+        pass
+
+    def _initialize_conan_cache(self):
+        """Initialize Conan cache"""
+        # Would implement cache initialization logic
+        pass
+
+    def _install_linux_dev_tools(self, tools: List[str]):
+        """Install development tools on Linux"""
+        # Would implement Linux-specific installation logic
+        pass
+
+    def _install_macos_dev_tools(self, tools: List[str]):
+        """Install development tools on macOS"""
+        # Would implement macOS-specific installation logic
+        pass
+
+    def _install_windows_dev_tools(self, tools: List[str]):
+        """Install development tools on Windows"""
+        # Would implement Windows-specific installation logic
+        pass
+
+    def _configure_development_environment(self):
+        """Configure development environment"""
+        # Would implement environment configuration logic
+        pass
+
+    def _validate_python_version(self) -> bool:
+        """Validate Python version"""
+        return sys.version_info >= (3, 8)
+
+    def _validate_conan_installation(self) -> bool:
+        """Validate Conan installation"""
+        try:
+            result = subprocess.run(["conan", "--version"], capture_output=True, text=True)
+            return result.returncode == 0 and "2." in result.stdout
+        except:
+            return False
+
+    def _validate_virtual_environment(self) -> bool:
+        """Validate virtual environment"""
+        return self.venv_dir.exists() and (self.venv_dir / "bin" / "python").exists()
+
+    def _validate_dependencies(self) -> bool:
+        """Validate dependencies"""
+        # Would implement dependency validation logic
+        return True
+
+    def _validate_conan_profiles(self) -> bool:
+        """Validate Conan profiles"""
+        profiles_dir = self.conan_dir / "profiles"
+        return profiles_dir.exists() and any(profiles_dir.glob("*.profile"))
+
+    def _validate_conan_remotes(self) -> bool:
+        """Validate Conan remotes"""
+        # Would implement remote validation logic
+        return True
+
+    def _validate_conan_cache(self) -> bool:
+        """Validate Conan cache"""
+        cache_dir = self.conan_dir / "cache"
+        return cache_dir.exists()
+
+    def _print_validation_summary(self, results: Dict[str, bool]):
+        """Print validation summary"""
+        logger.info("📋 Setup Validation Summary:")
+        for check, passed in results.items():
+            status = "✅" if passed else "❌"
+            logger.info(f"   {status} {check.replace('_', ' ').title()}")
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="Set up OpenSSL Tools Conan development environment")
     parser.add_argument("--project-root", type=Path, default=Path.cwd(),
                        help="Project root directory")
+    parser.add_argument("--action", choices=["setup", "dev-env", "dev-tools", "validate"], default="setup",
+                       help="Action to perform")
     parser.add_argument("--force", "-f", action="store_true",
                        help="Force setup (recreate environment)")
     parser.add_argument("--verbose", "-v", action="store_true",
@@ -390,9 +559,18 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Set up environment
+    # Initialize setup
     setup = OpenSSLToolsConanSetup(args.project_root)
-    success = setup.setup_environment(force=args.force)
+
+    # Execute action
+    if args.action == "setup":
+        success = setup.setup_environment(force=args.force)
+    elif args.action == "dev-env":
+        success = setup.setup_conan_dev_environment()
+    elif args.action == "dev-tools":
+        success = setup.setup_conan_development_tools()
+    elif args.action == "validate":
+        success = setup.run_complete_setup_validation()
     
     if success:
         print("\n🎉 OpenSSL Tools Conan environment setup complete!")

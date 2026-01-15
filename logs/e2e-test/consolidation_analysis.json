@@ -1,0 +1,241 @@
+{
+  "total_files": 1283,
+  "duplicates": {
+    "setup": [
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl-migration/setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-github-packages-conan.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora-conan.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-advanced-cicd.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/github_packages_setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/ci_setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/conan/conan-dev-setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/test_database_setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_vendor/urllib3/util/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/command_line/__init__.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/config_parser.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/config.py"
+    ],
+    "environment": [
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/conan_python_env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/env.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py"
+    ],
+    "orchestrator": [
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/orchestrator.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/component_orchestrators.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/build_orchestrator.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/matrix_manager.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/registry_manager.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/dependency_manager.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/remote_manager.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/version_manager.py"
+    ],
+    "utilities": [
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/util.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/copy_tools.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/tools.py",
+      "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/autotools.py"
+    ]
+  },
+  "consolidation_opportunities": [
+    {
+      "type": "command_consolidation",
+      "category": "setup",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/__init__.py"
+      ],
+      "recommendation": "Consolidate setup commands into single unified command"
+    },
+    {
+      "type": "command_consolidation",
+      "category": "run",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_conan_orchestrator.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py"
+      ],
+      "recommendation": "Consolidate run commands into single unified command"
+    },
+    {
+      "type": "command_consolidation",
+      "category": "conan",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_conan_orchestrator.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py"
+      ],
+      "recommendation": "Consolidate conan commands into single unified command"
+    },
+    {
+      "type": "duplicate_consolidation",
+      "category": "setup",
+      "action": "consolidate",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl-migration/setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-github-packages-conan.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-fuzz-corpora-conan.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-advanced-cicd.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/github_packages_setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/ci_setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/conan/conan-dev-setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/test_database_setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/environment/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_vendor/urllib3/util/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/command_line/__init__.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/internal/util/config_parser.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/utilities/config.py"
+      ],
+      "target": "openssl_tools/core/setup.py",
+      "recommendation": "Consolidate setup functionality into unified core module",
+      "benefit": "Reduces maintenance burden and code duplication"
+    },
+    {
+      "type": "duplicate_consolidation",
+      "category": "environment",
+      "action": "consolidate",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/conan_python_env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-conan-dev-env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/commands/run_setup_conan_python_env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/automation/deployment/python_env_setup.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/env.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-ci-environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/fork-repo/scripts/mcp/setup_environment.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/test/conan-environment-test.py"
+      ],
+      "target": "openssl_tools/core/environment.py",
+      "recommendation": "Consolidate environment functionality into unified core module",
+      "benefit": "Reduces maintenance burden and code duplication"
+    },
+    {
+      "type": "duplicate_consolidation",
+      "category": "orchestrator",
+      "action": "consolidate",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/orchestrator.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/component_orchestrators.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/build_orchestrator.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/build_system/matrix_manager.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/registry_manager.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/dependency_manager.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/development/package_management/remote_manager.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/foundation/version_manager.py"
+      ],
+      "target": "openssl_tools/core/orchestrator.py",
+      "recommendation": "Consolidate orchestrator functionality into unified core module",
+      "benefit": "Reduces maintenance burden and code duplication"
+    },
+    {
+      "type": "duplicate_consolidation",
+      "category": "utilities",
+      "action": "consolidate",
+      "files": [
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/urllib3/util/util.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/openssl_tools/util/copy_tools.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/scripts/setup-openssl-tools-conan.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/pip/_internal/utils/setuptools_build.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/utils/tools.py",
+        "/home/sparrow/OSSL_TEST/openssl-tools/venv/conan-testing/lib/python3.12/site-packages/conan/test/assets/autotools.py"
+      ],
+      "target": "openssl_tools/core/utilities.py",
+      "recommendation": "Consolidate utilities functionality into unified core module",
+      "benefit": "Reduces maintenance burden and code duplication"
+    }
+  ],
+  "recommended_structure": {
+    "openssl_tools": {
+      "core": {
+        "description": "Core functionality - consolidated from duplicates",
+        "files": [
+          "environment.py",
+          "conan_integration.py",
+          "testing.py",
+          "platform.py"
+        ]
+      },
+      "commands": {
+        "description": "Streamlined command interface",
+        "files": [
+          "setup.py",
+          "build.py",
+          "test.py",
+          "deploy.py"
+        ]
+      },
+      "extensions": {
+        "description": "Conan extensions (deployers, commands)",
+        "files": [
+          "deployers/",
+          "commands/"
+        ]
+      },
+      "utils": {
+        "description": "Essential utilities only",
+        "files": [
+          "logging.py",
+          "validation.py"
+        ]
+      }
+    }
+  },
+  "removal_candidates": []
+}

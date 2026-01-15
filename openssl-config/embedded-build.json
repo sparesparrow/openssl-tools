@@ -1,0 +1,15 @@
+{
+  "config_name": "embedded-build",
+  "openssl_version": "3.4.1",
+  "fips_enabled": false,
+  "enable_quic": false,
+  "enable_ktls": false,
+  "enable_zlib": false,
+  "enable_zstd": false,
+  "no_asm": true,
+  "no_deprecated": true,
+  "no_legacy": true,
+  "shared": false,
+  "deployment_target": "embedded",
+  "description": "Minimal embedded build with reduced features"
+}

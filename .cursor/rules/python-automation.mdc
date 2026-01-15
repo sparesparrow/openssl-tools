@@ -1,0 +1,313 @@
+---
+description: Python automation patterns for OpenSSL (scripts, conan, monitoring)
+globs: ["scripts/**/*.py", "**/conanfile.py", "conan/**", ".github/workflows/**/*.yml", "**/*.py", "**/requirements*.txt", "pyproject.toml"]
+alwaysApply: false
+---
+
+# Python Automation Best Practices Rules
+
+Based on analysis of oms-dev project and Michal's automation engineering patterns.
+
+## Python Development Standards
+
+### Code Quality and Structure
+- **Use type hints** for all function parameters and return values
+- **Implement comprehensive error handling** with proper exception types
+- **Follow PEP 8** style guidelines consistently
+- **Use docstrings** for all public functions and classes
+- **Implement logging** with appropriate levels (DEBUG, INFO, WARNING, ERROR)
+
+### Conan Integration Patterns
+- **Use conan.tools modules** for modern Conan 2.x integration
+- **Implement proper package lifecycle methods** (configure, build, package, package_info)
+- **Use conan.tools.files** for file operations instead of direct file manipulation
+- **Implement proper dependency management** with requirements() and build_requirements()
+
+### Automation Scripts
+- **Create modular, reusable functions** for common operations
+- **Use configuration files** (YAML/JSON) for environment-specific settings
+- **Implement proper command-line interfaces** with argparse or click
+- **Add comprehensive logging** for debugging and monitoring
+
+## Michal's Automation Patterns
+
+### Automated Package Management
+```python
+def update_conan_packages():
+    """Automatically update conanfile.py with latest package versions"""
+    # Pattern from oms-dev: Regular automated updates
+    # - Parse current conanfile.py
+    # - Check for newer versions
+    # - Update with proper version pinning
+    # - Run validation tests
+    pass
+
+
+def validate_package_versions():
+    """Validate that all package versions are compatible"""
+    # Check for version conflicts
+    # Validate ABI compatibility
+    # Run integration tests
+    pass
+```
+
+### Build System Integration
+```python
+def execute_build_with_monitoring():
+    """Execute build with comprehensive monitoring"""
+    # Pattern from oms-dev conanfile.py
+    # - Set up environment variables
+    # - Execute build commands
+    # - Monitor performance metrics
+    # - Collect build artifacts
+    pass
+
+
+def setup_hermetic_environment():
+    """Set up hermetic build environment"""
+    # Ensure reproducible builds
+    # Pin toolchain versions
+    # Set up caching
+    pass
+```
+
+### Database and Schema Management
+```python
+def check_database_schemas(base_database, match_databases):
+    """Validate database schema compatibility"""
+    # Pattern from oms-dev: SQLite schema validation
+    # - Compare schemas using sqlite_diff_tool
+    # - Report differences
+    # - Handle schema mismatches
+    pass
+
+
+def validate_database_integrity():
+    """Ensure database integrity across environments"""
+    # Check schema consistency
+    # Validate data integrity
+    # Report issues
+    pass
+```
+
+## OpenSSL-Specific Automation
+
+### Configuration Management
+```python
+def generate_openssl_config():
+    """Generate OpenSSL configuration based on options"""
+    # Parse conanfile options
+    # Generate configure command
+    # Handle platform-specific configurations
+    pass
+
+
+def validate_crypto_configuration():
+    """Validate cryptographic configuration"""
+    # Check algorithm selections
+    # Validate security settings
+    # Ensure compliance requirements
+    pass
+```
+
+### Security Automation
+```python
+def generate_security_sbom():
+    """Generate Software Bill of Materials for security"""
+    # Create CycloneDX SBOM
+    # Include all dependencies
+    # Add security metadata
+    pass
+
+
+def scan_vulnerabilities():
+    """Scan for known vulnerabilities"""
+    # Check dependency vulnerabilities
+    # Validate OpenSSL version
+    # Report security issues
+    pass
+```
+
+### Build Optimization
+```python
+def optimize_build_performance():
+    """Optimize build performance based on environment"""
+    # Detect available CPU cores
+    # Configure parallel builds
+    # Set up compiler caching
+    pass
+
+
+def manage_build_cache():
+    """Manage build cache for optimal performance"""
+    # Clean old cache entries
+    # Optimize cache size
+    # Monitor cache hit rates
+    pass
+```
+
+## Testing and Validation
+
+### Automated Testing
+```python
+def run_comprehensive_tests():
+    """Run comprehensive test suite"""
+    # Unit tests
+    # Integration tests
+    # Performance tests
+    # Security tests
+    pass
+
+
+def validate_build_outputs():
+    """Validate build outputs and artifacts"""
+    # Check binary compatibility
+    # Validate library exports
+    # Test functionality
+    pass
+```
+
+### Quality Assurance
+```python
+def enforce_quality_gates():
+    """Enforce quality gates in CI/CD"""
+    # Code quality checks
+    # Security scans
+    # Performance benchmarks
+    # Compliance validation
+    pass
+
+
+def generate_quality_report():
+    """Generate comprehensive quality report"""
+    # Test coverage
+    # Security metrics
+    # Performance metrics
+    # Compliance status
+    pass
+```
+
+## Error Handling and Recovery
+
+### Robust Error Handling
+```python
+def handle_build_failures():
+    """Handle build failures gracefully"""
+    # Log detailed error information
+    # Attempt recovery strategies
+    # Report failure to monitoring
+    pass
+
+
+def implement_retry_logic():
+    """Implement retry logic for transient failures"""
+    # Network operations
+    # File system operations
+    # External tool calls
+    pass
+```
+
+### Monitoring and Alerting
+```python
+def setup_build_monitoring():
+    """Set up comprehensive build monitoring"""
+    # Performance metrics
+    # Error tracking
+    # Resource usage
+    # Success/failure rates
+    pass
+
+
+def send_alerts_on_failure():
+    """Send alerts for critical failures"""
+    # Build failures
+    # Security issues
+    # Performance degradation
+    # Compliance violations
+    pass
+```
+
+## Configuration Management
+
+### Environment Configuration
+```python
+def load_environment_config():
+    """Load environment-specific configuration"""
+    # Development settings
+    # CI/CD settings
+    # Production settings
+    pass
+
+
+def validate_configuration():
+    """Validate configuration completeness"""
+    # Check required settings
+    # Validate values
+    # Report missing configurations
+    pass
+```
+
+### Dynamic Configuration
+```python
+def generate_dynamic_config():
+    """Generate configuration based on environment"""
+    # Platform detection
+    # Feature flags
+    # Performance tuning
+    pass
+
+
+def update_configuration():
+    """Update configuration based on runtime conditions"""
+    # Adaptive settings
+    # Performance optimization
+    # Resource management
+    pass
+```
+
+## Integration Patterns
+
+### CI/CD Integration
+```python
+def integrate_with_ci_system():
+    """Integrate with CI/CD system"""
+    # GitHub Actions
+    # Jenkins
+    # GitLab CI
+    # Azure DevOps
+    pass
+
+
+def handle_ci_artifacts():
+    """Handle CI/CD artifacts"""
+    # Upload build artifacts
+    # Generate reports
+    # Update package repositories
+    pass
+```
+
+### External Tool Integration
+```python
+def integrate_external_tools():
+    """Integrate with external tools"""
+    # Static analysis tools
+    # Security scanners
+    # Performance profilers
+    # Documentation generators
+    pass
+```
+
+## Best Practices Summary
+
+1. **Modularity**: Create reusable, well-documented functions
+2. **Error Handling**: Implement comprehensive error handling and recovery
+3. **Logging**: Use structured logging for debugging and monitoring
+4. **Configuration**: Use external configuration files for flexibility
+5. **Testing**: Implement comprehensive automated testing
+6. **Security**: Include security scanning and validation
+7. **Performance**: Optimize for speed and resource usage
+8. **Monitoring**: Implement comprehensive monitoring and alerting
+9. **Documentation**: Maintain clear documentation and examples
+10. **Integration**: Design for easy integration with CI/CD systems
+
+These patterns ensure robust, maintainable, and efficient Python automation for OpenSSL development workflows.

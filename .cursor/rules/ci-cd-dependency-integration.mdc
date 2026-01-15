@@ -1,0 +1,723 @@
+---
+description: CI/CD integration patterns for dependency management in OpenSSL projects
+globs: [".github/workflows/**/*.yml", "scripts/**/*.py", "conan-dev/**", "**/ci-config.yml", "**/validation-config.yml"]
+alwaysApply: false
+---
+
+# CI/CD Integration with Dependency Management
+
+Based on openssl-tools repository CI/CD patterns and modern automation practices.
+
+## Core Integration Principles
+
+### Automated Dependency Management
+- **Automated package updates** with CI/CD triggers
+- **Dependency validation** in build pipelines
+- **Security scanning** integrated into workflows
+- **Artifact lifecycle management** with proper promotion
+
+### Build Matrix Optimization
+- **Multi-platform builds** with consistent dependency resolution
+- **Parallel execution** with intelligent caching
+- **Conditional builds** based on change detection
+- **Resource optimization** for CI/CD environments
+
+## GitHub Actions Integration
+
+### Reusable Workflows
+```yaml
+# .github/workflows/openssl-dependency-management.yml
+name: OpenSSL Dependency Management
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Type of update'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  detect-dependency-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      updates-available: ${{ steps.check.outputs.updates }}
+      update-summary: ${{ steps.check.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Check for dependency updates
+        id: check
+        run: |
+          python scripts/dependency-checker.py \
+            --conanfile conanfile.py \
+            --requirements requirements*.txt \
+            --output-format json \
+            --check-security \
+            --check-compatibility
+      
+      - name: Comment on PR if updates available
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if ('${{ steps.check.outputs.updates }}' === 'true') {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '🔍 **Dependency Updates Available**\n\n${{ steps.check.outputs.summary }}'
+              })
+            }
+
+  update-dependencies:
+    needs: detect-dependency-updates
+    if: needs.detect-dependency-updates.outputs.updates-available == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Update dependencies
+        run: |
+          python scripts/update-dependencies.py \
+            --conanfile conanfile.py \
+            --requirements requirements*.txt \
+            --update-type ${{ github.event.inputs.update_type || 'patch' }} \
+            --create-pr \
+            --test-updates
+      
+      - name: Validate updates
+        run: |
+          python scripts/validate-dependency-updates.py \
+            --conanfile conanfile.py \
+            --run-tests \
+            --security-scan
+```
+
+### Build Pipeline with Dependency Validation
+```yaml
+# .github/workflows/openssl-build-with-deps.yml
+name: OpenSSL Build with Dependency Validation
+
+on:
+  push:
+    branches: ['main', 'develop']
+  pull_request:
+    branches: ['main']
+
+jobs:
+  validate-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Validate dependency configuration
+        run: |
+          python scripts/validation/dependency-validation.py \
+            --config conan-dev/validation-config.yml \
+            --check-licenses \
+            --check-vulnerabilities \
+            --check-compatibility
+      
+      - name: Generate dependency report
+        run: |
+          python scripts/generate-dependency-report.py \
+            --output-format json \
+            --include-security \
+            --include-licenses \
+            --upload-artifact
+
+  build-with-dependencies:
+    needs: validate-dependencies
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            profile: linux-gcc11
+            conan_options: -o fips=True -o enable_demos=True
+          - os: ubuntu-latest
+            profile: linux-clang15
+            conan_options: -o fips=False -o enable_demos=True
+          - os: windows-latest
+            profile: windows-msvc2022
+            conan_options: -o fips=True -o enable_demos=True
+          - os: macos-latest
+            profile: macos-x86_64
+            conan_options: -o fips=True -o enable_demos=True
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: Set up Conan environment
+        run: |
+          python scripts/setup-ci-environment.py
+      
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conan-dev/locks/*.lock') }}
+          restore-keys: |
+            conan-${{ runner.os }}-
+      
+      - name: Install dependencies
+        run: |
+          conan install . \
+            --profile=conan-dev/profiles/${{ matrix.profile }}.profile \
+            ${{ matrix.conan_options }} \
+            --build=missing
+      
+      - name: Build with dependency validation
+        run: |
+          conan build . \
+            --profile=conan-dev/profiles/${{ matrix.profile }}.profile \
+            ${{ matrix.conan_options }} \
+            --validate-dependencies
+      
+      - name: Test with dependency verification
+        run: |
+          conan test . \
+            --profile=conan-dev/profiles/${{ matrix.profile }}.profile \
+            ${{ matrix.conan_options }} \
+            --test-dependencies
+      
+      - name: Generate SBOM
+        run: |
+          python scripts/generate_sbom.py \
+            --output-format cyclonedx \
+            --include-dependencies \
+            --security-metadata
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-build-${{ matrix.profile }}
+          path: |
+            build/
+            package/
+            sbom.json
+            dependency-report.json
+```
+
+## Dependency Management Scripts
+
+### Automated Update Script
+```python
+# scripts/update-dependencies.py
+#!/usr/bin/env python3
+"""
+Automated dependency update script for OpenSSL projects.
+Handles Conan packages, Python requirements, and system dependencies.
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+import yaml
+
+class DependencyUpdater:
+    """Handles automated dependency updates with validation."""
+    
+    def __init__(self, config_path: Optional[Path] = None):
+        self.config = self._load_config(config_path)
+        self.repo_root = Path.cwd()
+        
+    def _load_config(self, config_path: Optional[Path]) -> Dict:
+        """Load configuration for dependency updates."""
+        if config_path and config_path.exists():
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        return {
+            'conan': {
+                'update_strategy': 'patch',
+                'exclude_packages': [],
+                'security_only': False
+            },
+            'python': {
+                'update_strategy': 'patch',
+                'exclude_packages': [],
+                'security_only': False
+            },
+            'validation': {
+                'run_tests': True,
+                'security_scan': True,
+                'compatibility_check': True
+            }
+        }
+    
+    def check_for_updates(self) -> Dict:
+        """Check for available dependency updates."""
+        updates = {
+            'conan': self._check_conan_updates(),
+            'python': self._check_python_updates(),
+            'security': self._check_security_updates()
+        }
+        return updates
+    
+    def _check_conan_updates(self) -> List[Dict]:
+        """Check for Conan package updates."""
+        try:
+            # Run conan search to check for newer versions
+            result = subprocess.run([
+                'conan', 'search', '*', '--remote=conancenter'
+            ], capture_output=True, text=True, check=True)
+            
+            # Parse results and compare with current versions
+            updates = []
+            # Implementation for parsing and comparing versions
+            return updates
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Error checking Conan updates: {e}")
+            return []
+    
+    def _check_python_updates(self) -> List[Dict]:
+        """Check for Python package updates."""
+        try:
+            # Use pip-tools or similar to check for updates
+            result = subprocess.run([
+                'pip', 'list', '--outdated', '--format=json'
+            ], capture_output=True, text=True, check=True)
+            
+            outdated = json.loads(result.stdout)
+            return outdated
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Error checking Python updates: {e}")
+            return []
+    
+    def _check_security_updates(self) -> List[Dict]:
+        """Check for security-related updates."""
+        try:
+            # Use safety or similar tool to check for vulnerabilities
+            result = subprocess.run([
+                'safety', 'check', '--json'
+            ], capture_output=True, text=True, check=True)
+            
+            vulnerabilities = json.loads(result.stdout)
+            return vulnerabilities
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Error checking security updates: {e}")
+            return []
+    
+    def update_dependencies(self, update_type: str = 'patch') -> bool:
+        """Update dependencies based on specified strategy."""
+        try:
+            # Update Conan packages
+            self._update_conan_packages(update_type)
+            
+            # Update Python packages
+            self._update_python_packages(update_type)
+            
+            # Validate updates
+            if self.config['validation']['run_tests']:
+                self._validate_updates()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error updating dependencies: {e}")
+            return False
+    
+    def _update_conan_packages(self, update_type: str) -> None:
+        """Update Conan packages."""
+        # Implementation for updating Conan packages
+        pass
+    
+    def _update_python_packages(self, update_type: str) -> None:
+        """Update Python packages."""
+        # Implementation for updating Python packages
+        pass
+    
+    def _validate_updates(self) -> None:
+        """Validate updated dependencies."""
+        # Run tests and validation
+        if self.config['validation']['run_tests']:
+            subprocess.run(['conan', 'test', '.'], check=True)
+        
+        if self.config['validation']['security_scan']:
+            subprocess.run(['safety', 'check'], check=True)
+        
+        if self.config['validation']['compatibility_check']:
+            subprocess.run(['conan', 'create', '.', '--test'], check=True)
+
+def main():
+    """Main entry point for dependency updater."""
+    parser = argparse.ArgumentParser(description='Update project dependencies')
+    parser.add_argument('--conanfile', default='conanfile.py',
+                       help='Path to conanfile.py')
+    parser.add_argument('--requirements', nargs='+', default=['requirements.txt'],
+                       help='Paths to requirements files')
+    parser.add_argument('--update-type', choices=['patch', 'minor', 'major'],
+                       default='patch', help='Type of update to perform')
+    parser.add_argument('--create-pr', action='store_true',
+                       help='Create pull request with updates')
+    parser.add_argument('--test-updates', action='store_true',
+                       help='Test updates before applying')
+    parser.add_argument('--config', type=Path,
+                       help='Configuration file path')
+    
+    args = parser.parse_args()
+    
+    updater = DependencyUpdater(args.config)
+    
+    if args.test_updates:
+        updates = updater.check_for_updates()
+        print(f"Available updates: {json.dumps(updates, indent=2)}")
+    else:
+        success = updater.update_dependencies(args.update_type)
+        sys.exit(0 if success else 1)
+
+if __name__ == '__main__':
+    main()
+```
+
+### Dependency Validation Script
+```python
+# scripts/validation/dependency-validation.py
+#!/usr/bin/env python3
+"""
+Dependency validation script for OpenSSL projects.
+Validates licenses, vulnerabilities, and compatibility.
+"""
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List
+import yaml
+
+class DependencyValidator:
+    """Validates dependencies for compliance and security."""
+    
+    def __init__(self, config_path: Path):
+        self.config = self._load_config(config_path)
+        self.repo_root = Path.cwd()
+        
+    def _load_config(self, config_path: Path) -> Dict:
+        """Load validation configuration."""
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    
+    def validate_licenses(self) -> Dict:
+        """Validate dependency licenses."""
+        try:
+            # Use license-checker or similar tool
+            result = subprocess.run([
+                'license-checker', '--json'
+            ], capture_output=True, text=True, check=True)
+            
+            licenses = json.loads(result.stdout)
+            violations = []
+            
+            # Check against allowed licenses
+            allowed_licenses = self.config.get('allowed_licenses', [])
+            for package, license_info in licenses.items():
+                if license_info['licenses'] not in allowed_licenses:
+                    violations.append({
+                        'package': package,
+                        'license': license_info['licenses'],
+                        'reason': 'License not in allowed list'
+                    })
+            
+            return {
+                'status': 'pass' if not violations else 'fail',
+                'violations': violations,
+                'summary': f"{len(violations)} license violations found"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'summary': 'License validation failed'
+            }
+    
+    def validate_vulnerabilities(self) -> Dict:
+        """Validate dependencies for known vulnerabilities."""
+        try:
+            # Use safety or similar tool
+            result = subprocess.run([
+                'safety', 'check', '--json'
+            ], capture_output=True, text=True, check=True)
+            
+            vulnerabilities = json.loads(result.stdout)
+            
+            return {
+                'status': 'pass' if not vulnerabilities else 'fail',
+                'vulnerabilities': vulnerabilities,
+                'summary': f"{len(vulnerabilities)} vulnerabilities found"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'summary': 'Vulnerability validation failed'
+            }
+    
+    def validate_compatibility(self) -> Dict:
+        """Validate dependency compatibility."""
+        try:
+            # Check for version conflicts
+            result = subprocess.run([
+                'conan', 'graph', 'info', '.', '--format=json'
+            ], capture_output=True, text=True, check=True)
+            
+            graph_info = json.loads(result.stdout)
+            conflicts = []
+            
+            # Analyze dependency graph for conflicts
+            # Implementation for conflict detection
+            
+            return {
+                'status': 'pass' if not conflicts else 'fail',
+                'conflicts': conflicts,
+                'summary': f"{len(conflicts)} compatibility conflicts found"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'summary': 'Compatibility validation failed'
+            }
+    
+    def run_full_validation(self) -> Dict:
+        """Run complete dependency validation."""
+        results = {
+            'licenses': self.validate_licenses(),
+            'vulnerabilities': self.validate_vulnerabilities(),
+            'compatibility': self.validate_compatibility()
+        }
+        
+        # Determine overall status
+        overall_status = 'pass'
+        for check, result in results.items():
+            if result['status'] == 'fail':
+                overall_status = 'fail'
+            elif result['status'] == 'error':
+                overall_status = 'error'
+        
+        results['overall'] = {
+            'status': overall_status,
+            'summary': f"Validation {overall_status}ed"
+        }
+        
+        return results
+
+def main():
+    """Main entry point for dependency validator."""
+    parser = argparse.ArgumentParser(description='Validate project dependencies')
+    parser.add_argument('--config', type=Path, required=True,
+                       help='Validation configuration file')
+    parser.add_argument('--check-licenses', action='store_true',
+                       help='Check dependency licenses')
+    parser.add_argument('--check-vulnerabilities', action='store_true',
+                       help='Check for vulnerabilities')
+    parser.add_argument('--check-compatibility', action='store_true',
+                       help='Check dependency compatibility')
+    parser.add_argument('--output-format', choices=['json', 'yaml', 'text'],
+                       default='text', help='Output format')
+    
+    args = parser.parse_args()
+    
+    validator = DependencyValidator(args.config)
+    
+    if args.check_licenses or args.check_vulnerabilities or args.check_compatibility:
+        # Run specific checks
+        results = {}
+        if args.check_licenses:
+            results['licenses'] = validator.validate_licenses()
+        if args.check_vulnerabilities:
+            results['vulnerabilities'] = validator.validate_vulnerabilities()
+        if args.check_compatibility:
+            results['compatibility'] = validator.validate_compatibility()
+    else:
+        # Run full validation
+        results = validator.run_full_validation()
+    
+    # Output results
+    if args.output_format == 'json':
+        print(json.dumps(results, indent=2))
+    elif args.output_format == 'yaml':
+        print(yaml.dump(results, default_flow_style=False))
+    else:
+        # Text output
+        for check, result in results.items():
+            print(f"{check.upper()}: {result['status']}")
+            if 'summary' in result:
+                print(f"  {result['summary']}")
+    
+    # Exit with appropriate code
+    overall_status = results.get('overall', {}).get('status', 'pass')
+    sys.exit(0 if overall_status == 'pass' else 1)
+
+if __name__ == '__main__':
+    main()
+```
+
+## Configuration Management
+
+### CI/CD Configuration
+```yaml
+# conan-dev/ci-config.yml
+# CI/CD Configuration for dependency management
+
+# Build matrix
+profiles:
+  - linux-gcc11
+  - linux-clang15
+  - windows-msvc2022
+  - macos-clang14
+
+# Dependency update configuration
+dependency_updates:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  strategy: "patch"      # patch, minor, major
+  security_only: false
+  create_pr: true
+  test_updates: true
+
+# Validation configuration
+validation:
+  licenses:
+    allowed: ["MIT", "Apache-2.0", "BSD-3-Clause", "OpenSSL"]
+    blocked: ["GPL-3.0", "AGPL-3.0"]
+  vulnerabilities:
+    severity_threshold: "medium"
+    fail_on_vulnerabilities: true
+  compatibility:
+    check_abi: true
+    check_symbols: true
+
+# Security scanning
+security:
+  tools:
+    - safety
+    - bandit
+    - semgrep
+    - trivy
+  fail_on_high: true
+  fail_on_medium: false
+
+# Performance testing
+performance:
+  enabled: true
+  benchmarks:
+    - crypto_operations
+    - memory_usage
+    - build_time
+  thresholds:
+    build_time: 300  # seconds
+    memory_usage: 1024  # MB
+```
+
+### Validation Configuration
+```yaml
+# conan-dev/validation-config.yml
+# Dependency validation configuration
+
+# License validation
+allowed_licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-3-Clause
+  - OpenSSL
+  - ISC
+
+blocked_licenses:
+  - GPL-3.0
+  - AGPL-3.0
+  - LGPL-3.0
+
+# Vulnerability validation
+vulnerability_thresholds:
+  critical: 0
+  high: 0
+  medium: 5
+  low: 10
+
+# Compatibility validation
+compatibility_checks:
+  abi_compatibility: true
+  symbol_compatibility: true
+  version_ranges: true
+
+# Security validation
+security_checks:
+  known_vulnerabilities: true
+  license_compliance: true
+  supply_chain: true
+  code_quality: true
+```
+
+## Best Practices
+
+### CI/CD Integration
+1. **Automated Updates**: Schedule regular dependency updates with validation
+2. **Change Detection**: Use path filters to trigger builds only when dependencies change
+3. **Parallel Execution**: Run builds in parallel across multiple platforms
+4. **Caching**: Implement intelligent caching for dependencies and build artifacts
+5. **Validation**: Run comprehensive validation before accepting updates
+
+### Error Handling
+1. **Graceful Degradation**: Handle dependency resolution failures gracefully
+2. **Retry Logic**: Implement retry mechanisms for transient failures
+3. **Rollback**: Provide rollback mechanisms for failed updates
+4. **Notification**: Send notifications for critical dependency issues
+
+### Security
+1. **Vulnerability Scanning**: Integrate security scanning into all workflows
+2. **License Compliance**: Validate licenses against allowed/blocked lists
+3. **Supply Chain**: Monitor supply chain for security issues
+4. **Artifact Signing**: Sign all build artifacts and dependencies
+
+### Monitoring
+1. **Build Metrics**: Track build times, success rates, and cache hit rates
+2. **Dependency Metrics**: Monitor dependency update frequency and success
+3. **Security Metrics**: Track vulnerability detection and resolution
+4. **Quality Metrics**: Monitor test coverage and quality gates
+
+This integration ensures robust, secure, and efficient dependency management in CI/CD pipelines for OpenSSL projects.

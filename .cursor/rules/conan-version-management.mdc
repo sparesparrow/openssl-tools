@@ -1,0 +1,101 @@
+---
+globs: ["**/conanfile.py", "**/conanfile.txt"]
+description: "Critical Conan version management and build workflow rules"
+alwaysApply: true
+---
+
+# Conan Version Management Rules
+
+## 🚨 CRITICAL: Version Update Workflow
+
+### BEFORE ANY CONANFILE CHANGES
+1. **ALWAYS update version first** before modifying conanfile.py
+2. **NEVER call `conan create`** without version bump if conanfile changed
+3. **Update dependencies** in the same commit as version bump
+
+### Version Update Sequence
+```bash
+# 1. Update version in conanfile.py
+version = "1.0.1"  # Increment appropriately
+
+# 2. Update any dependency versions if needed
+requires = ["dependency/1.0.1@user/channel"]
+
+# 3. THEN call conan commands
+conan install . --build=missing
+conan create . --build=missing
+conan upload package/version@user/channel -r=remote
+```
+
+## 📋 Repository-Specific Rules
+
+### Foundation Layer (openssl-conan-base, openssl-fips-policy)
+- **Version Format**: Semantic versioning (1.0.0, 1.0.1, 1.1.0)
+- **Channel**: Always "stable" for foundation packages
+- **User**: Always "sparesparrow"
+- **Dependencies**: None (foundation packages)
+
+### Tooling Layer (openssl-tools)
+- **Version Format**: Semantic versioning (1.2.0, 1.2.1, 1.3.0)
+- **Dependencies**: Must require foundation packages
+- **Update Rule**: When foundation packages change, update tooling version
+
+### Domain Layer (openssl)
+- **Version Format**: Semantic versioning (3.4.0, 3.4.1, 4.0.0)
+- **Dependencies**: Must require both foundation and tooling packages
+- **Update Rule**: When any dependency changes, update domain version
+
+## 🔄 Build Workflow Rules
+
+### 1. Foundation First
+```bash
+# Build foundation packages in order
+cd openssl-conan-base && conan create . --build=missing
+cd openssl-fips-policy && conan create . --build=missing
+```
+
+### 2. Tooling Second
+```bash
+# Build tooling (depends on foundation)
+cd openssl-tools && conan create . --build=missing
+```
+
+### 3. Domain Last
+```bash
+# Build domain (depends on both)
+cd openssl && conan create . --build=missing
+```
+
+## 📦 Package Validation Rules
+
+### Before Upload
+1. **Validate package contents** using validation script
+2. **Check file counts** - packages should have >2 files
+3. **Verify dependencies** are correctly resolved
+4. **Test package consumption** in test_package
+
+### Upload Sequence
+```bash
+# Upload in dependency order
+conan upload openssl-base/version@sparesparrow/stable -r=sparesparrow-conan
+conan upload openssl-fips-data/version@sparesparrow/stable -r=sparesparrow-conan
+conan upload openssl-tools/version@sparesparrow/stable -r=sparesparrow-conan
+conan upload openssl/version@sparesparrow/stable -r=sparesparrow-conan
+```
+
+## 🚫 Common Mistakes to Avoid
+
+1. **❌ Changing conanfile.py without version bump**
+2. **❌ Calling `conan create` with old version after changes**
+3. **❌ Uploading packages out of dependency order**
+4. **❌ Forgetting to update dependency versions in consuming packages**
+5. **❌ Building domain layer before foundation/tooling**
+
+## ✅ Success Criteria
+
+- [ ] Version updated before any conanfile changes
+- [ ] Dependencies updated to match new versions
+- [ ] Build order follows foundation → tooling → domain
+- [ ] All packages validate successfully
+- [ ] Upload order respects dependencies
+- [ ] Cache behavior verified (packages downloaded, not rebuilt)

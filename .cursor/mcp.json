@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "conan-package-manager": {
+      "command": "conan",
+      "args": ["server", "--mcp"],
+      "env": {
+        "CONAN_USER_HOME": "${workspaceFolder}/.conan"
+      },
+      "description": "Conan package management with MCP support for OpenSSL dependencies"
+    },
+    "openssl-database": {
+      "command": "/home/sparrow/projects/openssl-tools/venv/bin/python",
+      "args": ["-m", "openssl_tools.automation.ai_agents.database_server"],
+      "cwd": "/home/sparrow/projects/openssl-tools",
+      "env": {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_USER": "openssl_admin",
+        "POSTGRES_DB": "openssl_builds",
+        "POSTGRES_PASSWORD": "openssl_secure_pass",
+        "PYTHONPATH": "/home/sparrow/projects/openssl-tools"
+      },
+      "description": "OpenSSL build database and analytics"
+    },
+    "openssl-ci": {
+      "command": "/home/sparrow/projects/openssl-tools/venv/bin/python",
+      "args": ["-m", "openssl_tools.automation.ai_agents.ci_server"],
+      "cwd": "/home/sparrow/projects/openssl-tools",
+      "env": {
+        "REPO": "openssl-tools",
+        "PR_NUMBER": "6",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "PYTHONPATH": "/home/sparrow/projects/openssl-tools"
+      },
+      "description": "OpenSSL CI/CD pipeline orchestration"
+    },
+    "github-integration": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "openssl/openssl"
+      },
+      "description": "GitHub API integration for OpenSSL repository management"
+    }
+  }
+}

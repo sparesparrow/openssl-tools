@@ -1,0 +1,12 @@
+{
+  "config_name": "fips-government",
+  "openssl_version": "3.4.1",
+  "fips_enabled": true,
+  "enable_quic": false,
+  "enable_ktls": false,
+  "enable_zlib": false,
+  "enable_zstd": false,
+  "shared": false,
+  "deployment_target": "fips-government",
+  "description": "FIPS 140-3 compliant build for government use"
+}

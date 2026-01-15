@@ -1,0 +1,357 @@
+---
+description: Conan Extension pattern for centralized OpenSSL automation and tooling
+globs: ["conanfile.py", "**/conan/**", "**/plugins/**", "**/extensions/**", "scripts/**/*.py", "openssl_tools/**/*.py"]
+alwaysApply: false
+---
+
+# Conan Extension Pattern for OpenSSL Projects
+
+Based on openssl-tools repository architecture and centralized automation approach.
+
+## Core Concept
+
+### Centralized Tooling Repository
+- **Single source of truth** for all OpenSSL automation scripts and tools
+- **Conan Extension package** providing unified commands and functionality
+- **Reusable across multiple OpenSSL projects** with consistent interface
+- **Version-controlled automation** with proper dependency management
+
+### Extension Architecture
+```
+openssl-tools/
+├── conanfile.py              # Extension package definition
+├── openssl_tools/            # Python package with Conan extensions
+│   ├── __init__.py
+│   ├── conan_extensions/     # Conan plugin implementations
+│   │   ├── __init__.py
+│   │   ├── openssl_commands.py
+│   │   ├── build_automation.py
+│   │   ├── security_scanner.py
+│   │   └── benchmark_tools.py
+│   ├── scripts/              # Standalone automation scripts
+│   ├── profiles/             # Conan profiles for all platforms
+│   ├── templates/            # Reusable templates and configs
+│   └── docker/               # Docker build environments
+```
+
+## Conan Extension Implementation
+
+### Extension Package Definition
+```python
+# conanfile.py
+from conan import ConanFile
+from conan.tools.files import copy
+import os
+
+class OpenSSLToolsConan(ConanFile):
+    name = "openssl-tools"
+    version = "1.0.0"
+    description = "OpenSSL build tools, automation scripts, and infrastructure components"
+    license = "Apache-2.0"
+    url = "https://github.com/sparesparrow/openssl-tools"
+    homepage = "https://github.com/sparesparrow/openssl-tools"
+    topics = ("openssl", "build-tools", "automation", "ci-cd")
+    
+    package_type = "application"
+    settings = "os", "arch", "compiler", "build_type"
+    
+    exports_sources = "openssl_tools/*", "scripts/*", "profiles/*", "templates/*"
+    
+    def package(self):
+        # Copy all tools and extensions
+        copy(self, "openssl_tools/*", src=self.source_folder, 
+             dst=os.path.join(self.package_folder, "openssl_tools"))
+        copy(self, "scripts/*", src=self.source_folder, 
+             dst=os.path.join(self.package_folder, "scripts"))
+        copy(self, "profiles/*", src=self.source_folder, 
+             dst=os.path.join(self.package_folder, "profiles"))
+        copy(self, "templates/*", src=self.source_folder, 
+             dst=os.path.join(self.package_folder, "templates"))
+    
+    def package_info(self):
+        # Set environment variables for tools
+        self.runenv_info.define("OPENSSL_TOOLS_ROOT", self.package_folder)
+        self.runenv_info.define("OPENSSL_TOOLS_SCRIPTS", 
+                               os.path.join(self.package_folder, "scripts"))
+        self.runenv_info.define("OPENSSL_TOOLS_PROFILES", 
+                               os.path.join(self.package_folder, "profiles"))
+        
+        # Add to PATH
+        self.env_info.PATH.append(os.path.join(self.package_folder, "scripts"))
+```
+
+### Custom Conan Commands
+```python
+# openssl_tools/conan_extensions/openssl_commands.py
+from conan.api.output import ConanOutput
+from conan.cli.command import ConanCommand
+from conan.cli.commands import ExtCommand
+import os
+import subprocess
+from pathlib import Path
+
+class OpenSSLConfigureCommand(ExtCommand):
+    """Custom conan openssl configure command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl configure"
+        self.description = "Configure OpenSSL build with optimal settings"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL configuration"""
+        output = ConanOutput()
+        output.info("Configuring OpenSSL build...")
+        
+        # Get OpenSSL tools root
+        tools_root = os.environ.get('OPENSSL_TOOLS_ROOT')
+        if not tools_root:
+            output.error("OPENSSL_TOOLS_ROOT not set. Install openssl-tools package first.")
+            return 1
+        
+        # Run configuration script
+        config_script = Path(tools_root) / "scripts" / "configure-openssl.py"
+        if config_script.exists():
+            result = subprocess.run([str(config_script)] + list(args), 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                output.success("OpenSSL configuration completed successfully")
+                return 0
+            else:
+                output.error(f"Configuration failed: {result.stderr}")
+                return result.returncode
+        else:
+            output.error(f"Configuration script not found: {config_script}")
+            return 1
+
+class OpenSSLBuildCommand(ExtCommand):
+    """Custom conan openssl build command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl build"
+        self.description = "Build OpenSSL with optimized settings and validation"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL build"""
+        output = ConanOutput()
+        output.info("Building OpenSSL...")
+        
+        # Implementation for optimized OpenSSL build
+        # Includes validation, security scanning, and performance optimization
+        pass
+
+class OpenSSLPackageCommand(ExtCommand):
+    """Custom conan openssl package command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl package"
+        self.description = "Package OpenSSL with SBOM generation and signing"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL packaging"""
+        output = ConanOutput()
+        output.info("Packaging OpenSSL...")
+        
+        # Implementation for OpenSSL packaging
+        # Includes SBOM generation, artifact signing, and validation
+        pass
+
+class OpenSSLDocsCommand(ExtCommand):
+    """Custom conan openssl docs command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl docs"
+        self.description = "Generate OpenSSL documentation and API references"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL documentation generation"""
+        output = ConanOutput()
+        output.info("Generating OpenSSL documentation...")
+        
+        # Implementation for documentation generation
+        pass
+
+class OpenSSLBenchmarkCommand(ExtCommand):
+    """Custom conan openssl benchmark command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl benchmark"
+        self.description = "Run OpenSSL performance benchmarks and validation"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL benchmarking"""
+        output = ConanOutput()
+        output.info("Running OpenSSL benchmarks...")
+        
+        # Implementation for performance benchmarking
+        pass
+
+class OpenSSLScanCommand(ExtCommand):
+    """Custom conan openssl scan command"""
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "openssl scan"
+        self.description = "Run security and vulnerability scans on OpenSSL"
+    
+    def run(self, conan_api, parser, *args):
+        """Execute OpenSSL security scanning"""
+        output = ConanOutput()
+        output.info("Scanning OpenSSL for security issues...")
+        
+        # Implementation for security scanning
+        pass
+```
+
+## Extension Registration
+
+### Plugin Registration
+```python
+# openssl_tools/conan_extensions/__init__.py
+from .openssl_commands import (
+    OpenSSLConfigureCommand,
+    OpenSSLBuildCommand,
+    OpenSSLPackageCommand,
+    OpenSSLDocsCommand,
+    OpenSSLBenchmarkCommand,
+    OpenSSLScanCommand
+)
+
+# Register all OpenSSL commands
+def register_commands():
+    """Register all OpenSSL extension commands"""
+    return [
+        OpenSSLConfigureCommand(),
+        OpenSSLBuildCommand(),
+        OpenSSLPackageCommand(),
+        OpenSSLDocsCommand(),
+        OpenSSLBenchmarkCommand(),
+        OpenSSLScanCommand()
+    ]
+```
+
+### Conan Configuration
+```python
+# conan.conf or global.conf
+[extensions]
+openssl_tools = openssl_tools.conan_extensions
+```
+
+## Usage Patterns
+
+### Project Integration
+```python
+# In downstream OpenSSL project conanfile.py
+from conan import ConanFile
+
+class MyOpenSSLProjectConan(ConanFile):
+    name = "my-openssl-project"
+    version = "1.0.0"
+    
+    def build_requirements(self):
+        # Require openssl-tools extension
+        self.tool_requires("openssl-tools/1.0.0")
+    
+    def build(self):
+        # Use OpenSSL tools for build
+        self.run("conan openssl configure --fips --enable-quic")
+        self.run("conan openssl build --parallel --validate")
+        self.run("conan openssl package --sbom --sign")
+```
+
+### CI/CD Integration
+```yaml
+# .github/workflows/openssl-build.yml
+name: OpenSSL Build with Extensions
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install OpenSSL Tools Extension
+        run: |
+          conan install openssl-tools/1.0.0@ --build=missing
+      
+      - name: Configure OpenSSL
+        run: |
+          conan openssl configure --fips --enable-quic --profile=linux-gcc11
+      
+      - name: Build OpenSSL
+        run: |
+          conan openssl build --parallel --validate --profile=linux-gcc11
+      
+      - name: Package OpenSSL
+        run: |
+          conan openssl package --sbom --sign --upload
+      
+      - name: Run Security Scan
+        run: |
+          conan openssl scan --vulnerabilities --compliance
+      
+      - name: Run Benchmarks
+        run: |
+          conan openssl benchmark --performance --memory
+```
+
+## Extension Benefits
+
+### Centralized Management
+- **Single source of truth** for all OpenSSL automation
+- **Consistent interface** across all OpenSSL projects
+- **Version-controlled tooling** with proper dependency management
+- **Easy updates** and maintenance across projects
+
+### Reusability
+- **Plug-and-play integration** for new OpenSSL projects
+- **Standardized workflows** for common operations
+- **Shared profiles and templates** for consistency
+- **Cross-platform support** with unified commands
+
+### Maintainability
+- **Modular architecture** with clear separation of concerns
+- **Extensible design** for adding new commands and features
+- **Comprehensive testing** and validation
+- **Documentation and examples** for all features
+
+## Best Practices
+
+### Extension Development
+- **Follow Conan extension conventions** for command registration
+- **Implement proper error handling** and user feedback
+- **Use structured logging** for debugging and monitoring
+- **Provide comprehensive help** and documentation
+
+### Integration Guidelines
+- **Use semantic versioning** for extension releases
+- **Maintain backward compatibility** when possible
+- **Test across all supported platforms** before release
+- **Document breaking changes** and migration paths
+
+### Security Considerations
+- **Validate all inputs** and parameters
+- **Use secure defaults** for security-sensitive operations
+- **Implement proper authentication** for remote operations
+- **Sign all artifacts** and verify integrity
+
+## Implementation Checklist
+
+- [ ] Create openssl-tools repository structure
+- [ ] Implement Conan extension package (conanfile.py)
+- [ ] Develop custom Conan commands (configure, build, package, docs, benchmark, scan)
+- [ ] Create plugin registration system
+- [ ] Implement automation scripts and utilities
+- [ ] Set up cross-platform profiles and templates
+- [ ] Create comprehensive documentation and examples
+- [ ] Implement testing and validation framework
+- [ ] Set up CI/CD for extension development
+- [ ] Create migration guide for existing projects
+
+This pattern provides a robust, scalable, and maintainable approach to OpenSSL automation and tooling across multiple projects.
