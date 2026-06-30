@@ -26,6 +26,10 @@ class OpenSSLToolsConan(ConanFile):
 
     python_requires = "openssl-base/1.0.1@sparesparrow/stable"
 
+    def source(self):
+        """Source method - not needed for python-require packages with exports_sources"""
+        pass
+
     def package(self):
         """Package orchestration components"""
         # Copy Python tools

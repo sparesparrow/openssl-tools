@@ -54,10 +54,10 @@ from conan import ConanFile
 class YourApp(ConanFile):
     name = "your-app"
     python_requires = "openssl-tools/1.2.0"
-    
+
     def requirements(self):
         self.requires("openssl/3.6.0")
-    
+
     def build(self):
         # Use build orchestration from python_requires
         python_req = self.python_requires["openssl-tools"]
@@ -374,7 +374,7 @@ V Settings → Secrets and variables → Actions přidejte:
 - GitHub Personal Access Token s scopes: `repo`, `workflow`, `write:packages`
 - Účel: Reportování build statusu zpět do sparesparrow/openssl
 
-**ARTIFACTORY_TOKEN** 
+**ARTIFACTORY_TOKEN**
 - JFrog Artifactory API token
 - Účel: Upload/download Conan packages
 
@@ -384,7 +384,7 @@ V Settings → Secrets and variables → Actions přidejte:
 ### Required Secrets:
 
 - `ARTIFACTORY_TOKEN` - JFrog Artifactory API token
-- `ARTIFACTORY_USER` - Artifactory username  
+- `ARTIFACTORY_USER` - Artifactory username
 - `OPENSSL_REPO_TOKEN` - GitHub PAT with repo scope for status updates
 
 ### Cache Management:
@@ -602,7 +602,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Publish with OIDC
         uses: ./.github/actions/cloudsmith-publish
         with:
@@ -718,18 +718,18 @@ gh workflow run test-reusable-workflows.yml -f test-workflow=build-openssl
 ## Workflow Integration
 
 For complete CI/CD integration, see:
-- [Track A Security Pipeline Documentation](../openssl-devenv/TRACK-A-SECURITY-PIPELINE.md)
-- [Verification Scripts Documentation](../openssl-devenv/docs/verification.md)
+- [Track A Security Pipeline Documentation](../openssl-test/TRACK-A-SECURITY-PIPELINE.md)
+- [Verification Scripts Documentation](../openssl-test/docs/verification.md)
 
 ### Workflow Integration
 
 For complete CI/CD integration, see:
-- [Track A Security Pipeline Documentation](../openssl-devenv/TRACK-A-SECURITY-PIPELINE.md)
-- [Verification Scripts Documentation](../openssl-devenv/docs/verification.md)
+- [Track A Security Pipeline Documentation](../openssl-test/TRACK-A-SECURITY-PIPELINE.md)
+- [Verification Scripts Documentation](../openssl-test/docs/verification.md)
 
 ## Related Repositories
 
 - [openssl-conan-base](https://github.com/sparesparrow/openssl-conan-base) - Profiles and production CI/CD
 - [openssl](https://github.com/sparesparrow/openssl) - Minimal fork for testing
 - [openssl-fips-policy](https://github.com/sparesparrow/openssl-fips-policy) - FIPS configuration
-- [openssl-devenv](https://github.com/sparesparrow/openssl-devenv) - Developer onboarding
+- [openssl-test](https://github.com/sparesparrow/openssl-test) - Developer onboarding

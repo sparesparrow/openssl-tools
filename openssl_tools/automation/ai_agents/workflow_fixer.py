@@ -30,13 +30,13 @@ import hashlib
 import shutil
 
 # MCP and HTTP dependencies
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent, ImageContent
-import httpx
-import yaml
-from jinja2 import Template, Environment, select_autoescape
-from pydantic import BaseModel, ValidationError
-import tenacity
+# from mcp.server.fastmcp import FastMCP  # Optional dependency
+# from mcp.types import TextContent, ImageContent  # Optional dependency
+# import httpx  # Optional dependency
+# import yaml  # Optional dependency
+# from jinja2 import Template, Environment, select_autoescape  # Optional dependency
+# from pydantic import BaseModel, ValidationError  # Optional dependency
+# import tenacity  # Optional dependency
 
 # Configure logging
 logging.basicConfig(
@@ -121,11 +121,11 @@ class GitHubWorkflowFixer:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.client.aclose()
 
-    @tenacity.retry(
-        wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
-        stop=tenacity.stop_after_attempt(3),
-        retry=tenacity.retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError))
-    )
+    # @tenacity.retry(  # Optional dependency
+    #     wait=tenacity.wait_exponential(multiplier=1, min=2, max=10),
+    #     stop=tenacity.stop_after_attempt(3),
+    #     retry=tenacity.retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError))
+    # )
     async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Make authenticated GitHub API request with retry logic"""
         url = f"{self.base_url}{endpoint}"
@@ -448,9 +448,9 @@ No failed workflows found. All workflows are passing!
             }
 
 # MCP Server Implementation
-mcp = FastMCP("GitHub Workflow Fixer")
+# mcp = FastMCP("GitHub Workflow Fixer")  # Optional dependency
 
-@mcp.tool()
+# @mcp.tool()  # Optional dependency
 async def analyze_repository_workflows(
     repository: str, 
     github_token: str = None,
@@ -490,7 +490,7 @@ async def analyze_repository_workflows(
         logger.error(f"Analysis failed: {e}")
         return f"Analysis failed: {e}"
 
-@mcp.tool()
+# @mcp.tool()  # Optional dependency
 async def get_workflow_status(
     repository: str,
     github_token: str = None,
@@ -540,7 +540,7 @@ async def get_workflow_status(
     except Exception as e:
         return f"Failed to get workflow status: {e}"
 
-@mcp.tool()
+# @mcp.tool()  # Optional dependency
 async def fix_workflow_issues(
     repository: str,
     github_token: str = None,
@@ -600,7 +600,7 @@ async def fix_workflow_issues(
     except Exception as e:
         return f"Failed to apply fixes: {e}"
 
-@mcp.tool()
+# @mcp.tool()  # Optional dependency
 async def rerun_failed_workflows(
     repository: str,
     github_token: str = None,

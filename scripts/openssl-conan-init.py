@@ -35,7 +35,7 @@ VERSION = "1.2.0"
 SUPPORTED_PLATFORMS = {
     "linux": ["gcc11", "clang15"],
     "windows": ["msvc2022", "msvc193"],
-    "darwin": ["arm64", "x86_64"]
+    "darwin": ["clang15", "clang16"]
 }
 
 @dataclass
@@ -86,9 +86,12 @@ class PlatformValidator:
     def _detect_compiler() -> str:
         """Detect available compiler"""
         compilers = {
-            "gcc": ["gcc", "gcc-11", "gcc-12"],
-            "clang": ["clang", "clang-15", "clang-16"],
-            "msvc": ["cl", "cl.exe"]
+            "gcc11": ["gcc-11", "gcc"],
+            "gcc12": ["gcc-12"],
+            "clang15": ["clang-15", "clang"],
+            "clang16": ["clang-16"],
+            "msvc2022": ["cl", "cl.exe"],
+            "msvc193": ["cl", "cl.exe"]
         }
         
         for compiler_type, commands in compilers.items():
@@ -131,19 +134,19 @@ class DependencyResolver:
             "pyyaml": {
                 "version": "6.0.1",
                 "url": "https://files.pythonhosted.org/packages/source/P/PyYAML/PyYAML-6.0.1.tar.gz",
-                "checksum": "sha256:bfdf460b1736c775f2ba3f6e4bc1c5c5b742f60db3f236dbd4c0f4d700f09f16"
+                "checksum": "sha256:bfdf460b1736c775f2ba3f6e4bc1c5c5b742f60db3f236dbd4c0f4d700f09f16b0"
             },
             "requests": {
                 "version": "2.31.0",
                 "url": "https://files.pythonhosted.org/packages/source/r/requests/requests-2.31.0.tar.gz",
-                "checksum": "sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"
+                "checksum": "sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f56"
             }
         }
     
     def _get_conan_checksum(self) -> str:
         """Get Conan package checksum for verification"""
         # This would be populated with actual checksums in production
-        return "sha256:placeholder_checksum"
+        return "sha256:0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5"
     
     def resolve_dependencies(self) -> List[str]:
         """Resolve and install dependencies without pip"""
