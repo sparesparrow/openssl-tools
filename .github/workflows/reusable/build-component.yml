@@ -43,21 +43,25 @@ env:
 
 jobs:
   build:
-    name: Build ${{ inputs.component }} (${{ inputs.platform }})
-    runs-on: ${{ matrix.os }}
+    name: Build ${{ inputs.component }} (${{ matrix.platform-config.platform }})
+    runs-on: ${{ matrix.platform-config.os }}
     strategy:
       matrix:
-        include:
+        platform-config:
           - platform: linux-gcc11
             os: ubuntu-22.04
+            include: ${{ inputs.platform == 'linux-gcc11' || inputs.platform == 'all' }}
           - platform: linux-clang15
             os: ubuntu-22.04
+            include: ${{ inputs.platform == 'linux-clang15' || inputs.platform == 'all' }}
           - platform: windows-msvc2022
             os: windows-2022
-          - platform: macos-clang14
+            include: ${{ inputs.platform == 'windows-msvc2022' || inputs.platform == 'all' }}
+          - platform: macos-arm64
             os: macos-14
+            include: ${{ inputs.platform == 'macos-arm64' || inputs.platform == 'all' }}
         exclude:
-          - platform: ${{ inputs.platform != matrix.platform && 'dummy' || '' }}
+          - platform-config: ${{ !matrix.platform-config.include }}
     
     steps:
       - name: Checkout code
@@ -65,24 +69,28 @@ jobs:
         with:
           fetch-depth: 0
           
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          
-      - name: Install Conan
+      - name: Setup Conan Environment
+        uses: ./.github/actions/setup-conan
+
+      - name: Setup Conan Profiles
         run: |
-          pip install conan==2.0.17
-          
+          # Create platform-specific profiles if they don't exist
+          PROFILE_PATH="conan-profiles/${{ matrix.platform-config.platform }}.profile"
+          if [ ! -f "$PROFILE_PATH" ]; then
+            echo "Creating profile: $PROFILE_PATH"
+            conan profile new ${{ matrix.platform-config.platform }} --detect
+            conan profile update settings.os=${{ matrix.platform-config.os }} ${{ matrix.platform-config.platform }}
+            conan profile update settings.arch=x86_64 ${{ matrix.platform-config.platform }}
+          fi
+
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
           path: ${{ env.CONAN_USER_HOME }}
-          key: conan-${{ runner.os }}-${{ inputs.platform }}-${{ inputs.component }}-${{ hashFiles('conanfile.py', 'conan-profiles/*.profile') }}
+          key: conan-${{ runner.os }}-${{ matrix.platform-config.platform }}-${{ inputs.component }}-${{ hashFiles('conanfile.py', 'conan-profiles/*.profile') }}
           restore-keys: |
-            conan-${{ runner.os }}-${{ inputs.platform }}-${{ inputs.component }}-
-            conan-${{ runner.os }}-${{ inputs.platform }}-
+            conan-${{ runner.os }}-${{ matrix.platform-config.platform }}-${{ inputs.component }}-
+            conan-${{ runner.os }}-${{ matrix.platform-config.platform }}-
             conan-${{ runner.os }}-
             
       - name: Configure Conan remotes
@@ -94,7 +102,7 @@ jobs:
       - name: Build component
         run: |
           cd ${{ inputs.component }}
-          conan create . --profile=${{ inputs.platform }} \
+          conan create . --profile=${{ matrix.platform-config.platform }} \
             -s build_type=${{ inputs.build-type }} \
             -o fips=${{ inputs.fips-enabled }} \
             --build=missing
@@ -102,7 +110,7 @@ jobs:
       - name: Test component
         run: |
           cd ${{ inputs.component }}
-          conan test test_package . --profile=${{ inputs.platform }} \
+          conan test test_package . --profile=${{ matrix.platform-config.platform }} \
             -s build_type=${{ inputs.build-type }} \
             -o fips=${{ inputs.fips-enabled }}
             
@@ -110,7 +118,7 @@ jobs:
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.component }}-${{ inputs.platform }}-${{ inputs.build-type }}
+          name: ${{ inputs.component }}-${{ matrix.platform-config.platform }}-${{ inputs.build-type }}
           path: |
             ${{ env.CONAN_USER_HOME }}/p/*/p/
             build/

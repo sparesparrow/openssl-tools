@@ -1,0 +1,69 @@
+name: 'Setup Conan Environment'
+description: 'Standardized Conan 2.21.0 setup with openssl-tools python_requires'
+inputs:
+  conan-version:
+    description: 'Conan version to install'
+    required: false
+    default: '2.21.0'
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+  bootstrap-tools:
+    description: 'Bootstrap openssl-tools as python_requires'
+    required: false
+    default: true
+outputs:
+  conan-home:
+    description: 'Conan home directory path'
+    value: ${{ steps.setup.outputs.conan-home }}
+  tools-version:
+    description: 'OpenSSL tools version exported'
+    value: ${{ steps.bootstrap.outputs.tools-version }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: 'pip'
+
+    - name: Install Conan
+      shell: bash
+      run: pip install "conan==${{ inputs.conan-version }}"
+
+    - name: Configure Conan
+      id: setup
+      shell: bash
+      run: |
+        export CONAN_USER_HOME="${{ github.workspace }}/.conan2"
+        conan profile detect --force
+        conan config set general.revisions_enabled=1
+        echo "conan-home=$CONAN_USER_HOME" >> $GITHUB_OUTPUT
+
+    - name: Bootstrap openssl-tools python_requires
+      id: bootstrap
+      if: inputs.bootstrap-tools == 'true'
+      shell: bash
+      run: |
+        if [ -f "conanfile.py" ]; then
+          # Get version dynamically
+          TOOLS_VERSION=$(python -c "
+          import subprocess, re
+          try:
+              git_version = subprocess.check_output(['git', 'describe', '--tags', '--always'], cwd='.').decode().strip()
+              if '-' in git_version:
+                  base_version = git_version.split('-')[0].lstrip('v')
+                  commit_count = git_version.split('-')[1]
+                  version = f'{base_version}.{commit_count}'
+              else:
+                  version = git_version.lstrip('v')
+          except:
+              version = '1.2.7-dev'
+          print(version)
+          ")
+
+          echo "tools-version=$TOOLS_VERSION" >> $GITHUB_OUTPUT
+          conan export . openssl-tools/$TOOLS_VERSION@
+        fi

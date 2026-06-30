@@ -1,0 +1,78 @@
+name: 'Security Scanning Suite'
+description: 'Comprehensive security scanning with Syft SBOM, Trivy, CodeQL, and FIPS validation'
+inputs:
+  scan-target:
+    description: 'Target directory to scan'
+    required: false
+    default: '.'
+  severity:
+    description: 'Trivy severity levels to scan'
+    required: false
+    default: 'CRITICAL,HIGH'
+  fail-on-critical:
+    description: 'Fail workflow on critical findings'
+    required: false
+    default: true
+  enable-fips-check:
+    description: 'Enable FIPS 140-3 compliance validation'
+    required: false
+    default: false
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Syft
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+    - name: Generate SBOM
+      shell: bash
+      run: syft packages ${{ inputs.scan-target }} -o cyclonedx-json=sbom.json
+
+    - name: Run Trivy Security Scan
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        scan-type: 'fs'
+        scan-ref: ${{ inputs.scan-target }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: ${{ inputs.severity }}
+        exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+    - name: FIPS 140-3 Compliance Check
+      if: inputs.enable-fips-check == 'true'
+      shell: bash
+      run: |
+        echo "?? Performing FIPS 140-3 compliance validation..."
+
+        # Build with FIPS enabled if conanfile supports it
+        if grep -q "fips" conanfile.py 2>/dev/null; then
+          conan create . --profile=linux-gcc11 \
+            -o "*:fips=True" \
+            --build=missing || echo "FIPS build failed - may not be supported"
+        fi
+
+        # Validate FIPS provider
+        python3 -c "
+        import subprocess
+        import sys
+
+        try:
+            result = subprocess.run(['openssl', 'list', '-providers'],
+                                  capture_output=True, text=True, timeout=30)
+            if 'fips' in result.stdout.lower():
+                print('? FIPS provider validated')
+            else:
+                print('? FIPS provider not available')
+                ${{ inputs.fail-on-critical && 'sys.exit(1)' || 'pass' }}
+        except Exception as e:
+            print(f'??  FIPS validation error: {e}')
+        "

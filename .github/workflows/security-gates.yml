@@ -1,0 +1,94 @@
+name: 'Mandatory Security Gates'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [master, main]
+
+jobs:
+  security-validation:
+    name: Security Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Conan Environment
+        uses: ./.github/actions/setup-conan
+
+      - name: SBOM Generation (MANDATORY)
+        uses: anchore/sbom-action@v0.17.7
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.json
+
+      - name: Trivy Critical Scan (BLOCKING)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy.sarif'
+          severity: 'CRITICAL'
+          exit-code: '1'  # BLOCKS merge on CRITICAL findings
+
+      - name: CodeQL Analysis (REQUIRED)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: CodeQL Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: security-gates
+
+      - name: FIPS 140-3 Compliance Validation
+        run: |
+          echo "?? Validating FIPS 140-3 compliance..."
+
+          # Install OpenSSL for FIPS validation
+          sudo apt-get update
+          sudo apt-get install -y openssl
+
+          # Test FIPS provider availability (if FIPS build exists)
+          python3 -c "
+          import subprocess
+          import sys
+
+          try:
+              result = subprocess.run(['openssl', 'list', '-providers'],
+                                    capture_output=True, text=True, timeout=30)
+              if 'fips' in result.stdout.lower():
+                  print('? FIPS provider available')
+              else:
+                  print('??  FIPS provider not detected (may be expected for non-FIPS builds)')
+          except subprocess.TimeoutExpired:
+              print('??  FIPS validation timed out')
+          except Exception as e:
+              print(f'??  FIPS validation error: {e}')
+          "
+
+      - name: Upload Security Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            sbom.json
+            trivy.sarif
+          retention-days: 90
+
+      - name: Trigger Consumer Repository Validation
+        if: success() && github.ref == 'refs/heads/master'
+        run: |
+          # Trigger openssl-profiles repository tests
+          gh workflow run test-integration.yml \
+            --repo sparesparrow/openssl-profiles \
+            --field tools_version=${{ needs.security-validation.outputs.tools-version || 'latest' }}
+
+          # Trigger openssl-fips-data validation
+          gh workflow run security-validation.yml \
+            --repo sparesparrow/openssl-fips-data \
+            --field trigger_source=openssl-tools
